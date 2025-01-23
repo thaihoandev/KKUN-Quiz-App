@@ -1,10 +1,12 @@
 package com.kkunquizapp.QuizAppBackend.model;
 
+import com.kkunquizapp.QuizAppBackend.model.enums.QuestionStatus;
 import com.kkunquizapp.QuizAppBackend.model.enums.QuestionType;
 import jakarta.persistence.*;
 import lombok.Data;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 @Entity
@@ -42,6 +44,12 @@ public class Question {
     @Column(nullable = false)
     private boolean deleted = false;
 
+    @OneToMany(mappedBy = "question", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<Option> options;
+
+    @Column(nullable = false)
+    @Enumerated(EnumType.STRING)
+    private QuestionStatus status = QuestionStatus.ACTIVE;
     // Getters and Setters
 }
 

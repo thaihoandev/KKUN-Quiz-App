@@ -3,12 +3,15 @@ package com.kkunquizapp.QuizAppBackend.model;
 import com.kkunquizapp.QuizAppBackend.model.enums.UserRole;
 import jakarta.persistence.*;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
+
 import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Entity
 @Data
 @Table(name = "users")
+@EqualsAndHashCode(callSuper = false)
 public class User {
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)

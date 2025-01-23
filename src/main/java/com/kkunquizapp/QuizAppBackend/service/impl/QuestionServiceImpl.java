@@ -61,6 +61,106 @@ public class QuestionServiceImpl implements QuestionService {
 
         return responseDTO;
     }
+    @Override
+    public QuestionResponseDTO getQuestionById(UUID questionId) {
+        // Tìm câu hỏi theo ID
+        Question question = questionRepository.findById(questionId).orElseThrow(
+                () -> new IllegalArgumentException("Question not found with ID: " + questionId));
+
+        // Map câu hỏi sang DTO
+        QuestionResponseDTO responseDTO = modelMapper.map(question, QuestionResponseDTO.class);
+
+        // Map danh sách Option
+        responseDTO.setOptions(question.getOptions().stream()
+                .map(this::mapOptionToResponseDTO)
+                .collect(Collectors.toList()));
+
+        return responseDTO;
+    }
+
+    @Override
+    public QuestionResponseDTO updateQuestion(UUID questionId, QuestionRequestDTO questionRequestDTO) {
+        // Lấy câu hỏi từ DB
+        Question question = questionRepository.findById(questionId).orElseThrow(
+                () -> new IllegalArgumentException("Question not found with ID: " + questionId));
+
+        // Lấy Quiz từ QuizId trong request (nếu được cung cấp)
+        if (questionRequestDTO.getQuizId() != null) {
+            Quiz quiz = quizRepository.findById(questionRequestDTO.getQuizId()).orElseThrow(
+                    () -> new IllegalArgumentException("Quiz not found with ID: " + questionRequestDTO.getQuizId()));
+            question.setQuiz(quiz);
+        }
+
+        // Cập nhật các thuộc tính câu hỏi
+        question.setQuestionText(questionRequestDTO.getQuestionText());
+        question.setQuestionType(QuestionType.valueOf(questionRequestDTO.getQuestionType()));
+        question.setTimeLimit(questionRequestDTO.getTimeLimit());
+        question.setPoints(questionRequestDTO.getPoints());
+
+        // Cập nhật danh sách Option
+        List<Option> updatedOptions = questionRequestDTO.getOptions().stream().map(optionDTO -> {
+            Option option = createOptionBasedOnQuestionType(optionDTO, questionRequestDTO.getQuestionType());
+            option.setQuestion(question);
+            return optionRepository.save(option);
+        }).toList();
+        question.setOptions(updatedOptions);
+
+        // Lưu câu hỏi cập nhật
+        Question updatedQuestion = questionRepository.save(question);
+
+        // Map sang DTO để trả về
+        QuestionResponseDTO responseDTO = modelMapper.map(updatedQuestion, QuestionResponseDTO.class);
+        responseDTO.setOptions(updatedOptions.stream()
+                .map(this::mapOptionToResponseDTO)
+                .collect(Collectors.toList()));
+
+        return responseDTO;
+    }
+
+    @Override
+    public QuestionResponseDTO softDeleteQuestion(UUID questionId) {
+        // Tìm câu hỏi theo ID
+        Question question = questionRepository.findById(questionId).orElseThrow(
+                () -> new IllegalArgumentException("Question not found with ID: " + questionId));
+
+        // Đánh dấu đã xóa
+        question.setDeleted(true);
+
+        // Lưu thay đổi
+        Question deletedQuestion = questionRepository.save(question);
+
+        // Map sang DTO để trả về
+        return modelMapper.map(deletedQuestion, QuestionResponseDTO.class);
+    }
+
+    @Override
+    public List<QuestionResponseDTO> getQuestionsByQuizId(UUID quizId) {
+        // Lấy Quiz từ DB
+        Quiz quiz = quizRepository.findById(quizId).orElseThrow(
+                () -> new IllegalArgumentException("Quiz not found with ID: " + quizId));
+
+        // Lấy danh sách câu hỏi của Quiz
+        List<Question> questions = questionRepository.findAllByQuiz(quiz);
+
+        // Map danh sách câu hỏi sang DTO
+        return questions.stream().map(question -> {
+            QuestionResponseDTO responseDTO = modelMapper.map(question, QuestionResponseDTO.class);
+            responseDTO.setOptions(question.getOptions().stream()
+                    .map(this::mapOptionToResponseDTO)
+                    .collect(Collectors.toList()));
+            return responseDTO;
+        }).collect(Collectors.toList());
+    }
+
+    @Override
+    public void deleteQuestion(UUID questionId) {
+        // Tìm câu hỏi theo ID
+        Question question = questionRepository.findById(questionId).orElseThrow(
+                () -> new IllegalArgumentException("Question not found with ID: " + questionId));
+
+        // Xóa câu hỏi
+        questionRepository.delete(question);
+    }
 
     /**
      * Tạo Option dựa trên loại câu hỏi (questionType).

@@ -94,7 +94,7 @@ public class UserServiceImpl implements UserService {
                     .type("Bearer")
                     .username(userPrincipal.getUsername())
                     .roles(userPrincipal.getAuthorities().stream()
-                            .map(auth -> auth.getAuthority().replace("ROLE_", ""))
+                            .map(auth -> auth.getAuthority())
                             .collect(Collectors.toList()))
                     .build();
         }

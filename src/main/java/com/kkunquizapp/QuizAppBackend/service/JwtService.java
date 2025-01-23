@@ -26,7 +26,7 @@ public class JwtService {
                 .expiresAt(now.plus(1, ChronoUnit.HOURS))
                 .claim("userId", userPrincipal.getUserId().toString())
                 .claim("roles", userPrincipal.getAuthorities().stream()
-                        .map(auth -> auth.getAuthority().replace("ROLE_", ""))
+                        .map(auth -> auth.getAuthority())
                         .collect(Collectors.toList()))
                 .build();
 

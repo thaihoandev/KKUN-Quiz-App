@@ -2,14 +2,14 @@ package com.kkunquizapp.QuizAppBackend.config;
 
 import com.kkunquizapp.QuizAppBackend.dto.OptionRequestDTO;
 import com.kkunquizapp.QuizAppBackend.dto.OptionResponseDTO;
-import com.kkunquizapp.QuizAppBackend.model.FillInTheBlankOption;
-import com.kkunquizapp.QuizAppBackend.model.MultipleChoiceOption;
-import com.kkunquizapp.QuizAppBackend.model.Option;
-import com.kkunquizapp.QuizAppBackend.model.TrueFalseOption;
+import com.kkunquizapp.QuizAppBackend.dto.QuestionRequestDTO;
+import com.kkunquizapp.QuizAppBackend.model.*;
+import com.kkunquizapp.QuizAppBackend.model.enums.QuestionType;
 import org.modelmapper.ModelMapper;
 import org.modelmapper.convention.MatchingStrategies;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+
 @Configuration
 public class ModelMapperConfig {
 
@@ -34,6 +34,9 @@ public class ModelMapperConfig {
         modelMapper.typeMap(OptionRequestDTO.class, FillInTheBlankOption.class)
                 .addMapping(OptionRequestDTO::getOptionText, FillInTheBlankOption::setCorrectAnswer);
 
+        modelMapper.typeMap(QuestionRequestDTO.class, Question.class).addMappings(mapper -> {
+            mapper.skip(Question::setOptions); // Bỏ qua ánh xạ mặc định cho options
+        });
         return modelMapper;
     }
 }

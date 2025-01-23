@@ -56,9 +56,9 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/auth/**", "/oauth2/**").permitAll()
-                        .requestMatchers("/user/*").hasAnyAuthority(UserRole.USER.name(), UserRole.ADMIN.name())
-                        .requestMatchers("/admin/*").hasAnyAuthority(UserRole.ADMIN.name())
-                        .requestMatchers("/profile/*").hasAnyAuthority(UserRole.USER.name())
+                        .requestMatchers("/user/**", "/quizzes/**", "/questions/**").hasAnyAuthority(UserRole.USER.name(), UserRole.ADMIN.name())
+                        .requestMatchers("/admin/**").hasAnyAuthority(UserRole.ADMIN.name())
+                        .requestMatchers("/profile/**").hasAnyAuthority(UserRole.USER.name())
 
                         .anyRequest().authenticated()
                 )
@@ -122,7 +122,7 @@ public class SecurityConfig {
     @Bean
     public JwtAuthenticationConverter jwtAuthenticationConverter() {
         JwtGrantedAuthoritiesConverter grantedAuthoritiesConverter = new JwtGrantedAuthoritiesConverter();
-        grantedAuthoritiesConverter.setAuthorityPrefix("ROLE_");
+        grantedAuthoritiesConverter.setAuthorityPrefix("");
         grantedAuthoritiesConverter.setAuthoritiesClaimName("roles");
 
         JwtAuthenticationConverter jwtAuthenticationConverter = new JwtAuthenticationConverter();
