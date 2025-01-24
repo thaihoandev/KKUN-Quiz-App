@@ -75,12 +75,11 @@ public class QuizServiceImpl implements QuizService {
         return modelMapper.map(updatedQuiz, QuizResponseDTO.class);
     }
 
-    public QuizResponseDTO deleteQuiz(UUID quizId, QuizRequestDTO quizRequestDTO) {
+    public QuizResponseDTO deleteQuiz(UUID quizId) {
         Quiz existingQuiz = quizRepo.findById(quizId)
                 .orElseThrow(() -> new IllegalArgumentException("Quiz not found with ID: " + quizId));
 
-        quizRequestDTO.setStatus(QuizStatus.CLOSED.name());
-        modelMapper.map(quizRequestDTO, existingQuiz);
+        existingQuiz.setStatus(QuizStatus.CLOSED);
         Quiz deletedQuiz = quizRepo.save(existingQuiz);
 
         return modelMapper.map(deletedQuiz, QuizResponseDTO.class);

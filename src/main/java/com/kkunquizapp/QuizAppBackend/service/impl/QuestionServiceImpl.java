@@ -13,7 +13,9 @@ import com.kkunquizapp.QuizAppBackend.service.QuestionService;
 import org.modelmapper.ModelMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -79,43 +81,86 @@ public class QuestionServiceImpl implements QuestionService {
     }
 
     @Override
+    @Transactional
     public QuestionResponseDTO updateQuestion(UUID questionId, QuestionRequestDTO questionRequestDTO) {
-        // Lấy câu hỏi từ DB
+        // Tìm câu hỏi trong cơ sở dữ liệu
         Question question = questionRepository.findById(questionId).orElseThrow(
                 () -> new IllegalArgumentException("Question not found with ID: " + questionId));
 
-        // Lấy Quiz từ QuizId trong request (nếu được cung cấp)
+        // Cập nhật các trường của câu hỏi nếu có trong request
+        if (questionRequestDTO.getQuestionText() != null) {
+            question.setQuestionText(questionRequestDTO.getQuestionText());
+        }
+
+        if (questionRequestDTO.getQuestionType() != null) {
+            question.setQuestionType(QuestionType.valueOf(questionRequestDTO.getQuestionType()));
+        }
+
+        if (questionRequestDTO.getImageUrl() != null) {
+            question.setImageUrl(questionRequestDTO.getImageUrl());
+        }
+
+        if (questionRequestDTO.getTimeLimit() > 0) {
+            question.setTimeLimit(questionRequestDTO.getTimeLimit());
+        }
+
+        if (questionRequestDTO.getPoints() > 0) {
+            question.setPoints(questionRequestDTO.getPoints());
+        }
+
         if (questionRequestDTO.getQuizId() != null) {
             Quiz quiz = quizRepository.findById(questionRequestDTO.getQuizId()).orElseThrow(
                     () -> new IllegalArgumentException("Quiz not found with ID: " + questionRequestDTO.getQuizId()));
             question.setQuiz(quiz);
         }
 
-        // Cập nhật các thuộc tính câu hỏi
-        question.setQuestionText(questionRequestDTO.getQuestionText());
-        question.setQuestionType(QuestionType.valueOf(questionRequestDTO.getQuestionType()));
-        question.setTimeLimit(questionRequestDTO.getTimeLimit());
-        question.setPoints(questionRequestDTO.getPoints());
+        // Xử lý cập nhật các Option
+        // Xử lý cập nhật các Option
+        if (questionRequestDTO.getOptions() != null) {
+            // Tìm tất cả các Option hiện tại trong cơ sở dữ liệu
+            List<Option> existingOptions = question.getOptions();
 
-        // Cập nhật danh sách Option
-        List<Option> updatedOptions = questionRequestDTO.getOptions().stream().map(optionDTO -> {
-            Option option = createOptionBasedOnQuestionType(optionDTO, questionRequestDTO.getQuestionType());
-            option.setQuestion(question);
-            return optionRepository.save(option);
-        }).toList();
-        question.setOptions(updatedOptions);
+            // Lưu danh sách các Option ID được xử lý
+            List<UUID> processedOptionIds = new ArrayList<>();
 
-        // Lưu câu hỏi cập nhật
+            // Cập nhật và thêm mới các Option
+            List<Option> updatedOptions = questionRequestDTO.getOptions().stream().map(optionDTO -> {
+                if (optionDTO.getOptionId() != null) {
+                    // Cập nhật Option đã tồn tại
+                    Option existingOption = optionRepository.findById(optionDTO.getOptionId()).orElseThrow(
+                            () -> new IllegalArgumentException("Option not found with ID: " + optionDTO.getOptionId()));
+                    updateOptionBasedOnType(existingOption, optionDTO);
+                    processedOptionIds.add(existingOption.getOptionId());
+                    return existingOption;
+                } else {
+                    // Thêm mới Option
+                    Option newOption = createOptionBasedOnQuestionType(optionDTO, questionRequestDTO.getQuestionType());
+                    newOption.setQuestion(question); // Liên kết với Question
+                    return newOption;
+                }
+            }).toList();
+
+            // Xóa các Option không còn tồn tại trong request
+            existingOptions.removeIf(option -> !processedOptionIds.contains(option.getOptionId()));
+
+            // Đồng bộ danh sách Option
+            question.getOptions().clear();
+            question.getOptions().addAll(updatedOptions);
+        }
+
+
+        // Lưu câu hỏi đã cập nhật
         Question updatedQuestion = questionRepository.save(question);
 
-        // Map sang DTO để trả về
+        // Map câu hỏi sang DTO để trả về
         QuestionResponseDTO responseDTO = modelMapper.map(updatedQuestion, QuestionResponseDTO.class);
-        responseDTO.setOptions(updatedOptions.stream()
+        responseDTO.setOptions(updatedQuestion.getOptions().stream()
                 .map(this::mapOptionToResponseDTO)
                 .collect(Collectors.toList()));
 
         return responseDTO;
     }
+
 
     @Override
     public QuestionResponseDTO softDeleteQuestion(UUID questionId) {
@@ -182,6 +227,24 @@ public class QuestionServiceImpl implements QuestionService {
 
             default:
                 throw new IllegalArgumentException("Unsupported question type: " + questionType);
+        }
+    }
+
+    private void updateOptionBasedOnType(Option existingOption, OptionRequestDTO optionDTO) {
+        if (existingOption instanceof MultipleChoiceOption) {
+            MultipleChoiceOption mcOption = (MultipleChoiceOption) existingOption;
+            mcOption.setOptionText(optionDTO.getOptionText());
+            mcOption.setCorrect(optionDTO.isCorrect());
+        } else if (existingOption instanceof TrueFalseOption) {
+            TrueFalseOption tfOption = (TrueFalseOption) existingOption;
+            tfOption.setOptionText(optionDTO.getOptionText());
+            tfOption.setValue(optionDTO.isCorrect());
+        } else if (existingOption instanceof FillInTheBlankOption) {
+            FillInTheBlankOption fbOption = (FillInTheBlankOption) existingOption;
+            fbOption.setOptionText(optionDTO.getOptionText());
+            fbOption.setCorrectAnswer(optionDTO.getOptionText()); // Dùng correct answer
+        } else {
+            throw new IllegalArgumentException("Unsupported option type");
         }
     }
 

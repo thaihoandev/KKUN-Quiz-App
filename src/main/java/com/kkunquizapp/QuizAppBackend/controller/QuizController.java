@@ -47,10 +47,10 @@ public class QuizController {
             return ResponseEntity.badRequest().body(null);
         }
     }
-    @PutMapping("/{quizId}/delete")
-    public ResponseEntity<QuizResponseDTO> deleteQuiz(@PathVariable UUID quizId, @RequestBody QuizRequestDTO quizRequestDTO) {
+    @DeleteMapping("/{quizId}/delete")
+    public ResponseEntity<QuizResponseDTO> deleteQuiz(@PathVariable UUID quizId) {
         try {
-            QuizResponseDTO responseDTO = quizService.deleteQuiz(quizId,quizRequestDTO);
+            QuizResponseDTO responseDTO = quizService.deleteQuiz(quizId);
             return ResponseEntity.ok(responseDTO);
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(null);

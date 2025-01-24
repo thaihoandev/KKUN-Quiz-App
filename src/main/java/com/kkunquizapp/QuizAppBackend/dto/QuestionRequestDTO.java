@@ -1,7 +1,6 @@
 package com.kkunquizapp.QuizAppBackend.dto;
 
 
-import com.kkunquizapp.QuizAppBackend.model.enums.QuestionStatus;
 import lombok.Data;
 
 import java.util.List;

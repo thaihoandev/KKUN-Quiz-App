@@ -1,6 +1,5 @@
 package com.kkunquizapp.QuizAppBackend.model;
 
-import com.kkunquizapp.QuizAppBackend.model.enums.QuestionStatus;
 import com.kkunquizapp.QuizAppBackend.model.enums.QuestionType;
 import jakarta.persistence.*;
 import lombok.Data;
@@ -47,9 +46,5 @@ public class Question {
     @OneToMany(mappedBy = "question", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<Option> options;
 
-    @Column(nullable = false)
-    @Enumerated(EnumType.STRING)
-    private QuestionStatus status = QuestionStatus.ACTIVE;
-    // Getters and Setters
 }
 

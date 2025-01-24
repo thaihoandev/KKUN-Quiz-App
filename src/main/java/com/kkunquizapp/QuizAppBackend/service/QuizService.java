@@ -11,7 +11,7 @@ public interface QuizService {
     QuizResponseDTO getQuizById(UUID quizId);
     QuizResponseDTO createQuiz(HttpServletRequest request, QuizRequestDTO quizRequestDTO);
     QuizResponseDTO updateQuiz(UUID quizId, QuizRequestDTO quizRequestDTO);
-    QuizResponseDTO deleteQuiz(UUID quizId, QuizRequestDTO quizRequestDTO);
+    QuizResponseDTO deleteQuiz(UUID quizId);
     void addViewerByEmail(UUID quizId, String email);
     void addEditorByEmail(UUID quizId,String email);
 }

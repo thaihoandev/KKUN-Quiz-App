@@ -45,7 +45,7 @@ public class QuestionController {
     }
 
     // Cập nhật thông tin câu hỏi
-    @PutMapping("/{questionId}")
+    @PutMapping("/{questionId}/edit")
     public ResponseEntity<QuestionResponseDTO> updateQuestion(
             @PathVariable UUID quizId,
             @PathVariable UUID questionId,
@@ -60,9 +60,8 @@ public class QuestionController {
     }
 
     // Xóa câu hỏi
-    @DeleteMapping("/{questionId}")
+    @DeleteMapping("/{questionId}/delete")
     public ResponseEntity<Void> deleteQuestion(
-            @PathVariable UUID quizId,
             @PathVariable UUID questionId) {
         try {
             questionService.softDeleteQuestion(questionId);
