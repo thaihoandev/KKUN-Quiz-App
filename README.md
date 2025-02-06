@@ -56,3 +56,4 @@ A backend service for a quiz application built using **Spring Boot**. This appli
    ```bash
    git clone https://github.com/thaihoandev/QuizAppBackend.git
    cd QuizAppBackend
+2. Run code
