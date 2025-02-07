@@ -115,7 +115,6 @@ public class QuestionServiceImpl implements QuestionService {
         }
 
         // Xử lý cập nhật các Option
-        // Xử lý cập nhật các Option
         if (questionRequestDTO.getOptions() != null) {
             // Tìm tất cả các Option hiện tại trong cơ sở dữ liệu
             List<Option> existingOptions = question.getOptions();

@@ -21,7 +21,7 @@ public class Game {
     private Quiz quiz;
 
     @ManyToOne
-    @JoinColumn(name = "host_id", nullable = false)
+    @JoinColumn(name = "host_id",referencedColumnName = "userId", nullable = false)
     private User host;
 
     @Column(nullable = false, length = 10)
