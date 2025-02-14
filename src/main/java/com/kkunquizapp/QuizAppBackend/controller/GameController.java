@@ -49,11 +49,6 @@ public class GameController {
         return ResponseEntity.ok(game);
     }
 
-    @GetMapping("/join/{pinCode}")
-    public ResponseEntity<GameResponseDTO> getGameByPinCode(@PathVariable String pinCode) {
-        GameResponseDTO response = gameService.findByPinCode(pinCode);
-        return ResponseEntity.ok(response);
-    }
 
     @GetMapping("/{gameId}/players")
     public ResponseEntity<List<PlayerResponseDTO>> getGamePlayers(@PathVariable UUID gameId) {

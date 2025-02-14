@@ -55,12 +55,13 @@ public class SecurityConfig {
         return http
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth
-
+                        .requestMatchers("/games/join").permitAll()
                         .requestMatchers("/user/**", "/quizzes/**", "/questions/**").hasAnyAuthority(UserRole.USER.name(), UserRole.ADMIN.name())
                         .requestMatchers("/admin/**").hasAnyAuthority(UserRole.ADMIN.name())
                         .requestMatchers("/profile/**").hasAnyAuthority(UserRole.USER.name())
                         .requestMatchers("/games/create", "/games/{gameId}/**").authenticated()
                         .anyRequest().permitAll()
+
                 )
                 .oauth2Login(oauth2 -> oauth2
                         .loginPage("/oauth2/authorization/google")

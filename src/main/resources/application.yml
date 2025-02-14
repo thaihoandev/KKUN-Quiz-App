@@ -29,6 +29,16 @@ spring:
     show-sql: true
     hibernate:
       ddl-auto: update
+  data:
+    redis:
+      host: ${REDIS_HOST_PATH}
+      port: 6379
+      timeout: 6000ms
+      lettuce:
+        pool:
+          max-active: 10
+          max-idle: 5
+          min-idle: 2
 server:
   port: 8080
   servlet:
@@ -43,6 +53,7 @@ logging:
             sql: TRACE
         tool:
           schema: DEBUG
+
 jwt:
   public-key-path: ${JWT_PUBLIC_KEY_PATH}
   private-key-path: ${JWT_PRIVATE_KEY_PATH}

@@ -17,6 +17,10 @@ import com.kkunquizapp.QuizAppBackend.service.JwtService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.modelmapper.ModelMapper;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 
@@ -37,38 +41,35 @@ public class GameServiceImpl implements GameService {
     private final ModelMapper modelMapper;
     private final JwtService jwtService;
     private final SimpMessagingTemplate messagingTemplate;
+    private final RedisTemplate<String, Object> redisTemplate;
+    @Autowired
+    private StringRedisTemplate stringRedisTemplate;
+
+    private static final String GAME_STATUS_KEY = "game_status:";
+    private static final String GAME_PLAYERS_KEY = "game_players:";
+    private static final String PLAYER_SCORE_KEY = "player_scores:";
 
     @Override
     public GameResponseDTO startGameFromQuiz(UUID quizId, String token) {
-        // Xác thực và lấy thông tin host
         String hostId = jwtService.getUserIdFromToken(token.replace("Bearer ", ""));
         User host = userRepository.findById(UUID.fromString(hostId))
                 .orElseThrow(() -> new RuntimeException("Host không tồn tại"));
 
-        // Kiểm tra xem host có game nào chưa kết thúc hay không
-        boolean hasActiveGame = gameRepository.existsByHost_UserIdAndStatusNot(host.getUserId(), GameStatus.COMPLETED);
-        if (hasActiveGame) {
-            throw new RuntimeException("Bạn đang có một game khác chưa kết thúc. Hãy kết thúc game trước khi tạo mới.");
+        if (gameRepository.existsByHost_UserIdAndStatusNot(host.getUserId(), GameStatus.COMPLETED)) {
+            throw new RuntimeException("Bạn có một game chưa kết thúc. Hãy hoàn thành trước khi tạo mới.");
         }
 
-        // Lấy thông tin quiz
         Quiz quiz = quizRepository.findById(quizId)
                 .orElseThrow(() -> new RuntimeException("Quiz không tồn tại"));
 
-        // Tạo mã PIN độc nhất
-        String pinCode = generateUniquePinCode();
-
-        // Tạo game mới
         Game game = new Game();
         game.setQuiz(quiz);
         game.setHost(host);
-        game.setPinCode(pinCode);
+        game.setPinCode(generateUniquePinCode());
         game.setStatus(GameStatus.WAITING);
         game.setStartTime(LocalDateTime.now());
 
         Game savedGame = gameRepository.save(game);
-
-        // Chuyển đổi và gửi thông báo
         GameResponseDTO responseDTO = convertToGameDTO(savedGame);
         messagingTemplate.convertAndSend("/topic/games/new", responseDTO);
 
@@ -78,23 +79,15 @@ public class GameServiceImpl implements GameService {
 
     @Override
     public GameResponseDTO startGame(UUID gameId, String token) {
-        String hostId = jwtService.getUserIdFromToken(token.replace("Bearer ", ""));
-        User host = userRepository.findById(UUID.fromString(hostId))
-                .orElseThrow(() -> new RuntimeException("Host không tồn tại"));
-
-        Game game = gameRepository.findById(gameId)
-                .orElseThrow(() -> new RuntimeException("Game không tồn tại"));
-
-        if (!game.getHost().getUserId().equals(host.getUserId())) {
-            throw new RuntimeException("Bạn không có quyền bắt đầu game này");
-        }
+        Game game = validateHostAndGame(gameId, token);
 
         if (!game.getStatus().equals(GameStatus.WAITING)) {
-            throw new RuntimeException("Game đã được bắt đầu hoặc đã kết thúc");
+            throw new RuntimeException("Game đã bắt đầu hoặc kết thúc");
         }
 
         game.setStatus(GameStatus.IN_PROGRESS);
         Game savedGame = gameRepository.save(game);
+        redisTemplate.opsForValue().set(GAME_STATUS_KEY + gameId, GameStatus.IN_PROGRESS.name());
 
         GameResponseDTO responseDTO = convertToGameDTO(savedGame);
         messagingTemplate.convertAndSend("/topic/game/" + gameId + "/status", responseDTO);
@@ -102,8 +95,30 @@ public class GameServiceImpl implements GameService {
         return responseDTO;
     }
 
+    public GameStatus getGameStatus(UUID gameId) {
+        ValueOperations<String, String> ops = stringRedisTemplate.opsForValue();
+        String status = ops.get(GAME_STATUS_KEY + gameId);
+        return status != null ? GameStatus.valueOf(status) : null;
+    }
+
     @Override
     public GameResponseDTO endGame(UUID gameId, String token) {
+        Game game = validateHostAndGame(gameId, token);
+        game.setStatus(GameStatus.COMPLETED);
+        game.setEndTime(LocalDateTime.now());
+
+        gameRepository.save(game);
+        redisTemplate.delete(GAME_STATUS_KEY + gameId);
+        redisTemplate.delete(GAME_PLAYERS_KEY + gameId);
+        redisTemplate.delete(PLAYER_SCORE_KEY + gameId);
+
+        GameResponseDTO responseDTO = convertToGameDTO(game);
+        messagingTemplate.convertAndSend("/topic/game/" + gameId + "/status", responseDTO);
+
+        return responseDTO;
+    }
+
+    private Game validateHostAndGame(UUID gameId, String token) {
         String hostId = jwtService.getUserIdFromToken(token.replace("Bearer ", ""));
         User host = userRepository.findById(UUID.fromString(hostId))
                 .orElseThrow(() -> new RuntimeException("Host không tồn tại"));
@@ -112,32 +127,16 @@ public class GameServiceImpl implements GameService {
                 .orElseThrow(() -> new RuntimeException("Game không tồn tại"));
 
         if (!game.getHost().getUserId().equals(host.getUserId())) {
-            throw new RuntimeException("Bạn không có quyền kết thúc game này");
+            throw new RuntimeException("Bạn không có quyền thao tác trên game này");
         }
-
-        game.setStatus(GameStatus.COMPLETED);
-        game.setEndTime(LocalDateTime.now());
-        Game savedGame = gameRepository.save(game);
-
-        GameResponseDTO responseDTO = convertToGameDTO(savedGame);
-        messagingTemplate.convertAndSend("/topic/game/" + gameId + "/status", responseDTO);
-
-        return responseDTO;
+        return game;
     }
 
-    @Override
-    public GameResponseDTO findByPinCode(String pinCode) {
-        Game game = gameRepository.findByPinCode(pinCode)
-                .orElseThrow(() -> new RuntimeException("Game không tồn tại hoặc đã kết thúc"));
 
-        return modelMapper.map(game, GameResponseDTO.class);
-    }
-
-    @Override
     public List<PlayerResponseDTO> getPlayersInGame(UUID gameId) {
-        List<Player> players = playerRepository.findByGame_GameId(gameId);
+        List<Object> players = redisTemplate.opsForHash().values(GAME_PLAYERS_KEY + gameId);
         return players.stream()
-                .map(this::convertToPlayerDTO)
+                .map(obj -> (PlayerResponseDTO) obj)
                 .collect(Collectors.toList());
     }
 
@@ -153,9 +152,9 @@ public class GameServiceImpl implements GameService {
         Player player = new Player();
         player.setGame(game);
         player.setNickname(request.getNickname());
-        player.setScore(0); // Khởi tạo điểm số ban đầu
+        player.setScore(0);
+        player.setAnonymous(true);
 
-        // Nếu có token và không phải anonymous, liên kết với user
         if (token != null ) {
             String userIdStr = jwtService.getUserIdFromToken(token.replace("Bearer ", ""));
             UUID userId = UUID.fromString(userIdStr);
@@ -168,7 +167,9 @@ public class GameServiceImpl implements GameService {
         Player savedPlayer = playerRepository.save(player);
         PlayerResponseDTO responseDTO = convertToPlayerDTO(savedPlayer);
 
-        // Thông báo người chơi mới
+        // Lưu vào Redis danh sách người chơi của game
+        redisTemplate.opsForHash().put(GAME_PLAYERS_KEY + game.getGameId(), savedPlayer.getPlayerId().toString(), responseDTO);
+
         messagingTemplate.convertAndSend("/topic/game/" + game.getGameId() + "/players", getPlayersInGame(game.getGameId()));
 
         return responseDTO;
@@ -176,28 +177,22 @@ public class GameServiceImpl implements GameService {
 
 
     private String generateUniquePinCode() {
-        String pinCode;
-        int maxAttempts = 10;
-        int attempts = 0;
         Random random = new Random();
-
+        String pinCode;
         do {
-            // Sinh mã PIN gồm 6 chữ số
             pinCode = String.format("%06d", random.nextInt(1000000));
-
-            attempts++;
-            if (!gameRepository.existsByPinCode(pinCode)) {
-                break;
-            }
-        } while (attempts < maxAttempts);
-
-        if (attempts >= maxAttempts) {
-            throw new RuntimeException("Không thể tạo PIN code độc nhất");
-        }
-
+        } while (gameRepository.existsByPinCode(pinCode));
         return pinCode;
     }
 
+    public void updatePlayerScore(UUID gameId, UUID playerId, int score) {
+        redisTemplate.opsForHash().put(PLAYER_SCORE_KEY + gameId, playerId.toString(), String.valueOf(score));
+    }
+
+    public int getPlayerScore(UUID gameId, UUID playerId) {
+        String score = (String) redisTemplate.opsForHash().get(PLAYER_SCORE_KEY + gameId, playerId.toString());
+        return score != null ? Integer.parseInt(score) : 0;
+    }
 
     private GameResponseDTO convertToGameDTO(Game game) {
         GameResponseDTO dto = modelMapper.map(game, GameResponseDTO.class);
@@ -209,7 +204,9 @@ public class GameServiceImpl implements GameService {
     private PlayerResponseDTO convertToPlayerDTO(Player player) {
         PlayerResponseDTO dto = modelMapper.map(player, PlayerResponseDTO.class);
         dto.setGameId(player.getGame().getGameId());
-        dto.setUserId(player.getUser().getUserId());
+        if(player.getUser() != null){
+            dto.setUserId(player.getUser().getUserId());
+        }
         return dto;
     }
 }
