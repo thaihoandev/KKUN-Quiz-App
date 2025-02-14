@@ -142,38 +142,57 @@ public class GameServiceImpl implements GameService {
 
     @Override
     public PlayerResponseDTO joinGame(String pinCode, String token, PlayerRequestDTO request) {
-        Game game = gameRepository.findByPinCode(pinCode)
-                .orElseThrow(() -> new RuntimeException("Game không tồn tại hoặc đã kết thúc"));
+        try {
+            // Kiểm tra game tồn tại
+            Game game = gameRepository.findByPinCode(pinCode)
+                    .orElseThrow(() -> new RuntimeException("Game không tồn tại hoặc đã kết thúc"));
 
-        if (!game.getStatus().equals(GameStatus.WAITING)) {
-            throw new RuntimeException("Game đã bắt đầu hoặc đã kết thúc");
+            // Kiểm tra trạng thái game
+            if (!game.getStatus().equals(GameStatus.WAITING)) {
+                throw new RuntimeException("Game đã bắt đầu hoặc đã kết thúc");
+            }
+
+            // Tạo người chơi mới
+            Player player = new Player();
+            player.setGame(game);
+            player.setNickname(request.getNickname());
+            player.setScore(0);
+            player.setAnonymous(true);
+
+            // Kiểm tra JWT token và liên kết người chơi với user nếu có
+            if (token != null) {
+                String userIdStr = jwtService.getUserIdFromToken(token.replace("Bearer ", ""));
+                UUID userId = UUID.fromString(userIdStr);
+                User user = userRepository.findById(userId)
+                        .orElseThrow(() -> new RuntimeException("User không tồn tại"));
+                player.setUser(user);
+                player.setAnonymous(false);
+            }
+
+            // Lưu người chơi vào database
+            Player savedPlayer = playerRepository.save(player);
+            PlayerResponseDTO responseDTO = convertToPlayerDTO(savedPlayer);
+
+            // Kiểm tra nếu nickname đã tồn tại trong Redis
+            boolean nicknameExistsInRedis = redisTemplate.opsForHash().hasKey(GAME_PLAYERS_KEY + game.getGameId(), request.getNickname());
+            if (nicknameExistsInRedis) {
+                throw new RuntimeException("Nickname này đã được sử dụng. Vui lòng chọn nickname khác.");
+            }
+
+            // Lưu người chơi vào Redis
+            redisTemplate.opsForHash().put(GAME_PLAYERS_KEY + game.getGameId(), request.getNickname(), responseDTO);
+
+            // Gửi thông báo tới WebSocket về người chơi mới
+            messagingTemplate.convertAndSend("/topic/game/" + game.getGameId() + "/players", getPlayersInGame(game.getGameId()));
+
+            return responseDTO;
+        } catch (RuntimeException e) {
+            log.error("Lỗi khi người chơi tham gia game: {}", e.getMessage());
+            throw new RuntimeException("Không thể tham gia game: " + e.getMessage());
         }
-
-        Player player = new Player();
-        player.setGame(game);
-        player.setNickname(request.getNickname());
-        player.setScore(0);
-        player.setAnonymous(true);
-
-        if (token != null ) {
-            String userIdStr = jwtService.getUserIdFromToken(token.replace("Bearer ", ""));
-            UUID userId = UUID.fromString(userIdStr);
-            User user = userRepository.findById(userId)
-                    .orElseThrow(() -> new RuntimeException("User không tồn tại"));
-            player.setUser(user);
-            player.setAnonymous(false);
-        }
-
-        Player savedPlayer = playerRepository.save(player);
-        PlayerResponseDTO responseDTO = convertToPlayerDTO(savedPlayer);
-
-        // Lưu vào Redis danh sách người chơi của game
-        redisTemplate.opsForHash().put(GAME_PLAYERS_KEY + game.getGameId(), savedPlayer.getPlayerId().toString(), responseDTO);
-
-        messagingTemplate.convertAndSend("/topic/game/" + game.getGameId() + "/players", getPlayersInGame(game.getGameId()));
-
-        return responseDTO;
     }
+
+
 
 
     private String generateUniquePinCode() {
