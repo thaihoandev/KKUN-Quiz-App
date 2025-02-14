@@ -13,6 +13,6 @@ public interface GameService {
     GameResponseDTO startGame(UUID gameId, String token);
     GameResponseDTO endGame(UUID gameId, String token);
     GameResponseDTO findByPinCode(String pinCode);
-    List<PlayerResponseDTO> getPlayers(UUID gameId);
+    List<PlayerResponseDTO> getPlayersInGame(UUID gameId);
     PlayerResponseDTO joinGame(String pinCode, String token, PlayerRequestDTO request);
 }

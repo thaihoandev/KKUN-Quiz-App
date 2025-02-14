@@ -208,7 +208,7 @@ public class QuestionServiceImpl implements QuestionService {
 
     /**
      * Tạo Option dựa trên loại câu hỏi (questionType).
-     */
+            */
     private Option createOptionBasedOnQuestionType(OptionRequestDTO optionDTO, String questionType) {
         switch (questionType) {
             case QuestionType.MULTIPLE_CHOICE_TYPE:
@@ -247,10 +247,6 @@ public class QuestionServiceImpl implements QuestionService {
         }
     }
 
-
-    /**
-     * Map từ Option entity sang OptionResponseDTO dựa trên loại Option.
-     */
     private OptionResponseDTO mapOptionToResponseDTO(Option option) {
         if (option instanceof MultipleChoiceOption) {
             return modelMapper.map(option, OptionResponseDTO.class);

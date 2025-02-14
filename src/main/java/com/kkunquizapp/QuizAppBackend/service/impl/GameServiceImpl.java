@@ -134,7 +134,7 @@ public class GameServiceImpl implements GameService {
     }
 
     @Override
-    public List<PlayerResponseDTO> getPlayers(UUID gameId) {
+    public List<PlayerResponseDTO> getPlayersInGame(UUID gameId) {
         List<Player> players = playerRepository.findByGame_GameId(gameId);
         return players.stream()
                 .map(this::convertToPlayerDTO)
@@ -169,7 +169,7 @@ public class GameServiceImpl implements GameService {
         PlayerResponseDTO responseDTO = convertToPlayerDTO(savedPlayer);
 
         // Thông báo người chơi mới
-        messagingTemplate.convertAndSend("/topic/game/" + game.getGameId() + "/players", getPlayers(game.getGameId()));
+        messagingTemplate.convertAndSend("/topic/game/" + game.getGameId() + "/players", getPlayersInGame(game.getGameId()));
 
         return responseDTO;
     }

@@ -57,7 +57,7 @@ public class GameController {
 
     @GetMapping("/{gameId}/players")
     public ResponseEntity<List<PlayerResponseDTO>> getGamePlayers(@PathVariable UUID gameId) {
-        List<PlayerResponseDTO> players = gameService.getPlayers(gameId);
+        List<PlayerResponseDTO> players = gameService.getPlayersInGame(gameId);
         return ResponseEntity.ok(players);
     }
 
