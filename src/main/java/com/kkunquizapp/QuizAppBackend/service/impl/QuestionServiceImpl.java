@@ -1,17 +1,26 @@
 package com.kkunquizapp.QuizAppBackend.service.impl;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kkunquizapp.QuizAppBackend.dto.OptionRequestDTO;
 import com.kkunquizapp.QuizAppBackend.dto.OptionResponseDTO;
 import com.kkunquizapp.QuizAppBackend.dto.QuestionRequestDTO;
 import com.kkunquizapp.QuizAppBackend.dto.QuestionResponseDTO;
+import com.kkunquizapp.QuizAppBackend.exception.GameStateException;
 import com.kkunquizapp.QuizAppBackend.model.*;
 import com.kkunquizapp.QuizAppBackend.model.enums.QuestionType;
 import com.kkunquizapp.QuizAppBackend.repo.OptionRepo;
 import com.kkunquizapp.QuizAppBackend.repo.QuestionRepo;
 import com.kkunquizapp.QuizAppBackend.repo.QuizRepo;
 import com.kkunquizapp.QuizAppBackend.service.QuestionService;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.modelmapper.ModelMapper;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,18 +30,19 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
+@RequiredArgsConstructor
+@Slf4j
 public class QuestionServiceImpl implements QuestionService {
-    @Autowired
-    private QuizRepo quizRepository;
 
-    @Autowired
-    private QuestionRepo questionRepository;
+    private final QuizRepo quizRepository;
+    private final QuestionRepo questionRepository;
+    private final OptionRepo optionRepository;
+    private final ModelMapper modelMapper;
+    private final SimpMessagingTemplate messagingTemplate;
+    private final RedisTemplate<String, Object> redisTemplate;
+    private final StringRedisTemplate stringRedisTemplate;
 
-    @Autowired
-    private OptionRepo optionRepository;
-
-    @Autowired
-    private ModelMapper modelMapper;
+    private static final String GAME_QUESTION_KEY = "game_questions:";
 
     @Override
     public QuestionResponseDTO addQuestion(QuestionRequestDTO questionRequestDTO) {
@@ -258,4 +268,46 @@ public class QuestionServiceImpl implements QuestionService {
             throw new IllegalArgumentException("Unsupported option type");
         }
     }
+    private QuestionResponseDTO convertToQuestionDTO(Question question) {
+        QuestionResponseDTO responseDTO = modelMapper.map(question, QuestionResponseDTO.class);
+
+        // Chuyển đổi danh sách options
+        responseDTO.setOptions(question.getOptions().stream()
+                .map(this::mapOptionToResponseDTO)
+                .collect(Collectors.toList()));
+
+        return responseDTO;
+    }
+
+
+
+    public void sendNextQuestionToPlayers(Game game, List<QuestionResponseDTO> allQuestions) {
+        // Lấy chỉ số câu hỏi hiện tại từ Redis
+        String currentQuestionIndexKey = GAME_QUESTION_KEY + game.getGameId() + ":index";
+        Integer currentQuestionIndex = (Integer) redisTemplate.opsForValue().get(currentQuestionIndexKey);
+
+        if (currentQuestionIndex == null) {
+            currentQuestionIndex = 0; // Default bắt đầu từ câu hỏi đầu tiên
+        }
+
+        // Tính chỉ số câu hỏi tiếp theo
+        currentQuestionIndex++;
+        if (currentQuestionIndex >= allQuestions.size()) {
+            throw new GameStateException("Không còn câu hỏi nào để gửi.");
+        }
+
+        // Lưu chỉ số câu hỏi tiếp theo vào Redis
+        redisTemplate.opsForValue().set(currentQuestionIndexKey, currentQuestionIndex);
+
+        // Lấy câu hỏi tiếp theo
+        QuestionResponseDTO nextQuestion = allQuestions.get(currentQuestionIndex);
+
+        // Gửi câu hỏi qua WebSocket
+        messagingTemplate.convertAndSend("/topic/game/" + game.getGameId() + "/question", nextQuestion);
+
+        // Log để kiểm tra
+        log.info("Đã gửi câu hỏi tiếp theo cho game {}: {}", game.getGameId(), nextQuestion);
+    }
+
+
 }

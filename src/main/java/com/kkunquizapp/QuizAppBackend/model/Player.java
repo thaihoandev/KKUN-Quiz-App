@@ -18,9 +18,8 @@ public class Player {
     @JoinColumn(name = "game_id", nullable = false)
     private Game game;
 
-    @ManyToOne
-    @JoinColumn(name = "user_id", nullable = true)
-    private User user; // Null if anonymous player
+    @Column(name = "user_id", nullable = true)
+    private UUID userId; // Lưu UUID thay vì object User
 
     @Column(nullable = false, length = 100)
     private String nickname;
@@ -31,6 +30,7 @@ public class Player {
     @Column(nullable = false)
     private boolean isAnonymous;
 
+    private boolean isInGame = true;
     // Getters and Setters
 }
 

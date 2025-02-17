@@ -13,4 +13,6 @@ public class PlayerResponseDTO {
     private String nickname;
     private int score;
     private boolean isAnonymous;
+    private boolean isInGame;
+
 }

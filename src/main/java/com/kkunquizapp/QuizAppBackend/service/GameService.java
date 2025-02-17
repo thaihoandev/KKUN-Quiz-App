@@ -16,4 +16,6 @@ public interface GameService {
     List<PlayerResponseDTO> getPlayersInGame(UUID gameId);
     PlayerResponseDTO joinGame(String pinCode, String token, PlayerRequestDTO request);
     GameStatus getGameStatus(UUID gameId);
+    void playerExitBeforeStart(UUID gameId, UUID playerId);
+    void playerExit(UUID gameId, UUID playerId);
 }
