@@ -3,10 +3,7 @@ package com.kkunquizapp.QuizAppBackend.service.impl;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.kkunquizapp.QuizAppBackend.dto.OptionRequestDTO;
-import com.kkunquizapp.QuizAppBackend.dto.OptionResponseDTO;
-import com.kkunquizapp.QuizAppBackend.dto.QuestionRequestDTO;
-import com.kkunquizapp.QuizAppBackend.dto.QuestionResponseDTO;
+import com.kkunquizapp.QuizAppBackend.dto.*;
 import com.kkunquizapp.QuizAppBackend.exception.GameStateException;
 import com.kkunquizapp.QuizAppBackend.model.*;
 import com.kkunquizapp.QuizAppBackend.model.enums.QuestionType;
@@ -21,12 +18,15 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.scheduling.TaskScheduler;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 @Service
@@ -38,6 +38,7 @@ public class QuestionServiceImpl implements QuestionService {
     private final QuestionRepo questionRepository;
     private final OptionRepo optionRepository;
     private final ModelMapper modelMapper;
+    private final TaskScheduler taskScheduler;
     private final SimpMessagingTemplate messagingTemplate;
     private final RedisTemplate<String, Object> redisTemplate;
     private final StringRedisTemplate stringRedisTemplate;
@@ -281,33 +282,78 @@ public class QuestionServiceImpl implements QuestionService {
 
 
 
-    public void sendNextQuestionToPlayers(Game game, List<QuestionResponseDTO> allQuestions) {
-        // Lấy chỉ số câu hỏi hiện tại từ Redis
+    public void sendQuestionToPlayers(Game game, List<QuestionResponseDTO> allQuestions) {
         String currentQuestionIndexKey = GAME_QUESTION_KEY + game.getGameId() + ":index";
+
+        // Lấy index trong Redis, nếu chưa có thì khởi tạo = 0
         Integer currentQuestionIndex = (Integer) redisTemplate.opsForValue().get(currentQuestionIndexKey);
-
         if (currentQuestionIndex == null) {
-            currentQuestionIndex = 0; // Default bắt đầu từ câu hỏi đầu tiên
+            currentQuestionIndex = 0;
+            redisTemplate.opsForValue().set(currentQuestionIndexKey, currentQuestionIndex);
         }
 
-        // Tính chỉ số câu hỏi tiếp theo
-        currentQuestionIndex++;
+        // Kiểm tra hết câu hỏi chưa
         if (currentQuestionIndex >= allQuestions.size()) {
-            throw new GameStateException("Không còn câu hỏi nào để gửi.");
+            // Game đã hoàn thành
+            redisTemplate.delete(currentQuestionIndexKey);
+            log.info("Game {} đã hoàn thành, không còn câu hỏi nào.", game.getGameId());
+            return;
         }
 
-        // Lưu chỉ số câu hỏi tiếp theo vào Redis
-        redisTemplate.opsForValue().set(currentQuestionIndexKey, currentQuestionIndex);
+        // Lấy câu hỏi hiện tại
+        QuestionResponseDTO currentQuestion = allQuestions.get(currentQuestionIndex);
 
-        // Lấy câu hỏi tiếp theo
-        QuestionResponseDTO nextQuestion = allQuestions.get(currentQuestionIndex);
+        // Gửi câu hỏi ngay bây giờ
+        messagingTemplate.convertAndSend("/topic/game/" + game.getGameId() + "/question", currentQuestion);
+        log.info("Đã gửi câu hỏi thứ {} cho game {}: {}", currentQuestionIndex, game.getGameId(), currentQuestion);
 
-        // Gửi câu hỏi qua WebSocket
-        messagingTemplate.convertAndSend("/topic/game/" + game.getGameId() + "/question", nextQuestion);
+        // Tăng chỉ số index cho câu tiếp theo
+        int nextQuestionIndex = currentQuestionIndex + 1;
+        redisTemplate.opsForValue().set(currentQuestionIndexKey, nextQuestionIndex);
 
-        // Log để kiểm tra
-        log.info("Đã gửi câu hỏi tiếp theo cho game {}: {}", game.getGameId(), nextQuestion);
+        // Lấy timeLimit (giây) của câu hỏi này
+        long timeLimit = currentQuestion.getTimeLimit();
+        if (timeLimit <= 0) {
+            // Nếu timeLimit <= 0, đặt mặc định 5 giây
+            timeLimit = 5;
+        }
+
+        // Sau khi hết thời gian trả lời, cho người chơi xem Leaderboard
+        // Ví dụ ta đặt thêm 5 giây để xem leaderboard
+        long leaderboardTime = 5;
+
+        // 1) Lập lịch gửi Leaderboard ngay khi hết timeLimit
+        taskScheduler.schedule(
+                () -> {
+                    sendLeaderboard(game);
+                },
+                Instant.now().plusSeconds(timeLimit)
+        );
+
+        // 2) Lập lịch gửi câu hỏi kế tiếp sau (timeLimit + leaderboardTime)
+        taskScheduler.schedule(
+                () -> {
+                    sendQuestionToPlayers(game, allQuestions);
+                },
+                Instant.now().plusSeconds(timeLimit + leaderboardTime)
+        );
     }
+
+    /**
+     * Ví dụ phương thức gửi Leaderboard
+     */
+    private void sendLeaderboard(Game game) {
+        // Lấy dữ liệu điểm số, xếp hạng...
+//        LeaderboardResponseDTO leaderboard = leaderboardService.getLeaderboardForGame(game);
+
+        // Gửi qua WebSocket
+//        messagingTemplate.convertAndSend("/topic/game/" + game.getGameId() + "/leaderboard", leaderboard);
+
+        log.info("Đã gửi leaderboard cho game {}", game.getGameId());
+    }
+
+
+
 
 
 }

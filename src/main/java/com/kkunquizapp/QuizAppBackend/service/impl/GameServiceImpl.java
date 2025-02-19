@@ -23,6 +23,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.http.HttpStatus;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.scheduling.TaskScheduler;
 import org.springframework.stereotype.Service;
 import org.springframework.web.bind.annotation.ResponseStatus;
 
@@ -46,6 +47,7 @@ public class GameServiceImpl implements GameService {
     private final ModelMapper modelMapper;
     private final JwtService jwtService;
     private final QuestionService questionService;
+    private final TaskScheduler taskScheduler;
     private final SimpMessagingTemplate messagingTemplate;
     private final RedisTemplate<String, Object> redisTemplate;
     @Autowired
@@ -83,7 +85,6 @@ public class GameServiceImpl implements GameService {
         return responseDTO;
     }
 
-
     @Override
     public GameResponseDTO startGame(UUID gameId, String token) {
         Game game = validateHostAndGame(gameId, token);
@@ -95,13 +96,11 @@ public class GameServiceImpl implements GameService {
         List<QuestionResponseDTO> allQuestions = loadQuestions(game);
         Game savedGame = updateGameStatus(game);
 
-        // Gửi câu hỏi đầu tiên và tiếp theo
+        // Gửi câu hỏi đầu tiên
         sendGameUpdates(savedGame, allQuestions);
-        questionService.sendNextQuestionToPlayers(savedGame, allQuestions);  // Gửi câu hỏi tiếp theo
 
         return convertToGameDTO(savedGame);
     }
-
 
     private List<QuestionResponseDTO> loadQuestions(Game game) {
         String questionKey = GAME_QUESTION_KEY + game.getGameId();
@@ -189,26 +188,13 @@ public class GameServiceImpl implements GameService {
             // Gửi cập nhật trạng thái game
             GameResponseDTO responseDTO = convertToGameDTO(game);
             messagingTemplate.convertAndSend("/topic/game/" + game.getGameId() + "/status", responseDTO);
-
-            // Gửi câu hỏi đầu tiên
-            if (!questions.isEmpty()) {
-                QuestionResponseDTO firstQuestion = questions.get(0);
-                messagingTemplate.convertAndSend("/topic/game/" + game.getGameId() + "/question", firstQuestion);
-                log.info("Đã gửi câu hỏi đầu tiên cho game {}", game.getGameId());
-
-                // Lưu chỉ số câu hỏi đầu tiên vào Redis
-                String currentQuestionIndexKey = GAME_QUESTION_KEY + game.getGameId() + ":index";
-                redisTemplate.opsForValue().set(currentQuestionIndexKey, 0);  // Đặt chỉ số câu hỏi đầu tiên là 0
-            }
+            questionService.sendQuestionToPlayers(game, questions);  // Gửi câu hỏi tiếp theo
 
         } catch (Exception e) {
             log.error("Lỗi khi gửi cập nhật qua WebSocket: {}", e.getMessage());
             throw new GameStateException("Không thể gửi cập nhật game qua WebSocket");
         }
     }
-
-
-
 
     public GameStatus getGameStatus(UUID gameId) {
         ValueOperations<String, String> ops = stringRedisTemplate.opsForValue();
@@ -223,15 +209,26 @@ public class GameServiceImpl implements GameService {
         game.setEndTime(LocalDateTime.now());
 
         gameRepository.save(game);
-        redisTemplate.delete(GAME_STATUS_KEY + gameId);
-        redisTemplate.delete(GAME_PLAYERS_KEY + gameId);
-        redisTemplate.delete(PLAYER_SCORE_KEY + gameId);
+
+        // Xóa tất cả trạng thái liên quan trong Redis
+        try {
+            redisTemplate.delete(GAME_STATUS_KEY + gameId);
+            redisTemplate.delete(GAME_PLAYERS_KEY + gameId);
+            redisTemplate.delete(PLAYER_SCORE_KEY + gameId);
+            redisTemplate.delete(GAME_QUESTION_KEY + gameId); // Xóa danh sách câu hỏi
+            redisTemplate.delete(GAME_QUESTION_KEY + gameId + ":index"); // Xóa chỉ số câu hỏi hiện tại
+
+            log.info("Đã xóa trạng thái game khỏi Redis cho gameId: {}", gameId);
+        } catch (Exception e) {
+            log.error("Lỗi khi xóa trạng thái game khỏi Redis: {}", e.getMessage());
+        }
 
         GameResponseDTO responseDTO = convertToGameDTO(game);
         messagingTemplate.convertAndSend("/topic/game/" + gameId + "/status", responseDTO);
 
         return responseDTO;
     }
+
 
     private Game validateHostAndGame(UUID gameId, String token) {
         String hostId = jwtService.getUserIdFromToken(token.replace("Bearer ", ""));
@@ -260,7 +257,6 @@ public class GameServiceImpl implements GameService {
         }
     }
 
-
     public List<PlayerResponseDTO> getPlayersInGame(UUID gameId) {
         // Lấy tất cả người chơi từ Redis
         List<Object> players = redisTemplate.opsForHash().values(GAME_PLAYERS_KEY + gameId);
@@ -277,11 +273,6 @@ public class GameServiceImpl implements GameService {
             // Kiểm tra game tồn tại
             Game game = gameRepository.findByPinCode(pinCode)
                     .orElseThrow(() -> new RuntimeException("Game không tồn tại hoặc đã kết thúc"));
-
-            // Kiểm tra trạng thái game
-            if (!game.getStatus().equals(GameStatus.WAITING)) {
-                throw new RuntimeException("Game đã bắt đầu. Không thể tham gia nữa.");
-            }
 
             // Kiểm tra nếu playerId đã tồn tại trong session
             UUID playerIdFromSession = request.getPlayerSession();
@@ -307,7 +298,10 @@ public class GameServiceImpl implements GameService {
                     }
                 }
             }
-
+            // Kiểm tra trạng thái game
+            if (!game.getStatus().equals(GameStatus.WAITING)) {
+                throw new RuntimeException("Game đã bắt đầu. Không thể tham gia nữa.");
+            }
             // Nếu playerId không có trong session hoặc không tồn tại trong database, tạo người chơi mới
             Player player = new Player();
             player.setGame(game);
@@ -350,7 +344,6 @@ public class GameServiceImpl implements GameService {
             throw new RuntimeException("Không thể tham gia game: " + e.getMessage());
         }
     }
-
 
     private String generateUniquePinCode() {
         Random random = new Random();
@@ -410,7 +403,6 @@ public class GameServiceImpl implements GameService {
         dto.setHostId(game.getHost().getUserId());
         return dto;
     }
-
     private PlayerResponseDTO convertToPlayerDTO(Player player) {
         PlayerResponseDTO dto = modelMapper.map(player, PlayerResponseDTO.class);
         dto.setGameId(player.getGame().getGameId());
