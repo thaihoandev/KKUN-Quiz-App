@@ -10,6 +10,8 @@ import com.kkunquizapp.QuizAppBackend.model.enums.QuestionType;
 import com.kkunquizapp.QuizAppBackend.repo.OptionRepo;
 import com.kkunquizapp.QuizAppBackend.repo.QuestionRepo;
 import com.kkunquizapp.QuizAppBackend.repo.QuizRepo;
+import com.kkunquizapp.QuizAppBackend.service.GameService;
+import com.kkunquizapp.QuizAppBackend.service.LeaderboardService;
 import com.kkunquizapp.QuizAppBackend.service.QuestionService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -39,9 +41,11 @@ public class QuestionServiceImpl implements QuestionService {
     private final OptionRepo optionRepository;
     private final ModelMapper modelMapper;
     private final TaskScheduler taskScheduler;
+    private final LeaderboardService leaderboardService;
+
+    private GameService gameService;
     private final SimpMessagingTemplate messagingTemplate;
     private final RedisTemplate<String, Object> redisTemplate;
-    private final StringRedisTemplate stringRedisTemplate;
 
     private static final String GAME_QUESTION_KEY = "game_questions:";
 
@@ -285,75 +289,50 @@ public class QuestionServiceImpl implements QuestionService {
     public void sendQuestionToPlayers(Game game, List<QuestionResponseDTO> allQuestions) {
         String currentQuestionIndexKey = GAME_QUESTION_KEY + game.getGameId() + ":index";
 
-        // Lấy index trong Redis, nếu chưa có thì khởi tạo = 0
-        Integer currentQuestionIndex = (Integer) redisTemplate.opsForValue().get(currentQuestionIndexKey);
-        if (currentQuestionIndex == null) {
-            currentQuestionIndex = 0;
-            redisTemplate.opsForValue().set(currentQuestionIndexKey, currentQuestionIndex);
+        try {
+            Integer currentQuestionIndex = (Integer) redisTemplate.opsForValue().get(currentQuestionIndexKey);
+            if (currentQuestionIndex == null) {
+                currentQuestionIndex = 0;
+                redisTemplate.opsForValue().set(currentQuestionIndexKey, currentQuestionIndex);
+            }
+
+            // Kiểm tra nếu đã hết câu hỏi
+            if (currentQuestionIndex >= allQuestions.size()) {
+                redisTemplate.delete(currentQuestionIndexKey);
+                log.info("Game {} đã hoàn thành, gửi cập nhật cuối cùng.", game.getGameId());
+
+                // Gửi cập nhật trạng thái cuối cùng trước khi kết thúc game
+                taskScheduler.schedule(
+                        () -> gameService.sendGameUpdates(game, allQuestions, true),
+                        Instant.now().plusSeconds(5) // Delay để client có thời gian nhận thông tin
+                );
+                return;
+            }
+
+            QuestionResponseDTO currentQuestion = allQuestions.get(currentQuestionIndex);
+            messagingTemplate.convertAndSend("/topic/game/" + game.getGameId() + "/question", currentQuestion);
+
+            // Cập nhật index cho câu hỏi tiếp theo
+            redisTemplate.opsForValue().increment(currentQuestionIndexKey);
+
+            long timeLimit = currentQuestion.getTimeLimit() > 0 ? currentQuestion.getTimeLimit() : 5;
+            long leaderboardTime = 5;
+
+            // Schedule cập nhật bảng xếp hạng
+            taskScheduler.schedule(
+                    () -> leaderboardService.sendLeaderboard(game),
+                    Instant.now().plusSeconds(timeLimit)
+            );
+
+            // Schedule câu hỏi tiếp theo (nếu còn)
+            taskScheduler.schedule(
+                    () -> sendQuestionToPlayers(game, allQuestions),
+                    Instant.now().plusSeconds(timeLimit + leaderboardTime)
+            );
+
+        } catch (Exception e) {
+            log.error("Lỗi trong sendQuestionToPlayers cho game {}: {}", game.getGameId(), e.getMessage());
         }
-
-        // Kiểm tra hết câu hỏi chưa
-        if (currentQuestionIndex >= allQuestions.size()) {
-            // Game đã hoàn thành
-            redisTemplate.delete(currentQuestionIndexKey);
-            log.info("Game {} đã hoàn thành, không còn câu hỏi nào.", game.getGameId());
-            return;
-        }
-
-        // Lấy câu hỏi hiện tại
-        QuestionResponseDTO currentQuestion = allQuestions.get(currentQuestionIndex);
-
-        // Gửi câu hỏi ngay bây giờ
-        messagingTemplate.convertAndSend("/topic/game/" + game.getGameId() + "/question", currentQuestion);
-        log.info("Đã gửi câu hỏi thứ {} cho game {}: {}", currentQuestionIndex, game.getGameId(), currentQuestion);
-
-        // Tăng chỉ số index cho câu tiếp theo
-        int nextQuestionIndex = currentQuestionIndex + 1;
-        redisTemplate.opsForValue().set(currentQuestionIndexKey, nextQuestionIndex);
-
-        // Lấy timeLimit (giây) của câu hỏi này
-        long timeLimit = currentQuestion.getTimeLimit();
-        if (timeLimit <= 0) {
-            // Nếu timeLimit <= 0, đặt mặc định 5 giây
-            timeLimit = 5;
-        }
-
-        // Sau khi hết thời gian trả lời, cho người chơi xem Leaderboard
-        // Ví dụ ta đặt thêm 5 giây để xem leaderboard
-        long leaderboardTime = 5;
-
-        // 1) Lập lịch gửi Leaderboard ngay khi hết timeLimit
-        taskScheduler.schedule(
-                () -> {
-                    sendLeaderboard(game);
-                },
-                Instant.now().plusSeconds(timeLimit)
-        );
-
-        // 2) Lập lịch gửi câu hỏi kế tiếp sau (timeLimit + leaderboardTime)
-        taskScheduler.schedule(
-                () -> {
-                    sendQuestionToPlayers(game, allQuestions);
-                },
-                Instant.now().plusSeconds(timeLimit + leaderboardTime)
-        );
     }
-
-    /**
-     * Ví dụ phương thức gửi Leaderboard
-     */
-    private void sendLeaderboard(Game game) {
-        // Lấy dữ liệu điểm số, xếp hạng...
-//        LeaderboardResponseDTO leaderboard = leaderboardService.getLeaderboardForGame(game);
-
-        // Gửi qua WebSocket
-//        messagingTemplate.convertAndSend("/topic/game/" + game.getGameId() + "/leaderboard", leaderboard);
-
-        log.info("Đã gửi leaderboard cho game {}", game.getGameId());
-    }
-
-
-
-
 
 }

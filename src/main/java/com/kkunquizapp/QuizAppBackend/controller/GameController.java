@@ -1,11 +1,9 @@
 package com.kkunquizapp.QuizAppBackend.controller;
 
-import com.kkunquizapp.QuizAppBackend.dto.GameRequestDTO;
-import com.kkunquizapp.QuizAppBackend.dto.GameResponseDTO;
-import com.kkunquizapp.QuizAppBackend.dto.PlayerRequestDTO;
-import com.kkunquizapp.QuizAppBackend.dto.PlayerResponseDTO;
+import com.kkunquizapp.QuizAppBackend.dto.*;
 import com.kkunquizapp.QuizAppBackend.model.Game;
 import com.kkunquizapp.QuizAppBackend.service.GameService;
+import com.kkunquizapp.QuizAppBackend.service.QuestionService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -24,6 +22,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class GameController {
     private final GameService gameService;
+
 
     @PostMapping("/create")
     public ResponseEntity<GameResponseDTO> createGame(
@@ -45,7 +44,7 @@ public class GameController {
     public ResponseEntity<GameResponseDTO> endGame(
             @PathVariable UUID gameId,
             @RequestHeader("Authorization") String token) {
-        GameResponseDTO game = gameService.endGame(gameId, token);
+        GameResponseDTO game = gameService.endGame(gameId, token, false);
         return ResponseEntity.ok(game);
     }
 
@@ -64,6 +63,19 @@ public class GameController {
         PlayerResponseDTO player = gameService.joinGame(pinCode, token, request);
         return ResponseEntity.ok(player);
     }
+
+    @PostMapping("/{gameId}/answer")
+    public ResponseEntity<?> submitAnswer(
+            @PathVariable UUID gameId,
+            @RequestBody AnswerRequestDTO answerRequest) {
+        try {
+            boolean isCorrect = gameService.processPlayerAnswer(gameId, answerRequest);
+            return ResponseEntity.ok(new ApiResponseDTO(true, isCorrect ? "Câu trả lời đúng!" : "Câu trả lời sai!"));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(new ApiResponseDTO(false, e.getMessage()));
+        }
+    }
+
 
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<Map<String, String>> handleException(RuntimeException e) {
