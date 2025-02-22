@@ -15,44 +15,49 @@ A backend service for a quiz application built using **Spring Boot**. This appli
 
 ---
 
-## Features
+## **Features**
 
 - **Quiz Management**: Create, update, delete quizzes.
 - **Question Management**:
-    - Support for multiple question types (e.g., multiple-choice, true/false).
-    - Soft delete functionality for questions.
+  - Support for multiple question types (e.g., multiple-choice, true/false).
+  - Soft delete functionality for questions.
 - **Option Management**: Add, update, and delete options for questions.
 - **Database Integration**: Fully integrated with a relational database using JPA.
+- **Redis Caching**: Improves performance for storing game states, leaderboard, and player scores.
 - **Error Handling**: Provides meaningful error messages for common issues.
 
 ---
 
-## Technologies Used
+## **Technologies Used**
 
 - **Java 22**
 - **Spring Boot**
-    - Spring Data JPA
-    - Spring Web
+  - Spring Data JPA
+  - Spring Web
+  - Spring Security
+  - Spring Redis (for caching & game management)
 - **H2 / PostgreSQL** (as database)
+- **Redis** (as database & cache)
 - **Lombok** (for cleaner code)
 - **ModelMapper** (for DTO to Entity mapping)
 - **Maven** (as build tool)
 
 ---
 
-## Prerequisites
+## **Prerequisites**
 
 - **Java Development Kit (JDK)**: Version 21 or above.
 - **Maven**: Ensure Maven is installed.
 - **Database**:
-    - H2 (default in-memory DB for local testing) or
-    - PostgreSQL (for production use).
+  - H2 (default in-memory DB for local testing) or
+  - PostgreSQL (for production use).
+- **Redis**: Required for caching & real-time game state management.
 
 ---
 
-## Setup and Installation
+## **Setup and Installation**
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/thaihoandev/QuizAppBackend.git
-   cd QuizAppBackend
+### **1️⃣ Clone the repository**
+```bash
+git clone https://github.com/thaihoandev/QuizAppBackend.git
+cd QuizAppBackend
