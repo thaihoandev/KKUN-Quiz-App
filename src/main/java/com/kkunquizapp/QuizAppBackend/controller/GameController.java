@@ -22,6 +22,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class GameController {
     private final GameService gameService;
+    private final QuestionService questionService;
 
 
     @PostMapping("/create")
@@ -37,6 +38,7 @@ public class GameController {
             @PathVariable UUID gameId,
             @RequestHeader("Authorization") String token) {
         GameResponseDTO game = gameService.startGame(gameId, token);
+
         return ResponseEntity.ok(game);
     }
 

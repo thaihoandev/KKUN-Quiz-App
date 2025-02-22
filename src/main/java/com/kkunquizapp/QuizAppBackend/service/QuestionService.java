@@ -14,6 +14,5 @@ public interface QuestionService {
     QuestionResponseDTO softDeleteQuestion(UUID questionId);
     List<QuestionResponseDTO> getQuestionsByQuizId(UUID quizId);
     void deleteQuestion(UUID questionId);
-    void sendQuestionToPlayers(Game game, List<QuestionResponseDTO> allQuestions);
 
 }

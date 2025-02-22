@@ -40,14 +40,9 @@ public class QuestionServiceImpl implements QuestionService {
     private final QuestionRepo questionRepository;
     private final OptionRepo optionRepository;
     private final ModelMapper modelMapper;
-    private final TaskScheduler taskScheduler;
-    private final LeaderboardService leaderboardService;
 
-    private GameService gameService;
-    private final SimpMessagingTemplate messagingTemplate;
-    private final RedisTemplate<String, Object> redisTemplate;
 
-    private static final String GAME_QUESTION_KEY = "game_questions:";
+
 
     @Override
     public QuestionResponseDTO addQuestion(QuestionRequestDTO questionRequestDTO) {
@@ -286,53 +281,7 @@ public class QuestionServiceImpl implements QuestionService {
 
 
 
-    public void sendQuestionToPlayers(Game game, List<QuestionResponseDTO> allQuestions) {
-        String currentQuestionIndexKey = GAME_QUESTION_KEY + game.getGameId() + ":index";
 
-        try {
-            Integer currentQuestionIndex = (Integer) redisTemplate.opsForValue().get(currentQuestionIndexKey);
-            if (currentQuestionIndex == null) {
-                currentQuestionIndex = 0;
-                redisTemplate.opsForValue().set(currentQuestionIndexKey, currentQuestionIndex);
-            }
 
-            // Kiểm tra nếu đã hết câu hỏi
-            if (currentQuestionIndex >= allQuestions.size()) {
-                redisTemplate.delete(currentQuestionIndexKey);
-                log.info("Game {} đã hoàn thành, gửi cập nhật cuối cùng.", game.getGameId());
-
-                // Gửi cập nhật trạng thái cuối cùng trước khi kết thúc game
-                taskScheduler.schedule(
-                        () -> gameService.sendGameUpdates(game, allQuestions, true),
-                        Instant.now().plusSeconds(5) // Delay để client có thời gian nhận thông tin
-                );
-                return;
-            }
-
-            QuestionResponseDTO currentQuestion = allQuestions.get(currentQuestionIndex);
-            messagingTemplate.convertAndSend("/topic/game/" + game.getGameId() + "/question", currentQuestion);
-
-            // Cập nhật index cho câu hỏi tiếp theo
-            redisTemplate.opsForValue().increment(currentQuestionIndexKey);
-
-            long timeLimit = currentQuestion.getTimeLimit() > 0 ? currentQuestion.getTimeLimit() : 5;
-            long leaderboardTime = 5;
-
-            // Schedule cập nhật bảng xếp hạng
-            taskScheduler.schedule(
-                    () -> leaderboardService.sendLeaderboard(game),
-                    Instant.now().plusSeconds(timeLimit)
-            );
-
-            // Schedule câu hỏi tiếp theo (nếu còn)
-            taskScheduler.schedule(
-                    () -> sendQuestionToPlayers(game, allQuestions),
-                    Instant.now().plusSeconds(timeLimit + leaderboardTime)
-            );
-
-        } catch (Exception e) {
-            log.error("Lỗi trong sendQuestionToPlayers cho game {}: {}", game.getGameId(), e.getMessage());
-        }
-    }
 
 }

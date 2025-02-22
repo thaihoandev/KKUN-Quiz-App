@@ -1,8 +1,6 @@
 package com.kkunquizapp.QuizAppBackend.service.impl;
 
-import com.amazonaws.services.kms.model.NotFoundException;
 import com.fasterxml.jackson.annotation.JsonInclude;
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -14,33 +12,31 @@ import com.kkunquizapp.QuizAppBackend.exception.PlayerNotFoundException;
 import com.kkunquizapp.QuizAppBackend.exception.QuestionNotFoundException;
 import com.kkunquizapp.QuizAppBackend.model.*;
 import com.kkunquizapp.QuizAppBackend.model.enums.GameStatus;
+import com.kkunquizapp.QuizAppBackend.model.enums.QuestionType;
 import com.kkunquizapp.QuizAppBackend.repo.*;
 import com.kkunquizapp.QuizAppBackend.service.GameService;
 import com.kkunquizapp.QuizAppBackend.service.JwtService;
 import com.kkunquizapp.QuizAppBackend.service.LeaderboardService;
-import com.kkunquizapp.QuizAppBackend.service.QuestionService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.modelmapper.ModelMapper;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
-import org.springframework.http.HttpStatus;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.bind.annotation.ResponseStatus;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDateTime;
-import java.util.List;
-import java.util.Optional;
-import java.util.Random;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
+
+import static com.kkunquizapp.QuizAppBackend.constants.redisKeys.*;
+
 
 @Service
 @RequiredArgsConstructor
@@ -51,21 +47,18 @@ public class GameServiceImpl implements GameService {
     private final QuizRepo quizRepository;
     private final QuestionRepo questionRepository;
     private final UserRepo userRepository;
-    private final OptionRepo optionRepository;
 
     private final ModelMapper modelMapper;
     private final JwtService jwtService;
-    private final QuestionService questionService;
+    private final LeaderboardService leaderboardService;
+    private final TaskScheduler taskScheduler;
 
     private final SimpMessagingTemplate messagingTemplate;
     private final RedisTemplate<String, Object> redisTemplate;
     private final StringRedisTemplate stringRedisTemplate;
 
-    private static final String GAME_STATUS_KEY = "game_status:";
-    private static final String GAME_PLAYERS_KEY = "game_players:";
-    private static final String PLAYER_SCORE_KEY = "player_scores:";
-    private static final String GAME_QUESTION_KEY = "game_questions:";
-    private static final String GAME_LEADERBOARD_KEY = "game_leaderboard:";
+
+
     @Override
     public GameResponseDTO startGameFromQuiz(UUID quizId, String token) {
         String hostId = jwtService.getUserIdFromToken(token.replace("Bearer ", ""));
@@ -186,11 +179,15 @@ public class GameServiceImpl implements GameService {
         // Lưu leaderboard vào Redis
         saveLeaderboardToRedis(savedGame);
 
-        // Gửi câu hỏi đầu tiên
+        // ✅ Gửi cập nhật trạng thái game
         sendGameUpdates(savedGame, allQuestions, false);
+
+        // ✅ Gửi câu hỏi đầu tiên (không lặp vô hạn)
+        taskScheduler.schedule(() -> sendQuestionToPlayers(savedGame, allQuestions), Instant.now().plusSeconds(3));
 
         return convertToGameDTO(savedGame);
     }
+
 
 
     @Override
@@ -281,9 +278,18 @@ public class GameServiceImpl implements GameService {
         Question question = questionRepository.findById(answerRequest.getQuestionId())
                 .orElseThrow(() -> new QuestionNotFoundException("Câu hỏi không tồn tại"));
 
-        boolean isCorrect = checkAnswer(question, answerRequest.getSelectedAnswer());
+        String redisKey = GAME_ANSWERED_KEY + gameId + ":" + player.getPlayerId() + ":" + question.getQuestionId();
 
-        // Cộng điểm nếu trả lời đúng
+        // 🔥 Kiểm tra nếu đã trả lời trước đó
+        if (Boolean.TRUE.equals(redisTemplate.hasKey(redisKey))) {
+            throw new IllegalStateException("Bạn đã trả lời câu hỏi này rồi!");
+        }
+
+        boolean isCorrect = checkAnswer(question, answerRequest.getSelectedAnswers());
+
+        // 🔥 Lưu vào Redis để đảm bảo không trả lời lần 2 (expire sau 1 giờ)
+        redisTemplate.opsForValue().set(redisKey, "answered", 1, TimeUnit.HOURS);
+
         if (isCorrect) {
             player.setScore(player.getScore() + question.getPoints());
             playerRepository.save(player);
@@ -292,6 +298,7 @@ public class GameServiceImpl implements GameService {
 
         return isCorrect;
     }
+
 
     private List<QuestionResponseDTO> loadQuestions(Game game) {
         String questionKey = GAME_QUESTION_KEY + game.getGameId();
@@ -378,7 +385,6 @@ public class GameServiceImpl implements GameService {
         try {
             GameResponseDTO responseDTO = convertToGameDTO(game);
             messagingTemplate.convertAndSend("/topic/game/" + game.getGameId() + "/status", responseDTO);
-
             if (isGameEnded) {
                 log.info("Game {} kết thúc, gọi endGame().", game.getGameId());
                 endGame(game.getGameId(),null,true);
@@ -430,35 +436,62 @@ public class GameServiceImpl implements GameService {
         return pinCode;
     }
 
-    private boolean checkAnswer(Question question, String selectedAnswer) {
-        switch (question.getQuestionType()) {
-            case TRUE_FALSE:
-                return checkTrueFalseAnswer(question, selectedAnswer);
+    private boolean checkAnswer(Question question, List<String> selectedAnswers) {
+        QuestionType questionType = question.getQuestionType();
+
+        switch (questionType) {
             case MULTIPLE_CHOICE:
-                return checkMultipleChoiceAnswer(question, selectedAnswer);
+                return checkMultipleChoiceAnswer(question, selectedAnswers);
+            case TRUE_FALSE:
+                return checkTrueFalseAnswer(question, selectedAnswers);
             case FILL_IN_THE_BLANK:
-                return checkFillInTheBlankAnswer(question, selectedAnswer);
+                return checkFillInTheBlankAnswer(question, selectedAnswers);
+//            case NUMERIC_ANSWER:
+//                return checkNumericAnswer(question, selectedAnswers);
             default:
-                throw new UnsupportedOperationException("Loại câu hỏi không được hỗ trợ");
+                throw new UnsupportedOperationException("Loại câu hỏi không được hỗ trợ: " + questionType);
         }
     }
 
-    private boolean checkTrueFalseAnswer(Question question, String selectedAnswer) {
-        TrueFalseOption correctOption = (TrueFalseOption) optionRepository.findByQuestion(question)
-                .orElseThrow(() -> new RuntimeException("Không tìm thấy đáp án"));
-        return correctOption.getValue().toString().equalsIgnoreCase(selectedAnswer);
+    private boolean checkTrueFalseAnswer(Question question, List<String> selectedAnswers) {
+        if (selectedAnswers.size() != 1) return false;
+
+        Boolean correctValue = question.getOptions().stream()
+                .filter(TrueFalseOption.class::isInstance)
+                .map(opt -> ((TrueFalseOption) opt).getValue()) // Lấy giá trị đúng/sai
+                .findFirst()
+                .orElse(false);
+
+        Boolean userAnswer = Boolean.parseBoolean(selectedAnswers.get(0));
+        return correctValue.equals(userAnswer);
     }
 
-    private boolean checkMultipleChoiceAnswer(Question question, String selectedAnswer) {
-        List<MultipleChoiceOption> correctOptions = optionRepository.findAllByQuestionAndCorrectTrue(question);
-        return correctOptions.stream().anyMatch(option -> option.getOptionText().equalsIgnoreCase(selectedAnswer));
+    private boolean checkMultipleChoiceAnswer(Question question, List<String> selectedAnswers) {
+        List<String> correctAnswers = question.getOptions().stream()
+                .filter(MultipleChoiceOption.class::isInstance)
+                .map(opt -> ((MultipleChoiceOption) opt))
+                .filter(MultipleChoiceOption::isCorrect)
+                .map(Option::getOptionText)
+                .toList();
+
+        // So sánh danh sách người dùng chọn với danh sách đúng (không phân biệt thứ tự)
+        return selectedAnswers.size() == correctAnswers.size() &&
+                selectedAnswers.containsAll(correctAnswers);
     }
 
-    private boolean checkFillInTheBlankAnswer(Question question, String selectedAnswer) {
-        FillInTheBlankOption correctOption = (FillInTheBlankOption) optionRepository.findByQuestion(question)
-                .orElseThrow(() -> new RuntimeException("Không tìm thấy đáp án"));
-        return correctOption.getCorrectAnswer().equalsIgnoreCase(selectedAnswer.trim());
+    private boolean checkFillInTheBlankAnswer(Question question, List<String> selectedAnswers) {
+        if (selectedAnswers.isEmpty()) return false;
+
+        List<String> correctAnswers = question.getOptions().stream()
+                .filter(FillInTheBlankOption.class::isInstance)
+                .map(opt -> ((FillInTheBlankOption) opt).getCorrectAnswer().trim().toLowerCase())
+                .toList();
+
+        String userAnswer = selectedAnswers.get(0).trim().toLowerCase();
+
+        return correctAnswers.contains(userAnswer);
     }
+
 
     private void saveLeaderboardToRedis(Game game) {
         String leaderboardKey = GAME_LEADERBOARD_KEY + game.getGameId();
@@ -469,6 +502,64 @@ public class GameServiceImpl implements GameService {
 
         // Đặt thời gian hết hạn cho leaderboard để tránh dữ liệu tồn tại mãi mãi
         redisTemplate.expire(leaderboardKey, Duration.ofHours(1));
+    }
+
+    public void sendQuestionToPlayers(Game game, List<QuestionResponseDTO> allQuestions) {
+        String currentQuestionIndexKey = "game_question_index:" + game.getGameId();
+
+        try {
+            Integer currentQuestionIndex = (Integer) redisTemplate.opsForValue().get(currentQuestionIndexKey);
+            if (currentQuestionIndex == null) {
+                currentQuestionIndex = 0;
+                redisTemplate.opsForValue().set(currentQuestionIndexKey, currentQuestionIndex);
+                log.info("Game {}: Bắt đầu gửi câu hỏi từ đầu.", game.getGameId());
+            }
+
+            // ✅ Kiểm tra nếu đã hết câu hỏi
+            if (currentQuestionIndex >= allQuestions.size()) {
+                redisTemplate.delete(currentQuestionIndexKey);
+                log.info("Game {} đã hoàn thành, dừng gửi câu hỏi.", game.getGameId());
+
+                // ✅ Gửi cập nhật kết thúc game nhưng không gọi lại `sendQuestionToPlayers`
+                taskScheduler.schedule(
+                        () -> sendGameUpdates(game, allQuestions, true),
+                        Instant.now().plusSeconds(5)
+                );
+                return;
+            }
+
+            // ✅ Gửi câu hỏi hiện tại
+            QuestionResponseDTO currentQuestion = allQuestions.get(currentQuestionIndex);
+            log.info("Game {}: Gửi câu hỏi {}/{} - {}.",
+                    game.getGameId(), currentQuestionIndex + 1, allQuestions.size(), currentQuestion.getQuestionText());
+
+            messagingTemplate.convertAndSend("/topic/game/" + game.getGameId() + "/question", currentQuestion);
+            redisTemplate.opsForValue().increment(currentQuestionIndexKey);
+
+            long timeLimit = currentQuestion.getTimeLimit() > 0 ? currentQuestion.getTimeLimit() : 5;
+            long leaderboardTime = 5;
+
+            // ✅ Schedule cập nhật bảng xếp hạng
+            taskScheduler.schedule(
+                    () -> {
+                        log.info("Game {}: Gửi cập nhật bảng xếp hạng.", game.getGameId());
+                        leaderboardService.sendLeaderboard(game);
+                    },
+                    Instant.now().plusSeconds(timeLimit)
+            );
+
+            // ✅ Schedule câu hỏi tiếp theo (nếu còn)
+            taskScheduler.schedule(
+                    () -> {
+                        log.info("Game {}: Chuẩn bị gửi câu hỏi tiếp theo sau {} giây.", game.getGameId(), leaderboardTime);
+                        sendQuestionToPlayers(game, allQuestions);
+                    },
+                    Instant.now().plusSeconds(timeLimit + leaderboardTime)
+            );
+
+        } catch (Exception e) {
+            log.error("Lỗi trong sendQuestionToPlayers cho game {}: {}", game.getGameId(), e.getMessage());
+        }
     }
 
     //Convert Entity

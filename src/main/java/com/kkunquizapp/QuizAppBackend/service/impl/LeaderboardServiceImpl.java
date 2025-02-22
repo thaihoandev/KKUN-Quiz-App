@@ -28,6 +28,8 @@ import java.time.Duration;
 import java.util.*;
 import java.util.stream.Collectors;
 
+import static com.kkunquizapp.QuizAppBackend.constants.redisKeys.*;
+
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -37,11 +39,6 @@ public class LeaderboardServiceImpl implements LeaderboardService {
     private final ModelMapper modelMapper;
     private final SimpMessagingTemplate messagingTemplate;
     private final RedisTemplate<String, Object> redisTemplate;
-
-
-    private static final String PLAYER_SCORE_KEY = "player_scores:";
-    private static final String GAME_PLAYERS_KEY = "game_players:";
-    private static final String GAME_LEADERBOARD_KEY = "game_leaderboard:";
 
     @Override
     @Transactional
