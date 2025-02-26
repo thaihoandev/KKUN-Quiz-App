@@ -1,14 +1,10 @@
 package com.kkunquizapp.QuizAppBackend.controller;
 
 import com.kkunquizapp.QuizAppBackend.dto.*;
-import com.kkunquizapp.QuizAppBackend.model.Game;
 import com.kkunquizapp.QuizAppBackend.service.GameService;
 import com.kkunquizapp.QuizAppBackend.service.QuestionService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;

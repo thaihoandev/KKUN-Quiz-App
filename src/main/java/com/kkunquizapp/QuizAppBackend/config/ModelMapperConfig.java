@@ -1,10 +1,8 @@
 package com.kkunquizapp.QuizAppBackend.config;
 
 import com.kkunquizapp.QuizAppBackend.dto.OptionRequestDTO;
-import com.kkunquizapp.QuizAppBackend.dto.OptionResponseDTO;
 import com.kkunquizapp.QuizAppBackend.dto.QuestionRequestDTO;
 import com.kkunquizapp.QuizAppBackend.model.*;
-import com.kkunquizapp.QuizAppBackend.model.enums.QuestionType;
 import org.modelmapper.ModelMapper;
 import org.modelmapper.convention.MatchingStrategies;
 import org.springframework.context.annotation.Bean;
