@@ -1,38 +1,48 @@
 package com.kkunquizapp.QuizAppBackend.service.impl;
 
-import com.kkunquizapp.QuizAppBackend.dto.OptionRequestDTO;
-import com.kkunquizapp.QuizAppBackend.dto.OptionResponseDTO;
-import com.kkunquizapp.QuizAppBackend.dto.QuestionRequestDTO;
-import com.kkunquizapp.QuizAppBackend.dto.QuestionResponseDTO;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.kkunquizapp.QuizAppBackend.dto.*;
+import com.kkunquizapp.QuizAppBackend.exception.GameStateException;
 import com.kkunquizapp.QuizAppBackend.model.*;
 import com.kkunquizapp.QuizAppBackend.model.enums.QuestionType;
 import com.kkunquizapp.QuizAppBackend.repo.OptionRepo;
 import com.kkunquizapp.QuizAppBackend.repo.QuestionRepo;
 import com.kkunquizapp.QuizAppBackend.repo.QuizRepo;
+import com.kkunquizapp.QuizAppBackend.service.GameService;
+import com.kkunquizapp.QuizAppBackend.service.LeaderboardService;
 import com.kkunquizapp.QuizAppBackend.service.QuestionService;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.modelmapper.ModelMapper;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.scheduling.TaskScheduler;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 @Service
+@RequiredArgsConstructor
+@Slf4j
 public class QuestionServiceImpl implements QuestionService {
-    @Autowired
-    private QuizRepo quizRepository;
 
-    @Autowired
-    private QuestionRepo questionRepository;
+    private final QuizRepo quizRepository;
+    private final QuestionRepo questionRepository;
+    private final OptionRepo optionRepository;
+    private final ModelMapper modelMapper;
 
-    @Autowired
-    private OptionRepo optionRepository;
 
-    @Autowired
-    private ModelMapper modelMapper;
+
 
     @Override
     public QuestionResponseDTO addQuestion(QuestionRequestDTO questionRequestDTO) {
@@ -114,7 +124,6 @@ public class QuestionServiceImpl implements QuestionService {
             question.setQuiz(quiz);
         }
 
-        // Xử lý cập nhật các Option
         // Xử lý cập nhật các Option
         if (questionRequestDTO.getOptions() != null) {
             // Tìm tất cả các Option hiện tại trong cơ sở dữ liệu
@@ -209,7 +218,7 @@ public class QuestionServiceImpl implements QuestionService {
 
     /**
      * Tạo Option dựa trên loại câu hỏi (questionType).
-     */
+            */
     private Option createOptionBasedOnQuestionType(OptionRequestDTO optionDTO, String questionType) {
         switch (questionType) {
             case QuestionType.MULTIPLE_CHOICE_TYPE:
@@ -248,10 +257,6 @@ public class QuestionServiceImpl implements QuestionService {
         }
     }
 
-
-    /**
-     * Map từ Option entity sang OptionResponseDTO dựa trên loại Option.
-     */
     private OptionResponseDTO mapOptionToResponseDTO(Option option) {
         if (option instanceof MultipleChoiceOption) {
             return modelMapper.map(option, OptionResponseDTO.class);
@@ -263,4 +268,20 @@ public class QuestionServiceImpl implements QuestionService {
             throw new IllegalArgumentException("Unsupported option type");
         }
     }
+    private QuestionResponseDTO convertToQuestionDTO(Question question) {
+        QuestionResponseDTO responseDTO = modelMapper.map(question, QuestionResponseDTO.class);
+
+        // Chuyển đổi danh sách options
+        responseDTO.setOptions(question.getOptions().stream()
+                .map(this::mapOptionToResponseDTO)
+                .collect(Collectors.toList()));
+
+        return responseDTO;
+    }
+
+
+
+
+
+
 }

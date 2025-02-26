@@ -5,6 +5,8 @@ import jakarta.persistence.*;
 import lombok.Data;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 @Entity
@@ -21,11 +23,14 @@ public class Game {
     private Quiz quiz;
 
     @ManyToOne
-    @JoinColumn(name = "host_id", nullable = false)
+    @JoinColumn(name = "host_id",referencedColumnName = "userId", nullable = false)
     private User host;
 
     @Column(nullable = false, length = 10)
     private String pinCode;
+
+    @OneToMany(mappedBy = "game", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    private List<Player> players = new ArrayList<>();
 
     @Enumerated(EnumType.STRING) // Lưu giá trị enum dưới dạng chuỗi
     @Column(nullable = false, length = 30)

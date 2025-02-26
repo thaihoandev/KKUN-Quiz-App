@@ -3,10 +3,8 @@ package com.kkunquizapp.QuizAppBackend.controller;
 import com.kkunquizapp.QuizAppBackend.dto.AuthResponseDTO;
 import com.kkunquizapp.QuizAppBackend.dto.UserRequestDTO;
 import com.kkunquizapp.QuizAppBackend.dto.UserResponseDTO;
-import com.kkunquizapp.QuizAppBackend.model.User;
 import com.kkunquizapp.QuizAppBackend.service.UserService;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 @RestController

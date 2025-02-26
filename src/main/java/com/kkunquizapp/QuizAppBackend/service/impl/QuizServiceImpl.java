@@ -37,6 +37,7 @@ public class QuizServiceImpl implements QuizService {
 
         return modelMapper.map(existingQuiz, QuizResponseDTO.class);
     }
+
     public QuizResponseDTO createQuiz(HttpServletRequest request, QuizRequestDTO quizRequestDTO){
         // Lấy hostId từ request attribute
         String hostId = (String) request.getAttribute("currentUserId");

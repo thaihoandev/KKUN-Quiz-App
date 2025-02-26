@@ -17,9 +17,20 @@ public class QuizController {
     @Autowired
     private QuizService quizService;
 
-//     Lấy thông tin  quiz
+    @GetMapping()
+    public ResponseEntity<QuizResponseDTO> getAllQuizzes(
+            @PathVariable UUID quizId){
+        try {
+            QuizResponseDTO responseDTO = quizService.getQuizById(quizId);
+            return ResponseEntity.ok(responseDTO);
+        } catch (Exception e) {
+            return ResponseEntity.notFound().build();
+        }
+    }
+
+    //     Lấy thông tin  quiz
     @GetMapping("/{quizId}")
-    public ResponseEntity<QuizResponseDTO> getQuiz(
+    public ResponseEntity<QuizResponseDTO> getQuizById(
             @PathVariable UUID quizId){
         try {
             QuizResponseDTO responseDTO = quizService.getQuizById(quizId);
