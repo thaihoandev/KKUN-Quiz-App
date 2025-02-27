@@ -467,16 +467,28 @@ public class GameServiceImpl implements GameService {
     }
 
     private boolean checkMultipleChoiceAnswer(Question question, List<String> selectedAnswers) {
-        List<String> correctAnswers = question.getOptions().stream()
+        if (selectedAnswers == null) {
+            return false;
+        }
+
+        // Lấy danh sách các đáp án đúng từ câu hỏi
+        Set<String> correctAnswers = question.getOptions().stream()
                 .filter(MultipleChoiceOption.class::isInstance)
                 .map(opt -> ((MultipleChoiceOption) opt))
                 .filter(MultipleChoiceOption::isCorrect)
                 .map(Option::getOptionText)
-                .toList();
+                .map(String::trim)
+                .map(String::toLowerCase)
+                .collect(Collectors.toSet());
 
-        // So sánh danh sách người dùng chọn với danh sách đúng (không phân biệt thứ tự)
-        return selectedAnswers.size() == correctAnswers.size() &&
-                selectedAnswers.containsAll(correctAnswers);
+        // Chuẩn hóa danh sách đáp án của người dùng
+        Set<String> userAnswers = selectedAnswers.stream()
+                .map(String::trim)
+                .map(String::toLowerCase)
+                .collect(Collectors.toSet());
+
+        // So sánh tập hợp hai danh sách
+        return userAnswers.equals(correctAnswers);
     }
 
     private boolean checkFillInTheBlankAnswer(Question question, List<String> selectedAnswers) {
@@ -505,7 +517,7 @@ public class GameServiceImpl implements GameService {
     }
 
     public void sendQuestionToPlayers(Game game, List<QuestionResponseDTO> allQuestions) {
-        String currentQuestionIndexKey = "game_question_index:" + game.getGameId();
+        String currentQuestionIndexKey = GAME_QUESTION_INDEX_KEY + game.getGameId();
 
         try {
             Integer currentQuestionIndex = (Integer) redisTemplate.opsForValue().get(currentQuestionIndexKey);
@@ -515,12 +527,12 @@ public class GameServiceImpl implements GameService {
                 log.info("Game {}: Bắt đầu gửi câu hỏi từ đầu.", game.getGameId());
             }
 
-            // ✅ Kiểm tra nếu đã hết câu hỏi
+            //Kiểm tra nếu đã hết câu hỏi
             if (currentQuestionIndex >= allQuestions.size()) {
                 redisTemplate.delete(currentQuestionIndexKey);
                 log.info("Game {} đã hoàn thành, dừng gửi câu hỏi.", game.getGameId());
 
-                // ✅ Gửi cập nhật kết thúc game nhưng không gọi lại `sendQuestionToPlayers`
+                // Gửi cập nhật kết thúc game nhưng không gọi lại `sendQuestionToPlayers`
                 taskScheduler.schedule(
                         () -> sendGameUpdates(game, allQuestions, true),
                         Instant.now().plusSeconds(5)
@@ -528,7 +540,7 @@ public class GameServiceImpl implements GameService {
                 return;
             }
 
-            // ✅ Gửi câu hỏi hiện tại
+            //Gửi câu hỏi hiện tại
             QuestionResponseDTO currentQuestion = allQuestions.get(currentQuestionIndex);
             log.info("Game {}: Gửi câu hỏi {}/{} - {}.",
                     game.getGameId(), currentQuestionIndex + 1, allQuestions.size(), currentQuestion.getQuestionText());
@@ -539,7 +551,7 @@ public class GameServiceImpl implements GameService {
             long timeLimit = currentQuestion.getTimeLimit() > 0 ? currentQuestion.getTimeLimit() : 5;
             long leaderboardTime = 5;
 
-            // ✅ Schedule cập nhật bảng xếp hạng
+            // Schedule cập nhật bảng xếp hạng
             taskScheduler.schedule(
                     () -> {
                         log.info("Game {}: Gửi cập nhật bảng xếp hạng.", game.getGameId());
@@ -548,7 +560,7 @@ public class GameServiceImpl implements GameService {
                     Instant.now().plusSeconds(timeLimit)
             );
 
-            // ✅ Schedule câu hỏi tiếp theo (nếu còn)
+            //Schedule câu hỏi tiếp theo (nếu còn)
             taskScheduler.schedule(
                     () -> {
                         log.info("Game {}: Chuẩn bị gửi câu hỏi tiếp theo sau {} giây.", game.getGameId(), leaderboardTime);

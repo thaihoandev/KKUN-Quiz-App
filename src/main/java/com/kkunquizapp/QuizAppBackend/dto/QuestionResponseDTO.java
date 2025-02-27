@@ -1,6 +1,7 @@
 package com.kkunquizapp.QuizAppBackend.dto;
 
 
+import lombok.AllArgsConstructor;
 import lombok.Data;
 
 import java.util.List;
