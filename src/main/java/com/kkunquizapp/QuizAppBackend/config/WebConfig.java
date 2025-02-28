@@ -29,7 +29,7 @@ public class WebConfig implements WebMvcConfigurer {
                 .excludePathPatterns("/auth/**", "/oauth2/**", "/games/join"); // Loại trừ các endpoint không cần xác thực
 
         registry.addInterceptor(quizPermissionInterceptor)
-                .addPathPatterns("/quizzes/**","/questions/**")
+                .addPathPatterns("/quizzes/**","/questions/**","/files/upload/quizzes/**")
                 .excludePathPatterns("/quizzes/create");
     }
 }

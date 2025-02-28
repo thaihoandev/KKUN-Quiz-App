@@ -120,7 +120,7 @@ public class FileUploadServiceImpl implements FileUploadService {
         try {
             ITesseract tesseract = new Tesseract();
             tesseract.setDatapath("tessdata/");
-            tesseract.setLanguage("eng"); // Thiết lập ngôn ngữ
+            tesseract.setLanguage("eng+vie"); // Thiết lập ngôn ngữ
 
             // Tạo BufferedImage từ bytes
             BufferedImage image = javax.imageio.ImageIO.read(new ByteArrayInputStream(imageBytes));
