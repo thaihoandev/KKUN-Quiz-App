@@ -30,6 +30,6 @@ public class WebConfig implements WebMvcConfigurer {
 
         registry.addInterceptor(quizPermissionInterceptor)
                 .addPathPatterns("/quizzes/**","/questions/**","/files/upload/quizzes/**")
-                .excludePathPatterns("/quizzes/create");
+                .excludePathPatterns("/quizzes/create", "/quizzes", "/quizzes/users/**");
     }
 }
