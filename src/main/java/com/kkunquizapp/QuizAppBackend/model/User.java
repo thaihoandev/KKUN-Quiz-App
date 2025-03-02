@@ -34,6 +34,9 @@ public class User {
     @Column(nullable = false, length = 20)
     private UserRole role; // "host" or "player"
 
+    @Column(name = "avatar", length = 500)
+    private String avatar;
+
     @Column(length = 255)
     private String school; // Trường học của user (có thể null nếu không có)
 

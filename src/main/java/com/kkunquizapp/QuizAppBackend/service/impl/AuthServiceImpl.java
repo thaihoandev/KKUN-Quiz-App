@@ -49,19 +49,25 @@ public class AuthServiceImpl implements AuthService {
             Map<String, Object> userInfo = response.getBody();
             String email = (String) userInfo.get("email");
             String name = (String) userInfo.get("name");
+            String avatar = (String) userInfo.get("picture"); // Lấy avatar từ Google
 
-            // Kiểm tra xem user đã tồn tại chưa
             Optional<User> existingUser = userRepo.findByEmail(email);
             User user;
+
             if (existingUser.isPresent()) {
                 user = existingUser.get();
+                // Nếu avatar thay đổi, cập nhật lại
+                if (avatar != null && !avatar.equals(user.getAvatar())) {
+                    user.setAvatar(avatar);
+                    userRepo.save(user);
+                }
             } else {
-                // Nếu chưa có user, tạo mới
                 user = new User();
                 user.setEmail(email);
                 user.setUsername(email);
-//                user.setAuthProvider("GOOGLE"); // Đánh dấu là tài khoản Google
                 user.setRole(UserRole.USER);
+                user.setAvatar(avatar); // Lưu avatar vào database
+
                 // Sinh mật khẩu ngẫu nhiên
                 String randomPassword = RandomStringUtils.randomAlphanumeric(10);
                 user.setPassword(encoder.encode(randomPassword));
@@ -69,10 +75,7 @@ public class AuthServiceImpl implements AuthService {
                 userRepo.save(user);
             }
 
-            // Lấy UserPrincipal từ User
             UserPrincipal userPrincipal = new UserPrincipal(user);
-
-            // Tạo JWT từ backend
             String token = jwtService.generateToken(userPrincipal);
 
             return AuthResponseDTO.builder()
@@ -88,5 +91,6 @@ public class AuthServiceImpl implements AuthService {
             throw new IllegalArgumentException("Google authentication failed");
         }
     }
+
 
 }
