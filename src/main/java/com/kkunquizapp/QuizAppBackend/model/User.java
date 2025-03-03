@@ -46,5 +46,7 @@ public class User {
     @Column(nullable = false)
     private LocalDateTime updatedAt = LocalDateTime.now();
 
+    @Column(nullable = true)
+    private boolean isActive = true;
     // Getters and Setters
 }

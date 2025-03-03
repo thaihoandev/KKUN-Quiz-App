@@ -58,6 +58,7 @@ public class AuthServiceImpl implements AuthService {
         User user = modelMapper.map(userRequestDTO, User.class);
         user.setPassword(encoder.encode(userRequestDTO.getPassword()));
         user.setRole(UserRole.USER);
+        user.setActive(true);
         User savedUser = userRepo.save(user);
 
         return modelMapper.map(savedUser, UserResponseDTO.class);
@@ -120,6 +121,7 @@ public class AuthServiceImpl implements AuthService {
                 user.setUsername(email);
                 user.setRole(UserRole.USER);
                 user.setAvatar(avatar); // Lưu avatar vào database
+                user.setActive(true);
 
                 // Sinh mật khẩu ngẫu nhiên
                 String randomPassword = RandomStringUtils.randomAlphanumeric(10);

@@ -2,6 +2,7 @@ package com.kkunquizapp.QuizAppBackend.dto;
 
 import lombok.Data;
 
+import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Data
@@ -13,4 +14,6 @@ public class UserResponseDTO {
     private String name;
     private String avatar;
     private String role;
+    private LocalDateTime createdAt;
+    private boolean isActive;
 }
