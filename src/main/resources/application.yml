@@ -19,6 +19,8 @@ spring:
         provider:
           google:
             issuer-uri: https://accounts.google.com
+  jwt:
+    secret: ${JWT_SECRET_KEY}
   datasource:
     url: ${SPRING_DATASOURCE_URL}
     username: ${SPRING_DATASOURCE_USERNAME}

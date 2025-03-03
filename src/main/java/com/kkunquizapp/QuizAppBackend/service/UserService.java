@@ -9,14 +9,10 @@ import java.util.UUID;
 
 public interface UserService {
 
-    UserResponseDTO register(UserRequestDTO userRequestDTO);
-
-    AuthResponseDTO verify(UserRequestDTO userRequestDTO);
-
     AuthResponseDTO createOrUpdateOAuth2User(String email, String name);
-    List<UserResponseDTO> getAllUsers();
+    List<UserResponseDTO> getAllUsers(String token);
 
-    UserResponseDTO getUserById(UUID id);
+    UserResponseDTO getUserById(String id, String token);
 
 
     UserResponseDTO updateUser(UUID id, UserRequestDTO userRequestDTO);

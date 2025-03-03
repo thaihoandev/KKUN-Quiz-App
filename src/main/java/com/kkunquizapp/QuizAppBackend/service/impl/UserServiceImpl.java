@@ -13,14 +13,17 @@ import com.kkunquizapp.QuizAppBackend.repo.UserRepo;
 import com.kkunquizapp.QuizAppBackend.service.CustomUserDetailsService;
 import com.kkunquizapp.QuizAppBackend.service.JwtService;
 import com.kkunquizapp.QuizAppBackend.service.UserService;
+import lombok.RequiredArgsConstructor;
 import org.modelmapper.ModelMapper;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
@@ -29,78 +32,25 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
 import static com.kkunquizapp.QuizAppBackend.helper.validateHelper.isEmailFormat;
 
 @Service
+@RequiredArgsConstructor
 public class UserServiceImpl implements UserService {
 
     private final JwtEncoder jwtEncoder;
-    private final AuthenticationManager authManager;
     private final UserRepo userRepo;
     private final ModelMapper modelMapper;
     private final BCryptPasswordEncoder encoder;
     private final CustomUserDetailsService customUserDetailsService;
     private final JwtService jwtService;
-    public UserServiceImpl(JwtEncoder jwtEncoder, AuthenticationManager authManager, UserRepo userRepo, ModelMapper modelMapper, CustomUserDetailsService customUserDetailsService, JwtService jwtService) {
-        this.jwtEncoder = jwtEncoder;
-        this.authManager = authManager;
-        this.userRepo = userRepo;
-        this.modelMapper = modelMapper;
-        this.customUserDetailsService = customUserDetailsService;
-        this.jwtService = jwtService;
-        this.encoder = new BCryptPasswordEncoder(12);
-    }
 
-
-    @Override
-    @Transactional
-    public UserResponseDTO register(UserRequestDTO userRequestDTO) {
-        if (isEmailFormat(userRequestDTO.getUsername())) {
-            throw new InvalidRequestException("Username cannot be in email format: " + userRequestDTO.getUsername());
-        }
-
-        if (userRepo.existsByEmail(userRequestDTO.getEmail())) {
-            throw new DuplicateEntityException("Email already exists: " + userRequestDTO.getEmail());
-        }
-
-        if (userRepo.existsByUsername(userRequestDTO.getUsername())) {
-            throw new DuplicateEntityException("Username already exists: " + userRequestDTO.getUsername());
-        }
-
-        User user = modelMapper.map(userRequestDTO, User.class);
-        user.setPassword(encoder.encode(userRequestDTO.getPassword()));
-        user.setRole(UserRole.USER);
-        User savedUser = userRepo.save(user);
-
-        return modelMapper.map(savedUser, UserResponseDTO.class);
-    }
-
-    @Override
-    public AuthResponseDTO verify(UserRequestDTO userRequestDTO) {
-        Authentication authentication = authManager.authenticate(
-                new UsernamePasswordAuthenticationToken(userRequestDTO.getUsername(), userRequestDTO.getPassword())
-        );
-
-        if (authentication.isAuthenticated()) {
-            UserPrincipal userPrincipal = (UserPrincipal) authentication.getPrincipal();
-            String token = jwtService.generateToken(userPrincipal);
-
-            return AuthResponseDTO.builder()
-                    .token(token)
-                    .type("Bearer")
-                    .username(userPrincipal.getUsername())
-                    .roles(userPrincipal.getAuthorities().stream()
-                            .map(auth -> auth.getAuthority())
-                            .collect(Collectors.toList()))
-                    .build();
-        }
-
-        throw new IllegalArgumentException("Invalid username or password");
-    }
 
     @Override
     @Transactional
@@ -117,10 +67,11 @@ public class UserServiceImpl implements UserService {
 
         User savedUser = userRepo.save(user);
         UserDetails userDetails = customUserDetailsService.loadUserByUsername(savedUser.getUsername());
-        String token = jwtService.generateToken((UserPrincipal) userDetails);
+        Map<String, String> tokens = jwtService.generateTokens((UserPrincipal) userDetails);
 
         return AuthResponseDTO.builder()
-                .token(token)
+                .accessToken(tokens.get("accessToken"))
+                .refreshToken(tokens.get("refreshToken"))
                 .type("Bearer")
                 .username(savedUser.getUsername())
                 .roles(List.of(savedUser.getRole().name()))
@@ -129,19 +80,45 @@ public class UserServiceImpl implements UserService {
 
 
     @Override
-    public List<UserResponseDTO> getAllUsers() {
-        List<User> users = userRepo.findAll();
-        return users.stream()
+    public List<UserResponseDTO> getAllUsers(String token) {
+        Map<String, Object> userInfo = jwtService.getUserInfoFromToken(token.replace("Bearer ", ""));
+        boolean isAdmin = ((List<?>) userInfo.get("roles")).contains("ROLE_ADMIN");
+
+        // Nếu không phải admin, trả về lỗi 403
+        if (!isAdmin) {
+            throw new SecurityException("Bạn không có quyền truy cập");
+        }
+
+        // Chỉ admin mới truy vấn danh sách người dùng
+        return userRepo.findAll().stream()
                 .map(user -> modelMapper.map(user, UserResponseDTO.class))
                 .collect(Collectors.toList());
     }
 
+
     @Override
-    public UserResponseDTO getUserById(UUID id) {
-        User user = userRepo.findById(id)
-                .orElseThrow(() -> new UserNotFoundException("User not found with ID: " + id));
+    public UserResponseDTO getUserById(String userId, String token) {
+        // Lấy thông tin từ Access Token bằng SecurityContextHolder
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (!(authentication.getPrincipal() instanceof Jwt jwt)) {
+            throw new SecurityException("Không thể xác thực Access Token");
+        }
+        String userIdFromToken = jwt.getClaim("userId");
+        List<String> roles = jwt.getClaim("roles");
+        boolean isAdmin = roles.contains(UserRole.ADMIN.name()); // Kiểm tra quyền admin
+
+        // Nếu không phải admin và không phải chủ tài khoản, trả về lỗi
+        if (!isAdmin && !userIdFromToken.equals(userId)) {
+            throw new SecurityException("Bạn không có quyền truy cập vào thông tin người dùng này");
+        }
+
+        // Lấy thông tin người dùng
+        User user = userRepo.findById(UUID.fromString(userId))
+                .orElseThrow(() -> new UserNotFoundException("User not found with ID: " + userId));
+
         return modelMapper.map(user, UserResponseDTO.class);
     }
+
 
     @Override
     public UserResponseDTO updateUser(UUID id, UserRequestDTO userRequestDTO) {

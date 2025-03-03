@@ -1,6 +1,10 @@
 package com.kkunquizapp.QuizAppBackend.service.impl;
 
 import com.kkunquizapp.QuizAppBackend.dto.AuthResponseDTO;
+import com.kkunquizapp.QuizAppBackend.dto.UserRequestDTO;
+import com.kkunquizapp.QuizAppBackend.dto.UserResponseDTO;
+import com.kkunquizapp.QuizAppBackend.exception.DuplicateEntityException;
+import com.kkunquizapp.QuizAppBackend.exception.InvalidRequestException;
 import com.kkunquizapp.QuizAppBackend.model.User;
 import com.kkunquizapp.QuizAppBackend.model.UserPrincipal;
 import com.kkunquizapp.QuizAppBackend.model.enums.UserRole;
@@ -9,29 +13,78 @@ import com.kkunquizapp.QuizAppBackend.service.AuthService;
 import com.kkunquizapp.QuizAppBackend.service.JwtService;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.RandomStringUtils;
-import org.springframework.http.HttpStatus;
+import org.modelmapper.ModelMapper;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
-import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
+import static com.kkunquizapp.QuizAppBackend.helper.validateHelper.isEmailFormat;
+
 @Service
+@RequiredArgsConstructor
 public class AuthServiceImpl implements AuthService {
     private final JwtService jwtService;
     private final UserRepo userRepo;
     private final BCryptPasswordEncoder encoder;
+    private final AuthenticationManager authManager;
+    private final ModelMapper modelMapper;
 
-    public AuthServiceImpl(JwtService jwtService, UserRepo userRepo) {
-        this.jwtService = jwtService;
-        this.userRepo = userRepo;
-        this.encoder = new BCryptPasswordEncoder(12); // Sử dụng BCrypt với độ mạnh 12
+    @Override
+    @Transactional
+    public UserResponseDTO register(UserRequestDTO userRequestDTO) {
+        if (isEmailFormat(userRequestDTO.getUsername())) {
+            throw new InvalidRequestException("Username cannot be in email format: " + userRequestDTO.getUsername());
+        }
+
+        if (userRepo.existsByEmail(userRequestDTO.getEmail())) {
+            throw new DuplicateEntityException("Email already exists: " + userRequestDTO.getEmail());
+        }
+
+        if (userRepo.existsByUsername(userRequestDTO.getUsername())) {
+            throw new DuplicateEntityException("Username already exists: " + userRequestDTO.getUsername());
+        }
+
+        User user = modelMapper.map(userRequestDTO, User.class);
+        user.setPassword(encoder.encode(userRequestDTO.getPassword()));
+        user.setRole(UserRole.USER);
+        User savedUser = userRepo.save(user);
+
+        return modelMapper.map(savedUser, UserResponseDTO.class);
+    }
+
+    @Override
+    public AuthResponseDTO verify(UserRequestDTO userRequestDTO) {
+        Authentication authentication = authManager.authenticate(
+                new UsernamePasswordAuthenticationToken(userRequestDTO.getUsername(), userRequestDTO.getPassword())
+        );
+
+        if (authentication.isAuthenticated()) {
+            UserPrincipal userPrincipal = (UserPrincipal) authentication.getPrincipal();
+            Map<String, String> tokens = jwtService.generateTokens(userPrincipal);
+
+            return AuthResponseDTO.builder()
+                    .accessToken(tokens.get("accessToken"))
+                    .refreshToken(tokens.get("refreshToken"))
+                    .type("Bearer")
+                    .username(userPrincipal.getUsername())
+                    .roles(userPrincipal.getAuthorities().stream()
+                            .map(auth -> auth.getAuthority())
+                            .collect(Collectors.toList()))
+                    .build();
+        }
+
+        throw new IllegalArgumentException("Invalid username or password");
     }
 
     @Transactional
@@ -76,10 +129,11 @@ public class AuthServiceImpl implements AuthService {
             }
 
             UserPrincipal userPrincipal = new UserPrincipal(user);
-            String token = jwtService.generateToken(userPrincipal);
+            Map<String, String> tokens = jwtService.generateTokens(userPrincipal);
 
             return AuthResponseDTO.builder()
-                    .token(token)
+                    .accessToken(tokens.get("accessToken"))
+                    .refreshToken(tokens.get("refreshToken"))
                     .type("Bearer")
                     .username(userPrincipal.getUsername())
                     .roles(userPrincipal.getAuthorities().stream()
@@ -92,5 +146,14 @@ public class AuthServiceImpl implements AuthService {
         }
     }
 
+    public String getCurrentUserId() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
 
+        if (authentication != null && authentication.getPrincipal() instanceof Jwt) {
+            Jwt jwt = (Jwt) authentication.getPrincipal();
+            return jwt.getClaim("userId"); // Lấy userId từ JWT claims
+        }
+
+        throw new IllegalStateException("Không thể lấy userId từ Access Token");
+    }
 }
