@@ -12,4 +12,5 @@ public interface AuthService {
     AuthResponseDTO verify(UserRequestDTO userRequestDTO);
     AuthResponseDTO authenticateWithGoogle(String accessToken);
     String getCurrentUserId();
+    String refreshAccessToken(String refreshToken);
 }

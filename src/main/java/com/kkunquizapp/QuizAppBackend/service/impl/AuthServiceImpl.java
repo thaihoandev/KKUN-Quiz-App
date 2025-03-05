@@ -10,20 +10,24 @@ import com.kkunquizapp.QuizAppBackend.model.UserPrincipal;
 import com.kkunquizapp.QuizAppBackend.model.enums.UserRole;
 import com.kkunquizapp.QuizAppBackend.repo.UserRepo;
 import com.kkunquizapp.QuizAppBackend.service.AuthService;
+import com.kkunquizapp.QuizAppBackend.service.CustomUserDetailsService;
 import com.kkunquizapp.QuizAppBackend.service.JwtService;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.RandomStringUtils;
 import org.modelmapper.ModelMapper;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.Map;
 import java.util.Optional;
@@ -39,6 +43,8 @@ public class AuthServiceImpl implements AuthService {
     private final BCryptPasswordEncoder encoder;
     private final AuthenticationManager authManager;
     private final ModelMapper modelMapper;
+
+    private final CustomUserDetailsService customUserDetailsService;
 
     @Override
     @Transactional
@@ -157,5 +163,26 @@ public class AuthServiceImpl implements AuthService {
         }
 
         throw new IllegalStateException("Không thể lấy userId từ Access Token");
+    }
+
+    public String refreshAccessToken(String refreshToken) {
+        if (refreshToken == null || refreshToken.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Refresh token is required");
+        }
+
+        try {
+            // Giải mã refreshToken và lấy thông tin user
+            Map<String, Object> userInfo = jwtService.getUserInfoFromToken(refreshToken);
+            String username = (String) userInfo.get("username");
+
+            // Tìm user từ database
+            UserDetails userDetails = customUserDetailsService.loadUserByUsername(username);
+            UserPrincipal userPrincipal = (UserPrincipal) userDetails;
+
+            // Tạo Access Token mới
+            return jwtService.generateTokens(userPrincipal).get("accessToken");
+        } catch (Exception e) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid refresh token");
+        }
     }
 }

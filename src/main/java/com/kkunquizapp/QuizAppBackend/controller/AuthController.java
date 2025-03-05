@@ -42,6 +42,12 @@ public class AuthController {
         return authService.authenticateWithGoogle(accessToken);
     }
 
+    @PostMapping("/refresh-token")
+    public ResponseEntity<?> refreshAccessToken(@RequestBody Map<String, String> request) {
+        String refreshToken = request.get("refreshToken");
+        String newAccessToken = authService.refreshAccessToken(refreshToken);
+        return ResponseEntity.ok(Map.of("accessToken", newAccessToken));
+    }
 }
 
 
