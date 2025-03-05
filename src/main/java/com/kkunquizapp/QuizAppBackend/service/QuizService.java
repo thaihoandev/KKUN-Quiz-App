@@ -5,10 +5,13 @@ import com.kkunquizapp.QuizAppBackend.dto.QuizResponseDTO;
 import jakarta.servlet.http.HttpServletRequest;
 import org.modelmapper.ModelMapper;
 
+import java.util.List;
 import java.util.UUID;
 
 public interface QuizService {
+    List<QuizResponseDTO> getAllQuizzes();
     QuizResponseDTO getQuizById(UUID quizId);
+    List<QuizResponseDTO> getQuizzesByUser(UUID userId);
     QuizResponseDTO createQuiz(HttpServletRequest request, QuizRequestDTO quizRequestDTO);
     QuizResponseDTO updateQuiz(UUID quizId, QuizRequestDTO quizRequestDTO);
     QuizResponseDTO deleteQuiz(UUID quizId);

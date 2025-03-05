@@ -2,11 +2,13 @@ package com.kkunquizapp.QuizAppBackend.interceptor;
 
 import com.kkunquizapp.QuizAppBackend.model.Quiz;
 import com.kkunquizapp.QuizAppBackend.repo.QuizRepo;
+import com.kkunquizapp.QuizAppBackend.service.JwtService;
 import com.kkunquizapp.QuizAppBackend.service.QuizService;
 import com.kkunquizapp.QuizAppBackend.service.UserService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 
@@ -19,14 +21,21 @@ public class QuizPermissionInterceptor implements HandlerInterceptor {
     private final QuizService quizService;
     private final UserService userService;
     private final QuizRepo quizRepository;
-
+    @Autowired
+    private JwtService jwtService;
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
-        String currentUserId = (String) request.getAttribute("currentUserId");
-        if (currentUserId == null) {
-            currentUserId = request.getHeader("currentUserId");
+        String token = request.getHeader("Authorization");
+
+        if (token == null || !token.startsWith("Bearer ")) {
+            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            response.getWriter().write("Missing or invalid Authorization header");
+            return false;
         }
+
+        token = token.substring(7); // Loại bỏ "Bearer " khỏi token
+        String currentUserId = jwtService.getUserIdFromToken(token); // Lấy userId từ token
 
         String requestURI = request.getRequestURI();
         String quizId = extractQuizIdFromURI(requestURI);

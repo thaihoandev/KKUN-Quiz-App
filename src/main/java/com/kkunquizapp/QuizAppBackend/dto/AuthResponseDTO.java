@@ -8,7 +8,8 @@ import java.util.List;
 @Data
 @Builder
 public class AuthResponseDTO {
-    private String token;
+    private String accessToken;
+    private String refreshToken;
     private String type;
     private String username;
     private List<String> roles;

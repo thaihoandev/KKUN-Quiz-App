@@ -9,6 +9,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -18,7 +19,18 @@ public class QuizController {
     private QuizService quizService;
 
     @GetMapping()
-    public ResponseEntity<QuizResponseDTO> getAllQuizzes(
+    public ResponseEntity<List<QuizResponseDTO>> getAllQuizzes(){
+        try {
+            List<QuizResponseDTO> responseDTO = quizService.getAllQuizzes();
+            return ResponseEntity.ok(responseDTO);
+        } catch (Exception e) {
+            return ResponseEntity.notFound().build();
+        }
+    }
+
+    //     Lấy thông tin  quiz
+    @GetMapping("/{quizId}")
+    public ResponseEntity<QuizResponseDTO> getQuizzesByUser(
             @PathVariable UUID quizId){
         try {
             QuizResponseDTO responseDTO = quizService.getQuizById(quizId);
@@ -28,12 +40,11 @@ public class QuizController {
         }
     }
 
-    //     Lấy thông tin  quiz
-    @GetMapping("/{quizId}")
-    public ResponseEntity<QuizResponseDTO> getQuizById(
-            @PathVariable UUID quizId){
+    @GetMapping("/users/{userId}")
+    public ResponseEntity<List<QuizResponseDTO>> getQuizByUser(
+            @PathVariable UUID userId){
         try {
-            QuizResponseDTO responseDTO = quizService.getQuizById(quizId);
+            List<QuizResponseDTO> responseDTO = quizService.getQuizzesByUser(userId);
             return ResponseEntity.ok(responseDTO);
         } catch (Exception e) {
             return ResponseEntity.notFound().build();

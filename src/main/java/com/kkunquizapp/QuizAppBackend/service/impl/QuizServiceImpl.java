@@ -15,7 +15,9 @@ import org.modelmapper.ModelMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class QuizServiceImpl implements QuizService {
@@ -31,6 +33,22 @@ public class QuizServiceImpl implements QuizService {
     public QuizServiceImpl(ModelMapper modelMapper) {
         this.modelMapper = modelMapper;
     }
+    public List<QuizResponseDTO> getAllQuizzes() {
+        List<Quiz> existingQuizzes = quizRepo.findAll(); // Lấy tất cả quizzes
+
+        return existingQuizzes.stream()
+                .map(quiz -> modelMapper.map(quiz, QuizResponseDTO.class)) // Ánh xạ từng quiz sang DTO
+                .collect(Collectors.toList()); // Thu thập kết quả vào danh sách
+    }
+
+    public List<QuizResponseDTO> getQuizzesByUser(UUID userId) {
+        List<Quiz> hostedQuizzes = quizRepo.findByHost_UserId(userId);
+        return hostedQuizzes.stream()
+                .map(quiz -> modelMapper.map(quiz, QuizResponseDTO.class))
+                .collect(Collectors.toList());
+    }
+
+
     public QuizResponseDTO getQuizById(UUID quizId) {
         Quiz existingQuiz = quizRepo.findById(quizId)
                 .orElseThrow(() -> new IllegalArgumentException("Quiz not found with ID: " + quizId));
