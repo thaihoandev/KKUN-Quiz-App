@@ -1,9 +1,3 @@
-export interface UserRequestDTO {
-    name: string;
-    username: string;
-    email: string;
-    password: string;
-}
 
 export interface User {
     id: string;
@@ -14,6 +8,29 @@ export interface User {
     avatar?: string;
     name: string;
 }
+
+export interface UserResponseDTO {
+  userId: string;
+  username: string;
+  email: string;
+  school: string;
+  name: string;
+  avatar: string;
+  roles: string[];
+  createdAt: string;
+  isActive: boolean;
+}
+
+export interface UserRequestDTO {
+  username: string;
+  email: string;
+  password?: string;
+  school: string;
+  name: string;
+  avatar: string;
+  role: string;
+}
+
 export interface UserProfile {
   userId: string;
   email?: string;

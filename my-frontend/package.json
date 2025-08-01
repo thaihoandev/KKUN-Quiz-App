@@ -29,6 +29,7 @@
     "react-bootstrap": "^2.10.10",
     "react-data-table-component": "^7.7.0",
     "react-dom": "^19.1.0",
+    "react-easy-crop": "^5.5.0",
     "react-hook-form": "^7.60.0",
     "react-i18next": "^15.6.0",
     "react-router-dom": "^7.7.0",
