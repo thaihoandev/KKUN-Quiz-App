@@ -1,3 +1,5 @@
+package com.kkunquizapp.QuizAppBackend.config;
+
 import com.kkunquizapp.QuizAppBackend.config.RedisSubscriber;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;

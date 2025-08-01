@@ -9,10 +9,6 @@ import SingleLayout from "@/layouts/SingleLayout";
 
 // pages
 import HomePage               from "@/pages/HomePage";
-import ProfilePage            from "@/pages/ProfilePage";
-import ClassesPage            from "@/pages/ClassesPage";
-import CoursesPage            from "@/pages/CoursesPage";
-import QuizzesPage            from "@/pages/QuizzesPage";
 import AchievementPage        from "@/pages/AchievementPage";
 import QuizManagementPage     from "@/pages/quizManagement/QuizManagementPage";
 import QuizEditorPage         from "@/pages/quizManagement/QuizEditorPage";
@@ -26,6 +22,7 @@ import ChangePasswordPage     from "@/pages/ChangePasswordPage";
 import JoinGamePage from "@/pages/gameSession/JoinGamePage";
 import WaitingRoomSessionPage from "@/pages/gameSession/WaitingRoomSessionPage";
 import GamePlayPage from "@/pages/game/GamePlayPage";
+import UserDashboardPage from "@/pages/UserDashboardPage";
 
 const AppRoutes: React.FC = () => (
   <>
@@ -46,10 +43,7 @@ const AppRoutes: React.FC = () => (
           <Route index element={<HomePage />} />
 
           {/* nested paths */}
-          <Route path="profile"           element={<ProfilePage />} />
-          <Route path="classes"           element={<ClassesPage />} />
-          <Route path="courses"           element={<CoursesPage />} />
-          <Route path="quizzes"           element={<QuizzesPage />} />
+          <Route path="dashboard"           element={<UserDashboardPage />} />
           <Route path="quizzes/:quizId"   element={<QuizManagementPage />} />
           <Route path="achievements"      element={<AchievementPage />} />
           <Route path="settings"          element={<SettingProfilePage />} />

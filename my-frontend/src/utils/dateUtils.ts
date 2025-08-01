@@ -19,15 +19,12 @@ export const formatDateTime = (
 };
 
 // Hàm chỉ lấy ngày, tháng, năm
-export const formatDateOnly = (
-    dateString: string | null | undefined,
-): string => {
-    if (!dateString) return "N/A";
-
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-US", {
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-    });
-};
+export function formatDateOnly(date: string | Date): string {
+  const d = typeof date === "string" ? new Date(date) : date;
+  if (isNaN(d.getTime())) return "Invalid date";
+  return d.toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}

@@ -1,5 +1,6 @@
 package com.kkunquizapp.QuizAppBackend.service.impl;
 
+import com.cloudinary.Cloudinary;
 import com.kkunquizapp.QuizAppBackend.dto.UserRequestDTO;
 import com.kkunquizapp.QuizAppBackend.dto.UserResponseDTO;
 import com.kkunquizapp.QuizAppBackend.dto.AuthResponseDTO;
@@ -20,16 +21,15 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
-import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.security.oauth2.jwt.JwtClaimsSet;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
-import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Collections;
@@ -50,7 +50,7 @@ public class UserServiceImpl implements UserService {
     private final BCryptPasswordEncoder encoder;
     private final CustomUserDetailsService customUserDetailsService;
     private final JwtService jwtService;
-
+    private final Cloudinary cloudinary;
 
     @Override
     @Transactional
@@ -78,7 +78,6 @@ public class UserServiceImpl implements UserService {
                 .build();
     }
 
-
     @Override
     public List<UserResponseDTO> getAllUsers(String token) {
         Map<String, Object> userInfo = jwtService.getUserInfoFromToken(token.replace("Bearer ", ""));
@@ -94,7 +93,6 @@ public class UserServiceImpl implements UserService {
                 .map(user -> modelMapper.map(user, UserResponseDTO.class))
                 .collect(Collectors.toList());
     }
-
 
     @Override
     public UserResponseDTO getUserById(String userId, String token) {
@@ -119,18 +117,48 @@ public class UserServiceImpl implements UserService {
         return modelMapper.map(user, UserResponseDTO.class);
     }
 
-
     @Override
+    @Transactional
     public UserResponseDTO updateUser(UUID id, UserRequestDTO userRequestDTO) {
         User existingUser = userRepo.findById(id)
                 .orElseThrow(() -> new UserNotFoundException("User not found with ID: " + id));
 
-        existingUser.setUsername(userRequestDTO.getUsername());
-        existingUser.setEmail(userRequestDTO.getEmail());
+        // Validate email format
+        if (userRequestDTO.getEmail() != null && !isEmailFormat(userRequestDTO.getEmail())) {
+            throw new InvalidRequestException("Invalid email format");
+        }
+
+        // Check for duplicate email (if changed)
+        if (userRequestDTO.getEmail() != null && !userRequestDTO.getEmail().equals(existingUser.getEmail())) {
+            if (userRepo.findByEmail(userRequestDTO.getEmail()).isPresent()) {
+                throw new DuplicateEntityException("Email already in use");
+            }
+            existingUser.setEmail(userRequestDTO.getEmail());
+        }
+
+        // Update fields if provided
+        if (userRequestDTO.getUsername() != null && !userRequestDTO.getUsername().isEmpty()) {
+            existingUser.setUsername(userRequestDTO.getUsername());
+        }
+        if (userRequestDTO.getName() != null) {
+            existingUser.setName(userRequestDTO.getName());
+        }
+        if (userRequestDTO.getSchool() != null) {
+            existingUser.setSchool(userRequestDTO.getSchool());
+        }
         if (userRequestDTO.getPassword() != null && !userRequestDTO.getPassword().isEmpty()) {
             existingUser.setPassword(encoder.encode(userRequestDTO.getPassword()));
         }
+        if (userRequestDTO.getRole() != null) {
+            try {
+                UserRole role = UserRole.valueOf(userRequestDTO.getRole().toUpperCase());
+                existingUser.setRole(role);
+            } catch (IllegalArgumentException e) {
+                throw new InvalidRequestException("Invalid role: " + userRequestDTO.getRole());
+            }
+        }
 
+        // Save updated user
         User updatedUser = userRepo.save(existingUser);
         return modelMapper.map(updatedUser, UserResponseDTO.class);
     }
@@ -141,5 +169,44 @@ public class UserServiceImpl implements UserService {
             throw new UserNotFoundException("User not found with ID: " + id);
         }
         userRepo.deleteById(id);
+    }
+
+    @Override
+    @Transactional
+    public UserResponseDTO updateUserAvatar(UUID id, MultipartFile file, String token) {
+        // Lấy thông tin từ Access Token
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (!(authentication.getPrincipal() instanceof Jwt jwt)) {
+            throw new SecurityException("Không thể xác thực Access Token");
+        }
+        String userIdFromToken = jwt.getClaim("userId");
+        List<String> roles = jwt.getClaim("roles");
+        boolean isAdmin = roles.contains(UserRole.ADMIN.name());
+
+        // Nếu không phải admin và không phải chủ tài khoản, trả về lỗi
+        if (!isAdmin && !userIdFromToken.equals(id.toString())) {
+            throw new SecurityException("Bạn không có quyền cập nhật avatar của người dùng này");
+        }
+
+        // Tìm người dùng
+        User user = userRepo.findById(id)
+                .orElseThrow(() -> new UserNotFoundException("User not found with ID: " + id));
+
+        try {
+            // Upload file lên Cloudinary
+            Map uploadResult = cloudinary.uploader().upload(file.getBytes(),
+                    Map.of("resource_type", "image", "public_id", "user_avatars/" + id.toString()));
+
+            // Lấy URL của ảnh từ Cloudinary
+            String avatarUrl = (String) uploadResult.get("secure_url");
+
+            // Cập nhật avatar trong database
+            user.setAvatar(avatarUrl);
+            User updatedUser = userRepo.save(user);
+
+            return modelMapper.map(updatedUser, UserResponseDTO.class);
+        } catch (IOException e) {
+            throw new RuntimeException("Lỗi khi upload avatar lên Cloudinary: " + e.getMessage());
+        }
     }
 }

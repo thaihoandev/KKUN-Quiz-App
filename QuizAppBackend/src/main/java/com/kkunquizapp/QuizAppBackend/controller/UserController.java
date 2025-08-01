@@ -12,10 +12,10 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 
 @RestController
@@ -37,14 +37,16 @@ public class UserController {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(e.getMessage());
         }
     }
+
     // API lấy thông tin người dùng của chính mình
     @GetMapping("/me")
     public UserResponseDTO getCurrentUser(@AuthenticationPrincipal Jwt jwt) {
-         return userService.getUserById(jwt.getClaim("userId"),jwt.getTokenValue());
+        return userService.getUserById(jwt.getClaim("userId"), jwt.getTokenValue());
     }
+
     @GetMapping("/{id}")
     public UserResponseDTO getUserById(@AuthenticationPrincipal Jwt jwt, @PathVariable String id) {
-        return userService.getUserById(id,jwt.getTokenValue());
+        return userService.getUserById(id, jwt.getTokenValue());
     }
 
     // Update user
@@ -59,5 +61,14 @@ public class UserController {
     public ResponseEntity<String> deleteUser(@PathVariable UUID id) {
         userService.deleteUser(id);
         return ResponseEntity.ok("User deleted successfully!");
+    }
+
+    // Update user avatar
+    @PostMapping("/{id}/avatar")
+    public ResponseEntity<UserResponseDTO> updateUserAvatar(@AuthenticationPrincipal Jwt jwt,
+                                                            @PathVariable UUID id,
+                                                            @RequestPart("file") MultipartFile file) {
+        UserResponseDTO updatedUser = userService.updateUserAvatar(id, file, jwt.getTokenValue());
+        return ResponseEntity.ok(updatedUser);
     }
 }
