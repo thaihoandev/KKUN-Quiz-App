@@ -1,0 +1,118 @@
+.container {
+  width: 100%;
+  margin: 0 auto;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.errorContainer {
+  width: 100%;
+  margin: 0 auto;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.gameOverContainer {
+  width: 100%;
+  margin: 0 auto;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.card {
+  width: 100%;
+  border: none;
+  margin: 0 auto;
+  backdrop-filter: blur(10px);
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 15px;
+}
+
+.errorCard {
+  max-width: 400px;
+}
+
+.gameOverCard {
+  max-width: 600px;
+}
+
+.leaderboardItem {
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.leaderboardItem:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+}
+
+.progress-bar {
+  background: linear-gradient(135deg, #ff4757 0%, #ffa502 50%, #26de81 100%) !important;
+}
+
+.rankGold {
+  background: linear-gradient(135deg, #ffd700, #ffa500);
+}
+
+.rankSilver {
+  background: linear-gradient(135deg, #c0c0c0, #a8a8a8);
+}
+
+.rankBronze {
+  background: linear-gradient(135deg, #cd7f32, #b8860b);
+}
+
+.rankDefault {
+  background: linear-gradient(135deg, #667eea, #764ba2);
+}
+
+/* Animation for correct answer button */
+.correctAnswer {
+  animation: pulseCorrect 1s ease-in-out infinite;
+  box-shadow: 0 0 15px rgba(76, 175, 80, 0.7), 0 0 30px rgba(76, 175, 80, 0.5);
+}
+
+/* Animation for incorrect selected answer */
+.wrongAnswer {
+  animation: shakeWrong 0.5s ease-in-out;
+}
+
+/* Glow effect for correct FILL_IN_THE_BLANK input */
+.correctInput {
+  animation: pulseCorrect 1s ease-in-out infinite;
+  box-shadow: 0 0 15px rgba(76, 175, 80, 0.7), 0 0 30px rgba(76, 175, 80, 0.5);
+  border-color: #4caf50 !important;
+}
+
+@keyframes pulseCorrect {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.7);
+  }
+  50% {
+    transform: scale(1.05);
+    box-shadow: 0 0 0 10px rgba(76, 175, 80, 0);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(76, 175, 80, 0);
+  }
+}
+
+@keyframes shakeWrong {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  20%, 60% {
+    transform: translateX(-10px);
+  }
+  40%, 80% {
+    transform: translateX(10px);
+  }
+}
+
+@media (max-width: 768px) {
+  .card {
+    width: 95vw;
+  }
+
+  .row-cols-md-2 {
+    grid-template-columns: 1fr !important;
+  }
+}

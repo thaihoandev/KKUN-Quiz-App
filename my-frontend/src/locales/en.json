@@ -1,0 +1,62 @@
+{
+    "common": {
+        "welcome": "Welcome to our app!",
+        "loading": "Loading...",
+        "error": "An error has occurred",
+        "save": "Save",
+        "cancel": "Cancel",
+        "confirm": "Confirm",
+        "submit": "Submit",
+        "delete": "Delete",
+        "edit": "Edit",
+        "search": "Search",
+        "no_results": "No results found"
+    },
+    "navbar": {
+        "home": "Home",
+        "about": "About",
+        "contact": "Contact",
+        "profile": "Profile",
+        "settings": "Settings",
+        "logout": "Logout",
+        "login": "Login",
+        "register": "Register"
+    },
+    "auth": {
+        "login_title": "Login to Your Account",
+        "register_title": "Create a New Account",
+        "username": "Username",
+        "password": "Password",
+        "email": "Email",
+        "forgot_password": "Forgot Password?",
+        "remember_me": "Remember Me",
+        "or_login_with": "Or login with"
+    },
+    "dashboard": {
+        "title": "Dashboard",
+        "welcome_back": "Welcome back, {{name}}!",
+        "overview": "Overview",
+        "statistics": "Statistics",
+        "recent_activity": "Recent Activity"
+    },
+    "settings": {
+        "title": "Settings",
+        "language": "Language",
+        "change_language": "Change Language",
+        "dark_mode": "Dark Mode",
+        "notifications": "Notifications",
+        "privacy_policy": "Privacy Policy",
+        "terms_of_service": "Terms of Service"
+    },
+    "errors": {
+        "page_not_found": "Page not found",
+        "unauthorized": "You are not authorized to view this page",
+        "server_error": "Server error, please try again later"
+    },
+    "buttons": {
+        "ok": "OK",
+        "yes": "Yes",
+        "no": "No",
+        "close": "Close"
+    }
+}
