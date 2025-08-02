@@ -48,7 +48,7 @@ interface HeaderProps {
   profile?: Profile;
 }
 
-const Header: React.FC<HeaderProps> = ({ profile }) => {
+const SidebarMain: React.FC<HeaderProps> = ({ profile }) => {
   const [menuCollapsed, setMenuCollapsed] = useState<boolean>(false);
   const [activeMenuItem, setActiveMenuItem] = useState<string>("");
   const [openSubmenus, setOpenSubmenus] = useState<string[]>([]);
@@ -395,4 +395,4 @@ const Header: React.FC<HeaderProps> = ({ profile }) => {
   );
 };
 
-export default Header;
+export default SidebarMain;

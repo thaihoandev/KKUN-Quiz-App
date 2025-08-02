@@ -1,5 +1,5 @@
 import {Outlet} from "react-router-dom";
-import Header from "@/components/headers/Header";
+import SidebarMain from "@/components/sidebars/SidebarMain";
 import Footer from "@/components/Footer";
 import Navbar from "@/components/navbars/Navbar";
 import {getCurrentUser} from "@/services/userService";
@@ -38,7 +38,7 @@ const MainLayout = () => {
     return (
         <div className="layout-wrapper layout-content-navbar">
             <div className="layout-container">
-                <Header profile={profile} />
+                <SidebarMain profile={profile} />
                 <div className="layout-page">
                     <Navbar profile={profile} />
                     <div className="wrapper-content">
