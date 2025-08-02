@@ -98,6 +98,11 @@ const GamePlayPage: React.FC = () => {
     playersRef.current = players;
   }, [players]);
 
+  const currentQuestionRef = useRef<ExtendedQuestionResponseDTO | null>(null);
+  useEffect(() => {
+    currentQuestionRef.current = currentQuestion;
+  }, [currentQuestion]);
+
   const isHost = useMemo(() => {
     return user?.userId !== undefined && hostId !== null && user.userId === hostId;
   }, [user, hostId]);
@@ -159,10 +164,8 @@ const GamePlayPage: React.FC = () => {
         client.subscribe(`/topic/game/${gameId}/question`, (msg) => {
           try {
             const question: ExtendedQuestionResponseDTO = JSON.parse(msg.body);
-            console.log("Received question:", question); // Debug log
             if (isShowingCorrectAnswer) {
               setPendingQuestion(question);
-              console.log("Queued pending question:", question); // Debug log
             } else {
               setCurrentQuestion(question);
               setImageUrl(question.imageUrl || "");
@@ -194,10 +197,8 @@ const GamePlayPage: React.FC = () => {
               avatar: p?.avatar ?? assignRandomAvatar(),
             } as ExtendedPlayerResponseDTO;
           });
-          console.log("Received leaderboard:", updated); // Debug log
           if (isShowingCorrectAnswer) {
             setPendingLeaderboard(updated);
-            console.log("Queued pending leaderboard:", updated); // Debug log
           } else {
             setLeaderboard(updated);
             if (!isHost) {
@@ -229,8 +230,25 @@ const GamePlayPage: React.FC = () => {
             questionId: string;
             correctOptions: Option[];
           };
-          console.log("Received correct answer:", payload); // Debug log
-          if (currentQuestion?.questionId === payload.questionId) {
+          console.log("[DEBUG] incoming correct-answer payload:", payload);
+          console.log("[DEBUG] currentQuestionRef before merge:", currentQuestionRef.current);
+
+          if (currentQuestionRef.current?.questionId === payload.questionId) {
+            setCurrentQuestion((prev) => {
+              if (!prev || prev.questionId !== payload.questionId) return prev;
+              const updatedOptions = prev.options.map((opt) => {
+                const correctOpt = payload.correctOptions.find((c) => c.optionId === opt.optionId);
+                return {
+                  ...opt,
+                  correct: correctOpt?.correct ?? opt.correct,
+                  correctAnswer: correctOpt?.correctAnswer ?? opt.correctAnswer,
+                };
+              });
+              const updated = { ...prev, options: updatedOptions };
+              console.log("[DEBUG] after merge updatedQuestion:", updated);
+              return updated;
+            });
+
             setShowCorrectAnswer(true);
             setIsShowingCorrectAnswer(true);
             setTimeout(() => {
@@ -247,19 +265,21 @@ const GamePlayPage: React.FC = () => {
                 setIsSubmitting(false);
                 setShowCorrectAnswer(false);
                 setPendingQuestion(null);
-                console.log("Loaded pending question:", pendingQuestion); // Debug log
               }
               if (pendingLeaderboard) {
                 setLeaderboard(pendingLeaderboard);
                 setPendingLeaderboard(null);
-                console.log("Loaded pending leaderboard:", pendingLeaderboard); // Debug log
               }
             }, 2000);
+          } else {
+            console.warn("Received correct-answer for non-current question:", payload.questionId);
           }
-        } catch {
+        } catch (e) {
+          console.error("[DEBUG] correct-answer handler error:", e);
           toast.error("Failed to load correct answer");
         }
       });
+
     };
 
     client.onStompError = () => {
@@ -305,21 +325,28 @@ const GamePlayPage: React.FC = () => {
   }, [gameId, wsConnected]);
 
   useEffect(() => {
-    if (timeLeft > 0 && currentQuestion && !isHost) {
-      const timer = setInterval(() => {
-        setTimeLeft((t) => {
-          if (t <= 1) {
-            clearInterval(timer);
-            setIsShowingCorrectAnswer(true);
-            console.log("Time up, waiting for correct answer from WebSocket"); // Debug log
-            return 0;
-          }
-          return t - 1;
-        });
-      }, 1000);
-      return () => clearInterval(timer);
+    if (currentQuestion && !isHost) {
+        const startTime = Date.now(); // Thời gian bắt đầu khi nhận câu hỏi
+        const timeLimit = currentQuestion.timeLimit || 5; // Thời hạn câu hỏi
+        const endTime = startTime + timeLimit * 1000; // Thời gian kết thúc
+
+        const timer = setInterval(() => {
+            const now = Date.now();
+            const timeLeftMs = endTime - now; // Tính thời gian còn lại (ms)
+            const timeLeftSec = Math.max(0, Math.ceil(timeLeftMs / 1000)); // Chuyển sang giây
+
+            setTimeLeft(timeLeftSec);
+
+            if (timeLeftSec <= 0) {
+                clearInterval(timer);
+                setIsShowingCorrectAnswer(true);
+                console.log("Time up, waiting for correct answer from WebSocket");
+            }
+        }, 100); // Cập nhật mỗi 100ms để mượt mà hơn
+
+        return () => clearInterval(timer);
     }
-  }, [timeLeft, currentQuestion, isHost]);
+  }, [currentQuestion, isHost]);
 
   const handleMultipleChoiceSelect = async (optionId: string) => {
     if (hasAnswered || timeLeft === 0 || isHost) return;
