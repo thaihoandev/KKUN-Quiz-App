@@ -15,4 +15,5 @@ public interface UserService {
     UserResponseDTO updateUser(UUID id, UserRequestDTO userRequestDTO);
     void deleteUser(UUID id);
     UserResponseDTO updateUserAvatar(UUID id, MultipartFile file, String token);
+    String getCurrentUserId();
 }

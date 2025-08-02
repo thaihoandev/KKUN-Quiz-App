@@ -1,10 +1,12 @@
 package com.kkunquizapp.QuizAppBackend.dto;
 
+import lombok.Builder;
 import lombok.Data;
 
 import java.util.UUID;
 
 @Data
+@Builder
 public class MediaDTO {
     private UUID mediaId;
     private String url;

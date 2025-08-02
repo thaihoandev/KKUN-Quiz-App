@@ -1,20 +1,5 @@
-import { UserResponseDTO } from "@/interfaces";
+import { UserResponseDTO, PostType, Comment } from "@/interfaces";
 import PostCard from "./PostCard";
-
-interface Comment {
-  id: string;
-  content: string;
-  createdAt: Date;
-}
-
-interface PostType {
-  id: string;
-  content: string;
-  createdAt: Date;
-  likes: number;
-  comments: Comment[];
-  images?: string[];
-}
 
 interface PostListProps {
   posts: PostType[];

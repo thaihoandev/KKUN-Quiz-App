@@ -1,29 +1,14 @@
 import { formatDateOnly } from "@/utils/dateUtils";
-import { UserResponseDTO } from "@/interfaces";
+import { UserResponseDTO, PostType, Comment } from "@/interfaces";
 import { useState, useRef, useCallback, KeyboardEvent } from "react";
 
-interface Comment {
-  id: string;
-  content: string;
-  createdAt: Date;
-}
-
-interface PostType {
-  id: string;
-  content: string;
-  createdAt: Date;
-  likes: number;
-  comments: Comment[];
-  images?: string[];
-}
-
-interface PostProps {
+interface PostCardProps {
   post: PostType;
   profile: UserResponseDTO | null;
   onUpdate: (updatedPost: PostType) => void;
 }
 
-const PostCard: React.FC<PostProps> = ({ post, profile, onUpdate }) => {
+const PostCard: React.FC<PostCardProps> = ({ post, profile, onUpdate }) => {
   const [newComment, setNewComment] = useState("");
   const commentInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -44,7 +29,6 @@ const PostCard: React.FC<PostProps> = ({ post, profile, onUpdate }) => {
       const updated = { ...post, comments: [...post.comments, newComm] };
       onUpdate(updated);
       setNewComment("");
-      // focus back
       commentInputRef.current?.focus();
     },
     [post, onUpdate]
@@ -80,7 +64,9 @@ const PostCard: React.FC<PostProps> = ({ post, profile, onUpdate }) => {
             </div>
             <div>
               <h6 className="mb-0">{profile?.name || "User"}</h6>
-              <small className="text-muted">{formatDateOnly(post.createdAt)}</small>
+              <small className="text-muted">
+                {formatDateOnly(post.createdAt)} | {post.privacy}
+              </small>
             </div>
           </div>
           <button
@@ -119,39 +105,38 @@ const PostCard: React.FC<PostProps> = ({ post, profile, onUpdate }) => {
 
         {/* Actions */}
         <div className="border-top pt-2 mt-3">
-        <div className="d-flex w-100 gap-2 justify-content-between align-items-center mb-2">
+          <div className="d-flex w-100 gap-2 justify-content-between align-items-center mb-2">
             <button
-            type="button"
-            aria-label="Like"
-            className="btn btn-outline-primary btn-sm d-flex align-items-center"
-            onClick={handleLike}
+              type="button"
+              aria-label="Like"
+              className="btn btn-outline-primary btn-sm d-flex align-items-center"
+              onClick={handleLike}
             >
-            <i className="icon-base bx bx-like me-1" aria-hidden="true" />
-            <span>{post.likes} Likes</span>
+              <i className="icon-base bx bx-like me-1" aria-hidden="true" />
+              <span>{post.likes} Likes</span>
             </button>
 
             <button
-            type="button"
-            aria-label="Comment"
-            className="btn btn-outline-secondary btn-sm d-flex align-items-center"
-            onClick={focusCommentInput}
+              type="button"
+              aria-label="Comment"
+              className="btn btn-outline-secondary btn-sm d-flex align-items-center"
+              onClick={focusCommentInput}
             >
-            <i className="icon-base bx bx-comment me-1" aria-hidden="true" />
-            <span>{post.comments.length} Comments</span>
+              <i className="icon-base bx bx-comment me-1" aria-hidden="true" />
+              <span>{post.comments.length} Comments</span>
             </button>
 
             <button
-            type="button"
-            aria-label="Share"
-            className="btn btn-outline-secondary btn-sm d-flex align-items-center"
-            onClick={handleShare}
+              type="button"
+              aria-label="Share"
+              className="btn btn-outline-secondary btn-sm d-flex align-items-center"
+              onClick={handleShare}
             >
-            <i className="icon-base bx bx-share me-1" aria-hidden="true" />
-            <span>Share</span>
+              <i className="icon-base bx bx-share me-1" aria-hidden="true" />
+              <span>Share</span>
             </button>
+          </div>
         </div>
-        </div>
-
 
         {/* Comments Section */}
         {post.comments.length > 0 && (
@@ -178,14 +163,14 @@ const PostCard: React.FC<PostProps> = ({ post, profile, onUpdate }) => {
           </div>
           <div className="flex-grow-1">
             <input
-                id={`comment-input-${post.id}`}
-                ref={(el) => { commentInputRef.current = el; }} // <--- không trả về gì
-                className="form-control form-control-sm"
-                placeholder="Write a comment..."
-                value={newComment}
-                onChange={(e) => setNewComment(e.target.value)}
-                onKeyDown={onCommentKeyDown}
-                aria-label="Write a comment"
+              id={`comment-input-${post.id}`}
+              ref={commentInputRef}
+              className="form-control form-control-sm"
+              placeholder="Write a comment..."
+              value={newComment}
+              onChange={(e) => setNewComment(e.target.value)}
+              onKeyDown={onCommentKeyDown}
+              aria-label="Write a comment"
             />
           </div>
           <button

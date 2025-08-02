@@ -2,7 +2,7 @@ package com.kkunquizapp.QuizAppBackend.model;
 
 import com.kkunquizapp.QuizAppBackend.model.enums.PostPrivacy;
 import jakarta.persistence.*;
-import lombok.Data;
+import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
@@ -12,6 +12,9 @@ import java.util.UUID;
 @Entity
 @Table(name = "posts")
 @Data
+@Builder
+@NoArgsConstructor(access = AccessLevel.PROTECTED) // JPA cần no-arg constructor
+@AllArgsConstructor
 public class Post {
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)

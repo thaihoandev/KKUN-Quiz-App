@@ -208,3 +208,20 @@ export interface Quiz {
     editors: UserDto[]; // Assuming editors are returned as an array of user IDs
     viewers: UserDto[]; // Assuming viewers are returned as an array of user IDs
 }
+
+
+export interface Comment {
+  id: string;
+  content: string;
+  createdAt: Date;
+}
+
+export interface PostType {
+  id: string;
+  content: string;
+  createdAt: Date;
+  likes: number;
+  comments: Comment[];
+  images?: string[];
+  privacy: 'PUBLIC' | 'FRIENDS' | 'PRIVATE';
+}

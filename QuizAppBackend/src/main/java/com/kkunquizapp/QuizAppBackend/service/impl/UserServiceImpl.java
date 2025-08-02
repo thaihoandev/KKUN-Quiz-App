@@ -14,6 +14,7 @@ import com.kkunquizapp.QuizAppBackend.repo.UserRepo;
 import com.kkunquizapp.QuizAppBackend.service.CustomUserDetailsService;
 import com.kkunquizapp.QuizAppBackend.service.JwtService;
 import com.kkunquizapp.QuizAppBackend.service.UserService;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.modelmapper.ModelMapper;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -27,6 +28,8 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
@@ -208,5 +211,22 @@ public class UserServiceImpl implements UserService {
         } catch (IOException e) {
             throw new RuntimeException("Lỗi khi upload avatar lên Cloudinary: " + e.getMessage());
         }
+    }
+    @Override
+    public String getCurrentUserId() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication != null && authentication.getPrincipal() instanceof UserPrincipal) {
+            UserPrincipal userPrincipal = (UserPrincipal) authentication.getPrincipal();
+            return userPrincipal.getUserId().toString(); // Assuming getUserId() returns UUID or String
+        }
+
+        // Fallback to request attribute set by JwtInterceptor
+        HttpServletRequest request = ((ServletRequestAttributes) RequestContextHolder.currentRequestAttributes()).getRequest();
+        String userId = (String) request.getAttribute("currentUserId");
+        if (userId != null) {
+            return userId;
+        }
+
+        throw new IllegalStateException("Cannot get userId from Access Token or request");
     }
 }

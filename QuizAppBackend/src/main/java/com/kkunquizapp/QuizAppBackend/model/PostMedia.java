@@ -1,13 +1,19 @@
 package com.kkunquizapp.QuizAppBackend.model;
 
+import com.kkunquizapp.QuizAppBackend.model.Media;
+import com.kkunquizapp.QuizAppBackend.model.Post;
+import com.kkunquizapp.QuizAppBackend.model.PostMediaId;
 import jakarta.persistence.*;
-import lombok.Data;
+import lombok.*;
 
-import java.util.UUID;
+import java.io.Serializable;
 
 @Entity
 @Table(name = "post_media")
 @Data
+@Builder
+@NoArgsConstructor(access = AccessLevel.PROTECTED) // JPA cần no-arg constructor, tối thiểu protected
+@AllArgsConstructor
 @IdClass(PostMediaId.class)
 public class PostMedia {
     @Id

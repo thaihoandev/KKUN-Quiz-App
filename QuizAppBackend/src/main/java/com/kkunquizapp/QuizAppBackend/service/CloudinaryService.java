@@ -1,2 +1,12 @@
-package com.kkunquizapp.QuizAppBackend.service;public class CloudinaryService {
+package com.kkunquizapp.QuizAppBackend.service;
+
+import org.springframework.web.multipart.MultipartFile;
+
+import java.io.IOException;
+import java.util.Map;
+
+public interface CloudinaryService {
+    Map upload(MultipartFile file, String folder)throws IOException;
+    Map destroy(String publicId) throws IOException;
+
 }

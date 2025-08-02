@@ -11,118 +11,106 @@ import com.kkunquizapp.QuizAppBackend.model.enums.ReactionType;
 import com.kkunquizapp.QuizAppBackend.repo.MediaRepo;
 import com.kkunquizapp.QuizAppBackend.repo.PostMediaRepo;
 import com.kkunquizapp.QuizAppBackend.repo.PostRepo;
+import com.kkunquizapp.QuizAppBackend.repo.ReactionRepo;
 import com.kkunquizapp.QuizAppBackend.repo.UserRepo;
+import com.kkunquizapp.QuizAppBackend.service.CloudinaryService;
 import com.kkunquizapp.QuizAppBackend.service.NotificationService;
 import com.kkunquizapp.QuizAppBackend.service.PostService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+/**
+ * Service implementation for handling post-related operations.
+ */
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class PostServiceImpl implements PostService {
-    @Autowired
-    private PostRepo postRepository;
+    private final PostRepo postRepository;
+    private final MediaRepo mediaRepository;
+    private final PostMediaRepo postMediaRepository;
+    private final UserRepo userRepository;
+    private final ReactionRepo reactionRepository;
+    private final NotificationService notificationService;
+    private final CloudinaryService cloudinaryService;
+    private final SimpMessagingTemplate messagingTemplate;
 
-    @Autowired
-    private MediaRepo mediaRepository;
-
-    @Autowired
-    private PostMediaRepo postMediaRepository;
-
-    @Autowired
-    private NotificationService notificationService;
-
-    @Autowired
-    private UserRepo userRepository;
-
-    @Autowired
-    private SimpMessagingTemplate messagingTemplate;
+    private static final String CLOUDINARY_FOLDER = "quizapp/posts";
+    private static final int MAX_MEDIA_FILES = 10;
 
     @Transactional
-    public PostDTO createPost(UUID userId, PostRequestDTO requestDTO) {
-        User user = userRepository.findById(userId).orElseThrow(() -> new RuntimeException("User not found"));
+    @Override
+    public PostDTO createPost(UUID userId, PostRequestDTO requestDTO, List<MultipartFile> mediaFiles) {
+        validatePostRequest(userId, requestDTO, mediaFiles);
 
-        Post post = new Post();
-        post.setUser(user);
-        post.setContent(requestDTO.getContent());
-        post.setPrivacy(requestDTO.getPrivacy() != null ? requestDTO.getPrivacy() : PostPrivacy.PUBLIC);
-        if (requestDTO.getReplyToPostId() != null) {
-            Post replyTo = postRepository.findById(requestDTO.getReplyToPostId())
-                    .orElseThrow(() -> new RuntimeException("Reply-to post not found"));
-            post.setReplyToPost(replyTo);
-        }
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("User not found with ID: " + userId));
+
+        Post post = buildPost(user, requestDTO);
         post = postRepository.save(post);
 
         List<MediaDTO> mediaDTOs = requestDTO.getMedia() != null ? requestDTO.getMedia() : List.of();
-        for (int i = 0; i < mediaDTOs.size(); i++) {
-            MediaDTO mediaDTO = mediaDTOs.get(i);
-            Media media = new Media();
-            media.setOwnerUser(user);
-            media.setUrl(mediaDTO.getUrl());
-            media.setThumbnailUrl(mediaDTO.getThumbnailUrl());
-            media.setMimeType(mediaDTO.getMimeType());
-            media.setWidth(mediaDTO.getWidth());
-            media.setHeight(mediaDTO.getHeight());
-            media.setSizeBytes(mediaDTO.getSizeBytes());
-            media = mediaRepository.save(media);
+        List<String> uploadedPublicIds = new ArrayList<>();
 
-            PostMedia postMedia = new PostMedia();
-            postMedia.setPost(post);
-            postMedia.setMedia(media);
-            postMedia.setPosition(i);
-            postMedia.setCaption(mediaDTO.getCaption());
-            postMedia.setCover(mediaDTO.isCover());
-            postMediaRepository.save(postMedia);
+        if (mediaFiles != null && !mediaFiles.isEmpty()) {
+            try {
+                savePostMedia(post, user, mediaDTOs, mediaFiles, uploadedPublicIds);
+            } catch (IOException e) {
+                cleanupCloudinaryFiles(uploadedPublicIds);
+                throw new RuntimeException("Failed to upload media: " + e.getMessage(), e);
+            } catch (Exception e) {
+                cleanupCloudinaryFiles(uploadedPublicIds);
+                log.error("Unexpected error during media upload: {}", e.getMessage(), e);
+                throw new RuntimeException("Unexpected error during media upload: " + e.getMessage(), e);
+            }
         }
 
         PostDTO postDTO = mapToPostDTO(post);
-
-        // Send real-time update to subscribers
-        if (post.getPrivacy() == PostPrivacy.PUBLIC) {
-            messagingTemplate.convertAndSend("/topic/posts", postDTO);
-        } else if (post.getPrivacy() == PostPrivacy.FRIENDS) {
-            // TODO: Implement friend-based broadcasting (requires friend relationship logic)
-            // For now, send to user-specific topic
-            messagingTemplate.convertAndSend("/topic/posts/user/" + userId, postDTO);
-        }
+        broadcastPost(post, userId, postDTO);
 
         if (requestDTO.getReplyToPostId() != null) {
-            Post replyTo = post.getReplyToPost();
-            notificationService.createNotification(
-                    replyTo.getUser().getUserId(),
-                    userId,
-                    "commented",
-                    "post",
-                    post.getPostId()
-            );
+            createReplyNotification(post);
         }
 
+        log.info("Post created successfully with ID: {}", post.getPostId());
         return postDTO;
     }
 
     @Transactional
+    @Override
     public void likePost(UUID userId, UUID postId, ReactionType type) {
-        Post post = postRepository.findById(postId)
-                .orElseThrow(() -> new RuntimeException("Post not found"));
+        validateReaction(userId, postId, type);
 
-        // Implement reaction logic (e.g., create/update Reaction entity)
-        Reaction reaction = new Reaction();
-        reaction.setUser(userRepository.findById(userId).orElseThrow());
-        reaction.setTargetType(ReactionTargetType.POST);
-        reaction.setTargetId(postId);
-        reaction.setType(type);
-        // Save reaction (assumes ReactionRepository exists)
-        // Update post.likeCount
+        Post post = postRepository.findById(postId)
+                .orElseThrow(() -> new IllegalArgumentException("Post not found with ID: " + postId));
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("User not found with ID: " + userId));
+
+        if (reactionRepository.existsByUserAndTargetIdAndTargetType(user, postId, ReactionTargetType.POST)) {
+            throw new IllegalStateException("User has already reacted to this post");
+        }
+
+        Reaction reaction = Reaction.builder()
+                .user(user)
+                .targetType(ReactionTargetType.POST)
+                .targetId(postId)
+                .type(type)
+                .build();
+        reactionRepository.save(reaction);
+
         post.setLikeCount(post.getLikeCount() + 1);
         postRepository.save(post);
 
@@ -134,55 +122,251 @@ public class PostServiceImpl implements PostService {
                 postId
         );
 
-        // Send real-time update
         PostDTO postDTO = mapToPostDTO(post);
         messagingTemplate.convertAndSend("/topic/posts/" + postId, postDTO);
+
+        log.info("User {} liked post {} with reaction type {}", userId, postId, type);
+    }
+
+    @Transactional
+    @Override
+    public void deleteMedia(UUID mediaId, UUID userId) {
+        Media media = mediaRepository.findById(mediaId)
+                .orElseThrow(() -> new IllegalArgumentException("Media not found with ID: " + mediaId));
+
+        if (!media.getOwnerUser().getUserId().equals(userId)) {
+            throw new IllegalStateException("User does not have permission to delete this media");
+        }
+
+        if (StringUtils.hasText(media.getPublicId())) {
+            try {
+                cloudinaryService.destroy(media.getPublicId());
+                log.info("Deleted Cloudinary file with public ID: {}", media.getPublicId());
+            } catch (IOException e) {
+                log.error("Failed to delete Cloudinary file with public ID: {}", media.getPublicId(), e);
+                throw new RuntimeException("Failed to delete media from Cloudinary: " + e.getMessage(), e);
+            }
+        }
+
+        postMediaRepository.deleteByMediaMediaId(mediaId);
+        mediaRepository.delete(media);
+        log.info("Deleted media with ID: {} from database", mediaId);
+    }
+
+    @Transactional(readOnly = true)
+    @Override
+    public List<PostDTO> getUserPosts(UUID userId) {
+        userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("User not found with ID: " + userId));
+
+        List<Post> posts = postRepository.findByUserUserId(userId);
+        return posts.stream()
+                .map(this::mapToPostDTO)
+                .collect(Collectors.toList());
+    }
+
+    private void validatePostRequest(UUID userId, PostRequestDTO requestDTO, List<MultipartFile> mediaFiles) {
+        if (userId == null) {
+            throw new IllegalArgumentException("User ID cannot be null");
+        }
+        if (requestDTO == null) {
+            throw new IllegalArgumentException("Post request cannot be null");
+        }
+        if (!StringUtils.hasText(requestDTO.getContent()) &&
+                (mediaFiles == null || mediaFiles.isEmpty()) &&
+                (requestDTO.getMedia() == null || requestDTO.getMedia().isEmpty())) {
+            throw new IllegalArgumentException("Post must have either content or media");
+        }
+        if (mediaFiles != null && mediaFiles.size() > MAX_MEDIA_FILES) {
+            throw new IllegalArgumentException("Cannot upload more than " + MAX_MEDIA_FILES + " media files");
+        }
+    }
+
+    private void validateReaction(UUID userId, UUID postId, ReactionType type) {
+        if (userId == null || postId == null || type == null) {
+            throw new IllegalArgumentException("User ID, post ID, and reaction type cannot be null");
+        }
+    }
+
+    private Post buildPost(User user, PostRequestDTO requestDTO) {
+        return Post.builder()
+                .user(user)
+                .content(requestDTO.getContent())
+                .privacy(requestDTO.getPrivacy() != null ? requestDTO.getPrivacy() : PostPrivacy.PUBLIC)
+                .replyToPost(requestDTO.getReplyToPostId() != null ?
+                        postRepository.findById(requestDTO.getReplyToPostId())
+                                .orElseThrow(() -> new IllegalArgumentException("Reply-to post not found with ID: " + requestDTO.getReplyToPostId()))
+                        : null)
+                .build();
+    }
+
+    private void savePostMedia(Post post, User user, List<MediaDTO> mediaDTOs, List<MultipartFile> mediaFiles, List<String> uploadedPublicIds) throws IOException {
+        if (mediaFiles.isEmpty()) {
+            return;
+        }
+
+        if (mediaDTOs.size() != mediaFiles.size()) {
+            throw new IllegalArgumentException("Number of media files must match number of media DTOs");
+        }
+
+        for (int i = 0; i < mediaFiles.size(); i++) {
+            MultipartFile file = mediaFiles.get(i);
+            MediaDTO mediaDTO = mediaDTOs.get(i);
+
+            validateMediaFile(file);
+
+            Map<String, Object> uploadResult = cloudinaryService.upload(file, CLOUDINARY_FOLDER);
+            log.debug("Cloudinary upload result: {}", uploadResult);
+
+            String publicId = (String) uploadResult.get("public_id");
+            if (publicId == null) {
+                throw new IllegalStateException("Cloudinary upload failed: public_id is null");
+            }
+            uploadedPublicIds.add(publicId);
+
+            String url = (String) uploadResult.get("secure_url");
+            String thumbnailUrl = (String) uploadResult.get("thumbnail_url");
+            String mimeType = (String) uploadResult.get("format");
+
+            Integer width = toInt(uploadResult.get("width"));
+            Integer height = toInt(uploadResult.get("height"));
+            Long sizeBytes = toLong(uploadResult.get("bytes"));
+
+            if (url == null || mimeType == null || sizeBytes == null) {
+                throw new IllegalStateException("Cloudinary upload result missing required fields: url=" + url + ", mimeType=" + mimeType + ", sizeBytes=" + sizeBytes);
+            }
+
+            Media media = Media.builder()
+                    .ownerUser(user)
+                    .url(url)
+                    .publicId(publicId)
+                    .thumbnailUrl(thumbnailUrl)
+                    .mimeType(mimeType)
+                    .width(width)
+                    .height(height)
+                    .sizeBytes(sizeBytes)
+                    .build();
+
+            try {
+                media = mediaRepository.save(media);
+            } catch (Exception e) {
+                log.error("Failed to save Media entity: {}", e.getMessage(), e);
+                throw new RuntimeException("Failed to save media entity: " + e.getMessage(), e);
+            }
+
+            PostMedia postMedia = PostMedia.builder()
+                    .post(post)
+                    .media(media)
+                    .position(i)
+                    .caption(mediaDTO.getCaption())
+                    .isCover(mediaDTO.isCover())
+                    .build();
+            postMediaRepository.save(postMedia);
+        }
+    }
+
+
+    private void validateMediaFile(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new IllegalArgumentException("Media file cannot be null or empty");
+        }
+        String contentType = file.getContentType();
+        if (contentType == null || !contentType.startsWith("image/")) {
+            throw new IllegalArgumentException("Only image files are supported");
+        }
+        if (file.getSize() > 10 * 1024 * 1024) { // 10MB limit
+            throw new IllegalArgumentException("Media file size cannot exceed 10MB");
+        }
+    }
+
+    private void cleanupCloudinaryFiles(List<String> publicIds) {
+        for (String publicId : publicIds) {
+            try {
+                cloudinaryService.destroy(publicId);
+                log.info("Deleted Cloudinary file with public ID: {}", publicId);
+            } catch (IOException e) {
+                log.error("Failed to delete Cloudinary file with public ID: {}", publicId, e);
+            }
+        }
+    }
+
+    private void broadcastPost(Post post, UUID userId, PostDTO postDTO) {
+        String destination = post.getPrivacy() == PostPrivacy.PUBLIC ?
+                "/topic/posts" :
+                "/topic/posts/user/" + userId;
+        messagingTemplate.convertAndSend(destination, postDTO);
+    }
+
+    private void createReplyNotification(Post post) {
+        Post replyTo = post.getReplyToPost();
+        if (replyTo != null) {
+            notificationService.createNotification(
+                    replyTo.getUser().getUserId(),
+                    post.getUser().getUserId(),
+                    "commented",
+                    "post",
+                    post.getPostId()
+            );
+        }
     }
 
     private PostDTO mapToPostDTO(Post post) {
-        PostDTO postDTO = new PostDTO();
-        postDTO.setPostId(post.getPostId());
-        postDTO.setUser(mapToUserDTO(post.getUser()));
-        postDTO.setContent(post.getContent());
-        postDTO.setPrivacy(post.getPrivacy());
-        postDTO.setReplyToPostId(post.getReplyToPost() != null ? post.getReplyToPost().getPostId() : null);
-        postDTO.setLikeCount(post.getLikeCount());
-        postDTO.setCommentCount(post.getCommentCount());
-        postDTO.setShareCount(post.getShareCount());
-        postDTO.setCreatedAt(post.getCreatedAt());
-        postDTO.setUpdatedAt(post.getUpdatedAt());
-
-        List<PostMedia> postMediaList = postMediaRepository.findAll().stream()
-                .filter(pm -> pm.getPost().getPostId().equals(post.getPostId()))
-                .toList();
+        List<PostMedia> postMediaList = postMediaRepository.findByPostPostId(post.getPostId());
         List<MediaDTO> mediaDTOs = postMediaList.stream()
                 .map(pm -> {
                     Media media = pm.getMedia();
-                    MediaDTO mediaDTO = new MediaDTO();
-                    mediaDTO.setMediaId(media.getMediaId());
-                    mediaDTO.setUrl(media.getUrl());
-                    mediaDTO.setThumbnailUrl(media.getThumbnailUrl());
-                    mediaDTO.setMimeType(media.getMimeType());
-                    mediaDTO.setWidth(media.getWidth());
-                    mediaDTO.setHeight(media.getHeight());
-                    mediaDTO.setSizeBytes(media.getSizeBytes());
-                    mediaDTO.setCaption(pm.getCaption());
-                    mediaDTO.setCover(pm.isCover());
-                    return mediaDTO;
+                    return MediaDTO.builder()
+                            .mediaId(media.getMediaId())
+                            .url(media.getUrl())
+                            .thumbnailUrl(media.getThumbnailUrl())
+                            .mimeType(media.getMimeType())
+                            .width(media.getWidth())
+                            .height(media.getHeight())
+                            .sizeBytes(media.getSizeBytes())
+                            .caption(pm.getCaption())
+                            .isCover(pm.isCover())
+                            .build();
                 })
                 .collect(Collectors.toList());
-        postDTO.setMedia(mediaDTOs);
 
-        return postDTO;
+        return PostDTO.builder()
+                .postId(post.getPostId())
+                .user(mapToUserDTO(post.getUser()))
+                .content(post.getContent())
+                .privacy(post.getPrivacy())
+                .replyToPostId(post.getReplyToPost() != null ? post.getReplyToPost().getPostId() : null)
+                .likeCount(post.getLikeCount())
+                .commentCount(post.getCommentCount())
+                .shareCount(post.getShareCount())
+                .createdAt(post.getCreatedAt())
+                .updatedAt(post.getUpdatedAt())
+                .media(mediaDTOs)
+                .build();
     }
 
     private UserDTO mapToUserDTO(User user) {
-        UserDTO userDTO = new UserDTO();
-        userDTO.setUserId(user.getUserId());
-        userDTO.setUsername(user.getUsername());
-        userDTO.setName(user.getName());
-        userDTO.setAvatar(user.getAvatar());
-        userDTO.setSchool(user.getSchool());
-        return userDTO;
+        return UserDTO.builder()
+                .userId(user.getUserId())
+                .username(user.getUsername())
+                .name(user.getName())
+                .avatar(user.getAvatar())
+                .school(user.getSchool())
+                .build();
+    }
+
+    private static Long toLong(Object o) {
+        if (o instanceof Number) return ((Number) o).longValue();
+        if (o instanceof String) {
+            try { return Long.parseLong((String) o); } catch (NumberFormatException ignored) {}
+        }
+        return null;
+    }
+
+    private static Integer toInt(Object o) {
+        if (o instanceof Number) return ((Number) o).intValue();
+        if (o instanceof String) {
+            try { return Integer.parseInt((String) o); } catch (NumberFormatException ignored) {}
+        }
+        return null;
     }
 }

@@ -3,7 +3,7 @@ package com.kkunquizapp.QuizAppBackend.model;
 import com.kkunquizapp.QuizAppBackend.model.enums.ReactionTargetType;
 import com.kkunquizapp.QuizAppBackend.model.enums.ReactionType;
 import jakarta.persistence.*;
-import lombok.Data;
+import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
@@ -13,6 +13,9 @@ import java.util.UUID;
 @Entity
 @Table(name = "reactions")
 @Data
+@Builder
+@NoArgsConstructor(access = AccessLevel.PROTECTED) // JPA cần no-arg constructor, tối thiểu protected
+@AllArgsConstructor
 public class Reaction {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

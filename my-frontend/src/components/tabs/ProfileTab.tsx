@@ -1,58 +1,132 @@
 import { formatDateOnly } from "@/utils/dateUtils";
-import { UserResponseDTO } from "@/interfaces";
-import { useState } from "react";
+import { UserResponseDTO, PostType } from "@/interfaces";
+import { useState, useEffect } from "react";
 import PostList from "../layouts/post/PostList";
+import { createPost, likePost, getUserPosts, PostDTO, PostRequestDTO } from "@/services/postService";
 
 interface ProfileTabProps {
   profile: UserResponseDTO | null;
   onEditProfile: () => void;
 }
 
-interface Comment {
-  id: string;
-  content: string;
-  createdAt: Date;
-}
-
-interface PostType {
-  id: string;
-  content: string;
-  createdAt: Date;
-  likes: number;
-  comments: Comment[];
-  images?: string[];
-}
-
 const ProfileTab = ({ profile, onEditProfile }: ProfileTabProps) => {
-  const [posts, setPosts] = useState<PostType[]>([
-    { id: "1", content: "Just completed a challenging quiz!", createdAt: new Date(), likes: 0, comments: [] },
-    { id: "2", content: "Loving the new features!", createdAt: new Date(), likes: 0, comments: [] },
-  ]);
+  const [posts, setPosts] = useState<PostType[]>([]);
   const [newPostContent, setNewPostContent] = useState("");
   const [selectedImages, setSelectedImages] = useState<File[]>([]);
+  const [postPrivacy, setPostPrivacy] = useState<'PUBLIC' | 'FRIENDS' | 'PRIVATE'>('PUBLIC');
+  const [isPosting, setIsPosting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleAddPost = () => {
-    if (newPostContent.trim() || selectedImages.length > 0) {
-      const imageUrls = selectedImages.map((file) => URL.createObjectURL(file));
+  useEffect(() => {
+    const fetchPosts = async () => {
+      if (profile?.userId) {
+        try {
+          const userPosts = await getUserPosts(profile.userId);
+          setPosts(
+            userPosts.map((post) => ({
+              id: post.postId,
+              content: post.content,
+              createdAt: new Date(post.createdAt),
+              likes: post.likeCount,
+              comments: [],
+              images: post.media.map((m) => m.url),
+              privacy: post.privacy,
+            }))
+          );
+        } catch (err) {
+          setError("Failed to load posts. Please try again.");
+          console.error(err);
+        }
+      }
+    };
+    fetchPosts();
+  }, [profile?.userId]);
+
+  const handleAddPost = async () => {
+    if (!newPostContent.trim() && selectedImages.length === 0) {
+      setError("Please add content or images to post");
+      return;
+    }
+    if (!profile?.userId) {
+      setError("User ID is required to create a post");
+      return;
+    }
+
+    setIsPosting(true);
+    setError(null);
+
+    try {
+      const mediaWithDimensions = await Promise.all(
+        selectedImages.map(async (file, index) => {
+          const dimensions = await getImageDimensions(file);
+          return {
+            mimeType: file.type,
+            sizeBytes: file.size,
+            width: dimensions.width,
+            height: dimensions.height,
+            caption: "",
+            isCover: index === 0,
+          };
+        })
+      );
+
+      const postData: PostRequestDTO = {
+        content: newPostContent,
+        privacy: postPrivacy,
+        media: mediaWithDimensions,
+      };
+
+      const formData = new FormData();
+      formData.append('post', new Blob([JSON.stringify(postData)], {type: "application/json"}));
+      if (selectedImages.length > 0) {
+        selectedImages.forEach((file) => {
+          formData.append('mediaFiles', file);
+        });
+      }
+
+      const newPost: PostDTO = await createPost(profile.userId, formData);
+
       setPosts([
         {
-          id: `${Date.now()}`,
-          content: newPostContent,
-          createdAt: new Date(),
-          likes: 0,
+          id: newPost.postId,
+          content: newPost.content,
+          createdAt: new Date(newPost.createdAt),
+          likes: newPost.likeCount,
           comments: [],
-          images: imageUrls,
+          images: newPost.media.map((m) => m.url),
+          privacy: newPost.privacy,
         },
         ...posts,
       ]);
       setNewPostContent("");
       setSelectedImages([]);
+      setPostPrivacy('PUBLIC');
+    } catch (err) {
+      setError("Failed to create post. Please try again.");
+      console.error(err);
+    } finally {
+      setIsPosting(false);
+    }
+  };
+
+  const handleLikePost = async (postId: string) => {
+    if (!profile?.userId) {
+      setError("User ID is required to like a post");
+      return;
+    }
+
+    try {
+      await likePost(postId, 'LIKE');
+      setPosts(posts.map((post) => (post.id === postId ? { ...post, likes: post.likes + 1 } : post)));
+    } catch (err) {
+      setError("Failed to like post. Please try again.");
+      console.error(err);
     }
   };
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
-      const files = Array.from(e.target.files);
+      const files = Array.from(e.target.files).slice(0, 5);
       setSelectedImages([...selectedImages, ...files]);
     }
   };
@@ -62,142 +136,190 @@ const ProfileTab = ({ profile, onEditProfile }: ProfileTabProps) => {
   };
 
   const handlePostUpdate = (updatedPost: PostType) => {
-    setPosts(prev => prev.map(p => p.id === updatedPost.id ? updatedPost : p));
+    setPosts(posts.map((p) => (p.id === updatedPost.id ? updatedPost : p)));
   };
 
+  const getImageDimensions = (file: File): Promise<{ width: number; height: number }> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.src = URL.createObjectURL(file);
+      img.onload = () => {
+        resolve({ width: img.width, height: img.height });
+        URL.revokeObjectURL(img.src);
+      };
+      img.onerror = () => {
+        resolve({ width: 0, height: 0 });
+      };
+    });
+  };
+
+  const privacyOptions = [
+    { value: 'PUBLIC', label: 'Public', icon: 'bx bx-globe' },
+    { value: 'FRIENDS', label: 'Friends', icon: 'bx bx-group' },
+    { value: 'PRIVATE', label: 'Private', icon: 'bx bx-lock' },
+  ];
+
   return (
-    <div className="row g-4">
-      <div className="col-xl-4 col-lg-5 col-md-6 col-sm-12">
-        {/* About User */}
-        <div className="card mb-4 shadow-sm">
-          <div className="card-body position-relative">
-            <div className="d-flex justify-content-between align-items-center mb-3">
-              <small className="card-text text-uppercase text-body-secondary small">
-                About
-              </small>
-              <button
-                className="btn btn-icon btn-outline-primary btn-sm rounded-circle d-flex align-items-center justify-content-center"
-                style={{ width: "32px", height: "32px" }}
-                onClick={onEditProfile}
-                title="Edit Profile"
-                aria-label="Edit profile"
-              >
-                <i className="icon-base bx bx-edit icon-sm"></i>
-              </button>
+    <div className="container-fluid py-4">
+      <div className="row g-3">
+        <div className="col-lg-4">
+          <div className="card border-0 shadow-sm mb-3">
+            <div className="card-body p-4">
+              <div className="d-flex justify-content-between align-items-center mb-3">
+                <h6 className="fw-bold text-uppercase text-muted small">About</h6>
+                <button
+                  className="btn btn-outline-primary btn-sm rounded-circle p-1"
+                  onClick={onEditProfile}
+                  title="Edit Profile"
+                  aria-label="Edit profile"
+                >
+                  <i className="bx bx-edit"></i>
+                </button>
+              </div>
+              <ul className="list-unstyled mb-0">
+                <li className="d-flex align-items-center mb-2">
+                  <i className="bx bx-user me-2 text-muted"></i>
+                  <span className="fw-medium me-2">Name:</span>
+                  <span>{profile?.name || "N/A"}</span>
+                </li>
+                <li className="d-flex align-items-center mb-2">
+                  <i className="bx bx-envelope me-2 text-muted"></i>
+                  <span className="fw-medium me-2">Email:</span>
+                  <span>{profile?.email || "N/A"}</span>
+                </li>
+                <li className="d-flex align-items-center mb-2">
+                  <i className="bx bx-building me-2 text-muted"></i>
+                  <span className="fw-medium me-2">School:</span>
+                  <span>{profile?.school || "N/A"}</span>
+                </li>
+                <li className="d-flex align-items-center">
+                  <i className="bx bx-calendar me-2 text-muted"></i>
+                  <span className="fw-medium me-2">Joined:</span>
+                  <span>{profile?.createdAt ? formatDateOnly(profile.createdAt) : "N/A"}</span>
+                </li>
+              </ul>
             </div>
-            <ul className="list-unstyled my-3 py-1">
-              <li className="d-flex align-items-center mb-3">
-                <i className="icon-base bx bx-user me-2"></i>
-                <span className="fw-medium me-2">Full Name:</span>
-                <span>{profile?.name || "N/A"}</span>
-              </li>
-              <li className="d-flex align-items-center mb-3">
-                <i className="icon-base bx bx-flag me-2"></i>
-                <span className="fw-medium me-2">Email:</span>
-                <span>{profile?.email || "N/A"}</span>
-              </li>
-              <li className="d-flex align-items-center mb-3">
-                <i className="icon-base bx bx-building me-2"></i>
-                <span className="fw-medium me-2">School:</span>
-                <span>{profile?.school || "N/A"}</span>
-              </li>
-              <li className="d-flex align-items-center mb-3">
-                <i className="icon-base bx bx-detail me-2"></i>
-                <span className="fw-medium me-2">Created at:</span>
-                <span>{profile?.createdAt ? formatDateOnly(profile.createdAt) : "N/A"}</span>
-              </li>
-            </ul>
           </div>
-        </div>
-        {/* Profile Overview */}
-        <div className="card mb-4 shadow-sm">
-          <div className="card-body">
-            <small className="card-text text-uppercase text-body-secondary small">
-              Overview
-            </small>
-            <div className="row row-cols-1 row-cols-md-2 g-3 p-3">
-              <div className="col">
-                <div className="card h-100 bg-light">
-                  <div className="card-body text-center">
-                    <h6 className="card-title">Quizzes Taken</h6>
-                    <p className="card-text text-muted">Coming soon!</p>
+          <div className="card border-0 shadow-sm">
+            <div className="card-body p-4">
+              <h6 className="fw-bold text-uppercase text-muted small mb-3">Overview</h6>
+              <div className="row g-3">
+                <div className="col-6">
+                  <div className="card border-0 bg-light h-100">
+                    <div className="card-body text-center p-3">
+                      <h6 className="mb-1">Quizzes Taken</h6>
+                      <p className="text-muted mb-0 small">Coming soon!</p>
+                    </div>
                   </div>
                 </div>
-              </div>
-              <div className="col">
-                <div className="card h-100 bg-light">
-                  <div className="card-body text-center">
-                    <h6 className="card-title">Achievements</h6>
-                    <p className="card-text text-muted">Coming soon!</p>
+                <div className="col-6">
+                  <div className="card border-0 bg-light h-100">
+                    <div className="card-body text-center p-3">
+                      <h6 className="mb-1">Achievements</h6>
+                      <p className="text-muted mb-0 small">Coming soon!</p>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
-      <div className="col-xl-8 col-lg-7 col-md-6 col-sm-12">
-        {/* Create Post */}
-        <div className="card mb-4 shadow-sm">
-          <div className="card-body">
-            <div className="d-flex align-items-center mb-3">
-              <div className="flex-grow-1">
-                <textarea
-                  className="form-control"
-                  placeholder="What's on your mind?"
-                  value={newPostContent}
-                  onChange={(e) => setNewPostContent(e.target.value)}
-                  rows={3}
-                ></textarea>
+        <div className="col-lg-8">
+          <div className="card border-0 shadow-sm mb-3">
+            <div className="card-body p-4">
+              {error && (
+                <div className="alert alert-danger alert-dismissible fade show mb-3" role="alert">
+                  {error}
+                  <button type="button" className="btn-close" onClick={() => setError(null)}></button>
+                </div>
+              )}
+              <textarea
+                className="form-control border-0 shadow-sm mb-3"
+                placeholder="What's on your mind?"
+                value={newPostContent}
+                onChange={(e) => setNewPostContent(e.target.value)}
+                rows={2}
+                disabled={isPosting}
+                style={{ resize: 'none', background: '#f8f9fa' }}
+              />
+              <div className="d-flex flex-wrap gap-2 mb-3">
+                {selectedImages.map((image, index) => (
+                  <div key={index} className="position-relative">
+                    <img
+                      src={URL.createObjectURL(image)}
+                      alt="Preview"
+                      style={{ width: "80px", height: "80px", objectFit: "cover", borderRadius: "8px" }}
+                    />
+                    <button
+                      className="btn btn-danger btn-sm position-absolute top-0 end-0 p-0"
+                      style={{ width: "20px", height: "20px", lineHeight: "20px", transform: "translate(50%, -50%)" }}
+                      onClick={() => removeImage(index)}
+                      disabled={isPosting}
+                    >
+                      <i className="bx bx-x m-0"></i>
+                    </button>
+                  </div>
+                ))}
               </div>
-            </div>
-            <div className="d-flex flex-wrap gap-2 mb-3">
-              {selectedImages.map((image, index) => (
-                <div key={index} className="position-relative">
-                  <img
-                    src={URL.createObjectURL(image)}
-                    alt="Preview"
-                    style={{ maxWidth: "100px", maxHeight: "100px", objectFit: "cover" }}
-                    className="rounded"
-                  />
+              <div className="d-flex justify-content-between align-items-center">
+                <div className="dropdown">
                   <button
-                    className="btn btn-danger btn-sm position-absolute top-0 end-0"
-                    style={{ transform: "translate(50%, -50%)" }}
-                    onClick={() => removeImage(index)}
+                    className="btn btn-outline-secondary btn-sm d-flex align-items-center"
+                    type="button"
+                    data-bs-toggle="dropdown"
+                    aria-expanded="false"
+                    disabled={isPosting}
                   >
-                    <i className="icon-base bx bx-x"></i>
+                    <i className={privacyOptions.find(opt => opt.value === postPrivacy)?.icon + " me-1"}></i>
+                    {privacyOptions.find(opt => opt.value === postPrivacy)?.label}
+                  </button>
+                  <ul className="dropdown-menu">
+                    {privacyOptions.map((option) => (
+                      <li key={option.value}>
+                        <button
+                          className="dropdown-item"
+                          onClick={() => setPostPrivacy(option.value as 'PUBLIC' | 'FRIENDS' | 'PRIVATE')}
+                        >
+                          <i className={`${option.icon} me-2`}></i>
+                          {option.label}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <div>
+                  <label className="btn btn-outline-secondary btn-sm me-2">
+                    <i className="bx bx-image-add me-1"></i>
+                    Image
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      hidden
+                      onChange={handleImageChange}
+                      disabled={isPosting}
+                    />
+                  </label>
+                  <button
+                    className="btn btn-primary btn-sm"
+                    onClick={handleAddPost}
+                    disabled={isPosting || (!newPostContent.trim() && selectedImages.length === 0)}
+                  >
+                    {isPosting ? (
+                      <span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                    ) : null}
+                    Post
                   </button>
                 </div>
-              ))}
-            </div>
-            <div className="d-flex justify-content-between align-items-center">
-              <label className="btn btn-outline-secondary btn-sm">
-                <i className="icon-base bx bx-image-add me-1"></i>
-                Add Image
-                <input
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  hidden
-                  onChange={handleImageChange}
-                />
-              </label>
-              <button
-                className="btn btn-primary btn-sm"
-                onClick={handleAddPost}
-                disabled={!newPostContent.trim() && selectedImages.length === 0}
-              >
-                Post
-              </button>
+              </div>
             </div>
           </div>
+          <PostList
+            posts={posts}
+            profile={profile}
+            onUpdate={handlePostUpdate}
+          />
         </div>
-        {/* Posts List */}
-        <PostList
-          posts={posts}
-          profile={profile}
-          onUpdate={handlePostUpdate}
-        />
       </div>
     </div>
   );

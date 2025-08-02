@@ -105,12 +105,12 @@ public class CommentServiceImpl implements CommentService {
     }
 
     private UserDTO mapToUserDTO(User user) {
-        UserDTO userDTO = new UserDTO();
-        userDTO.setUserId(user.getUserId());
-        userDTO.setUsername(user.getUsername());
-        userDTO.setName(user.getName());
-        userDTO.setAvatar(user.getAvatar());
-        userDTO.setSchool(user.getSchool());
-        return userDTO;
+        return UserDTO.builder()
+                .userId(user.getUserId())
+                .username(user.getUsername())
+                .name(user.getName())
+                .avatar(user.getAvatar())
+                .school(user.getSchool())
+                .build();
     }
 }
