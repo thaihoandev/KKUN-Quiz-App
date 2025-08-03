@@ -24,8 +24,9 @@ const PostCard: React.FC<PostCardProps> = ({ post, profile, onUpdate }) => {
   const [activeReplyId, setActiveReplyId] = useState<string | undefined>(undefined);
   const [comments, setComments] = useState<Comment[]>([]);
   const [likeCount, setLikeCount] = useState(post.likeCount);
-  const [visibleComments, setVisibleComments] = useState(3); // Show 3 top-level comments initially
-  const [expandedReplies, setExpandedReplies] = useState<{ [id: string]: number }>({}); // Track visible replies per comment
+  const [visibleComments, setVisibleComments] = useState(3);
+  const [expandedReplies, setExpandedReplies] = useState<{ [id: string]: number }>({});
+  const [zoomedImage, setZoomedImage] = useState<string | null>(null);
   const commentInputRef = useRef<HTMLInputElement | null>(null);
   const replyInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
@@ -50,7 +51,7 @@ const PostCard: React.FC<PostCardProps> = ({ post, profile, onUpdate }) => {
                     createdAt: new Date(reply.createdAt),
                     user: reply.user || null,
                     parentCommentId: reply.parentCommentId,
-                    replies: [], // No nested replies
+                    replies: [],
                   }))
               : [],
           }));
@@ -103,7 +104,6 @@ const PostCard: React.FC<PostCardProps> = ({ post, profile, onUpdate }) => {
       const trimmed = content.trim();
       if (!trimmed || !profile) return;
 
-      // Only allow replies to top-level comments
       if (parentCommentId) {
         const parentComment = findCommentById(parentCommentId, comments);
         if (parentComment?.parentCommentId) {
@@ -226,21 +226,29 @@ const PostCard: React.FC<PostCardProps> = ({ post, profile, onUpdate }) => {
   }, []);
 
   const handleShowMoreComments = () => {
-    setVisibleComments((prev) => prev + 3); // Show 3 more comments
+    setVisibleComments((prev) => prev + 3);
   };
 
   const handleShowReplies = (commentId: string) => {
     setExpandedReplies((prev) => ({
       ...prev,
-      [commentId]: prev[commentId] ? prev[commentId] + 3 : 3, // Show 3 replies initially, then 3 more
+      [commentId]: prev[commentId] ? prev[commentId] + 3 : 3,
     }));
   };
 
   const handleHideReplies = (commentId: string) => {
     setExpandedReplies((prev) => ({
       ...prev,
-      [commentId]: 0, // Collapse replies
+      [commentId]: 0,
     }));
+  };
+
+  const handleImageClick = (url: string) => {
+    setZoomedImage(url);
+  };
+
+  const handleCloseZoom = () => {
+    setZoomedImage(null);
   };
 
   const renderComment = (comment: Comment, level: number = 0) => {
@@ -352,6 +360,10 @@ const PostCard: React.FC<PostCardProps> = ({ post, profile, onUpdate }) => {
   const topLevelComments = comments.filter((comment) => !comment.parentCommentId);
   const hasMoreComments = topLevelComments.length > visibleComments;
 
+  const maxVisibleImages = 4; // Show up to 4 images in a 2x2 grid
+  const visibleImages = post.media ? post.media.slice(0, maxVisibleImages) : [];
+  const remainingImageCount = post.media ? post.media.length - maxVisibleImages : 0;
+
   return (
     <div className="card h-100 shadow-lg rounded-3 mb-4">
       <div className="card-body">
@@ -380,25 +392,106 @@ const PostCard: React.FC<PostCardProps> = ({ post, profile, onUpdate }) => {
         </div>
 
         {/* Content */}
-        <p className="card-text mb-3">{post.content}</p>
+        <p className="card-text mb-3" style={{ whiteSpace: "pre-wrap" }}>
+          {post.content}
+        </p>
 
         {/* Images */}
         {post.media && post.media.length > 0 && (
-          <div className="d-flex flex-wrap gap-2 mb-3">
-            {post.media.map((image, index) => (
+          <div className="mb-3">
+            <div
+              className={
+                post.media.length === 1
+                  ? "w-100"
+                  : "d-grid gap-2"
+              }
+              style={
+                post.media.length === 1
+                  ? {}
+                  : {
+                      gridTemplateColumns: `repeat(${Math.min(visibleImages.length, 2)}, 1fr)`,
+                    }
+              }
+            >
+              {visibleImages.map((image, index) => (
+                <div
+                  key={index}
+                  className="position-relative"
+                  style={{
+                    aspectRatio: "1",
+                    overflow: "hidden",
+                  }}
+                  onClick={() => handleImageClick(image.url)}
+                >
+                  <img
+                    src={image.url}
+                    alt={image.caption || `Attachment ${index + 1}`}
+                    style={{
+                      width: "100%",
+                      height: "100%",
+                      objectFit: "cover",
+                      cursor: "pointer",
+                    }}
+                    className="rounded"
+                    loading="lazy"
+                  />
+                  {image.caption && (
+                    <div
+                      className="position-absolute bottom-0 start-0 w-100 p-2 text-white"
+                      style={{
+                        background: "linear-gradient(to top, rgba(0, 0, 0, 0.7), transparent)",
+                      }}
+                    >
+                      <small>{image.caption}</small>
+                    </div>
+                  )}
+                </div>
+              ))}
+              {remainingImageCount > 0 && (
+                <div
+                  className="position-relative d-flex align-items-center justify-content-center bg-secondary text-white rounded"
+                  style={{
+                    aspectRatio: "1",
+                    cursor: "pointer",
+                  }}
+                  onClick={() => handleImageClick(post.media[maxVisibleImages].url)}
+                >
+                  <span className="fs-4">+{remainingImageCount}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Zoomed Image Modal */}
+        {zoomedImage && (
+          <div
+            className="position-fixed top-0 start-0 w-100 h-100 bg-black bg-opacity-75 d-flex align-items-center justify-content-center"
+            style={{ zIndex: 1050 }}
+            onClick={handleCloseZoom}
+          >
+            <div className="position-relative">
               <img
-                key={index}
-                src={image.url}
-                alt={image.caption || `Attachment ${index + 1}`}
+                src={zoomedImage}
+                alt="Zoomed image"
                 style={{
-                  maxWidth: "200px",
-                  maxHeight: "200px",
-                  objectFit: "cover",
+                  maxWidth: "90%",
+                  maxHeight: "90%",
+                  objectFit: "contain",
                 }}
                 className="rounded"
-                loading="lazy"
               />
-            ))}
+              {post.media?.find((img) => img.url === zoomedImage)?.caption && (
+                <div
+                  className="position-absolute bottom-0 start-0 w-100 p-3 text-white text-center"
+                  style={{
+                    background: "linear-gradient(to top, rgba(0, 0, 0, 0.7), transparent)",
+                  }}
+                >
+                  <small>{post.media.find((img) => img.url === zoomedImage)?.caption}</small>
+                </div>
+              )}
+            </div>
           </div>
         )}
 

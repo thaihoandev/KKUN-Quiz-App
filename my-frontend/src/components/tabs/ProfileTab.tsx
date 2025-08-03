@@ -1,5 +1,5 @@
 import { formatDateOnly } from "@/utils/dateUtils";
-import { UserResponseDTO} from "@/interfaces";
+import { UserResponseDTO } from "@/interfaces";
 import { useState, useEffect } from "react";
 import PostList from "../layouts/post/PostList";
 import { createPost, getUserPosts, PostDTO, PostRequestDTO } from "@/services/postService";
@@ -21,12 +21,17 @@ const ProfileTab = ({ profile, onEditProfile }: ProfileTabProps) => {
     const fetchPosts = async () => {
       if (profile?.userId) {
         try {
-          const userPosts = await getUserPosts(profile.userId);
+          console.log('Fetching initial posts for userId:', profile.userId);
+          const userPosts = await getUserPosts(profile.userId, 0, 10); // Start at page 0
+          console.log('Initial posts fetched:', userPosts);
           setPosts(userPosts);
         } catch (err) {
           setError("Failed to load posts. Please try again.");
-          console.error(err);
+          console.error('Error fetching initial posts:', err);
         }
+      } else {
+        console.warn('No userId provided for fetching posts');
+        setPosts([]);
       }
     };
     fetchPosts();
@@ -81,7 +86,7 @@ const ProfileTab = ({ profile, onEditProfile }: ProfileTabProps) => {
       setPostPrivacy('PUBLIC');
     } catch (err) {
       setError("Failed to create post. Please try again.");
-      console.error(err);
+      console.error('Error creating post:', err);
     } finally {
       setIsPosting(false);
     }
@@ -277,12 +282,18 @@ const ProfileTab = ({ profile, onEditProfile }: ProfileTabProps) => {
               </div>
             </div>
           </div>
-          <PostList
-            posts={posts}
-            profile={profile}
-            onUpdate={handlePostUpdate}
-            userId={profile?.userId || ""} // Pass userId from profile
-          />
+          {profile?.userId ? (
+            <PostList
+              posts={posts}
+              profile={profile}
+              onUpdate={handlePostUpdate}
+              userId={profile.userId}
+            />
+          ) : (
+            <div className="text-center text-muted py-3">
+              Please log in to view posts.
+            </div>
+          )}
         </div>
       </div>
     </div>
