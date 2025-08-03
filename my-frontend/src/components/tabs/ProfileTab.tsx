@@ -1,8 +1,8 @@
 import { formatDateOnly } from "@/utils/dateUtils";
 import { UserResponseDTO } from "@/interfaces";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import PostList from "../layouts/post/PostList";
-import { createPost, getUserPosts, PostDTO, PostRequestDTO } from "@/services/postService";
+import { createPost, PostDTO, PostRequestDTO } from "@/services/postService";
 
 interface ProfileTabProps {
   profile: UserResponseDTO | null;
@@ -10,32 +10,14 @@ interface ProfileTabProps {
 }
 
 const ProfileTab = ({ profile, onEditProfile }: ProfileTabProps) => {
-  const [posts, setPosts] = useState<PostDTO[]>([]);
   const [newPostContent, setNewPostContent] = useState("");
   const [selectedImages, setSelectedImages] = useState<File[]>([]);
   const [postPrivacy, setPostPrivacy] = useState<'PUBLIC' | 'FRIENDS' | 'PRIVATE'>('PUBLIC');
   const [isPosting, setIsPosting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [newPost, setNewPost] = useState<PostDTO | null>(null); // Track new post for PostList
 
-  useEffect(() => {
-    const fetchPosts = async () => {
-      if (profile?.userId) {
-        try {
-          console.log('Fetching initial posts for userId:', profile.userId);
-          const userPosts = await getUserPosts(profile.userId, 0, 10); // Start at page 0
-          console.log('Initial posts fetched:', userPosts);
-          setPosts(userPosts);
-        } catch (err) {
-          setError("Failed to load posts. Please try again.");
-          console.error('Error fetching initial posts:', err);
-        }
-      } else {
-        console.warn('No userId provided for fetching posts');
-        setPosts([]);
-      }
-    };
-    fetchPosts();
-  }, [profile?.userId]);
+
 
   const handleAddPost = async () => {
     if (!newPostContent.trim() && selectedImages.length === 0) {
@@ -79,8 +61,9 @@ const ProfileTab = ({ profile, onEditProfile }: ProfileTabProps) => {
         });
       }
 
-      const newPost: PostDTO = await createPost(profile.userId, formData);
-      setPosts([newPost, ...posts]);
+      const createdPost: PostDTO = await createPost(profile.userId, formData);
+      console.log('New post created:', createdPost);
+      setNewPost(createdPost); // Set new post
       setNewPostContent("");
       setSelectedImages([]);
       setPostPrivacy('PUBLIC');
@@ -103,9 +86,9 @@ const ProfileTab = ({ profile, onEditProfile }: ProfileTabProps) => {
     setSelectedImages(selectedImages.filter((_, i) => i !== index));
   };
 
-  const handlePostUpdate = (updatedPost: PostDTO) => {
-    setPosts(posts.map((p) => (p.postId === updatedPost.postId ? updatedPost : p)));
-  };
+  const handlePostUpdate = useCallback((updatedPost: PostDTO) => {
+    // Update PostList via callback if needed
+  }, []);
 
   const getImageDimensions = (file: File): Promise<{ width: number; height: number }> => {
     return new Promise((resolve) => {
@@ -284,10 +267,10 @@ const ProfileTab = ({ profile, onEditProfile }: ProfileTabProps) => {
           </div>
           {profile?.userId ? (
             <PostList
-              posts={posts}
               profile={profile}
               onUpdate={handlePostUpdate}
               userId={profile.userId}
+              newPost={newPost}
             />
           ) : (
             <div className="text-center text-muted py-3">

@@ -28,3 +28,11 @@ export function formatDateOnly(date: string | Date): string {
     day: "numeric",
   });
 }
+
+export const parseDate = (date: string | null | undefined): Date => {
+  if (!date) {
+    return new Date(); // Fallback to current date
+  }
+  const parsed = new Date(date);
+  return isNaN(parsed.getTime()) ? new Date() : parsed; // Fallback if invalid
+};

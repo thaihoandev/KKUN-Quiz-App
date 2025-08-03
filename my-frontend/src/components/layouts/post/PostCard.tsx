@@ -1,4 +1,4 @@
-import { formatDateOnly } from "@/utils/dateUtils";
+import { formatDateOnly, parseDate } from "@/utils/dateUtils";
 import { UserDto } from "@/interfaces";
 import { useState, useRef, useCallback, KeyboardEvent, useEffect } from "react";
 import { createComment, getCommentsByPostId, likePost, PostDTO, CommentDTO } from "@/services/postService";
@@ -146,7 +146,7 @@ const PostCard: React.FC<PostCardProps> = ({ post, profile, onUpdate }) => {
         const newComment: Comment = {
           id: newCommentDTO.commentId,
           content: newCommentDTO.content,
-          createdAt: new Date(newCommentDTO.createdAt),
+          createdAt: parseDate(newCommentDTO.createdAt),
           user: newCommentDTO.user || null,
           parentCommentId: newCommentDTO.parentCommentId,
           replies: [],
