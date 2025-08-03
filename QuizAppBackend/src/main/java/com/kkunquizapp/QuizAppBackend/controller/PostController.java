@@ -67,9 +67,11 @@ public class PostController {
     }
 
     @GetMapping("/user/{userId}")
-    public ResponseEntity<List<PostDTO>> getUserPosts(@PathVariable UUID userId) {
+    public ResponseEntity<List<PostDTO>> getUserPosts(@PathVariable UUID userId,
+                                                      @RequestParam(defaultValue = "0") int page,
+                                                      @RequestParam(defaultValue = "10") int size) {
         try {
-            List<PostDTO> posts = postService.getUserPosts(userId);
+            List<PostDTO> posts = postService.getUserPosts(userId, page, size);
             return ResponseEntity.ok(posts);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(null);

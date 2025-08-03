@@ -25,10 +25,10 @@ export interface UserRequestDTO {
   username: string;
   email: string;
   password?: string;
-  school: string;
+  school?: string;
   name: string;
-  avatar: string;
-  role: string;
+  avatar?: string;
+  role?: string;
 }
 
 export interface UserProfile {
@@ -214,14 +214,4 @@ export interface Comment {
   id: string;
   content: string;
   createdAt: Date;
-}
-
-export interface PostType {
-  id: string;
-  content: string;
-  createdAt: Date;
-  likes: number;
-  comments: Comment[];
-  images?: string[];
-  privacy: 'PUBLIC' | 'FRIENDS' | 'PRIVATE';
 }

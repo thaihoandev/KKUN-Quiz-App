@@ -14,13 +14,14 @@ export const handleApiError = (
     if (axios.isAxiosError(error) && error.response) {
         // Extract error message from different possible response structures
         const errorMessage =
+            error.response.data?.details ||
             error.response.data?.message ||
             error.response.data?.error ||
             (typeof error.response.data === "string"
                 ? error.response.data
                 : null) ||
             defaultMessage;
-
+        
         throw new Error(errorMessage);
     }
 

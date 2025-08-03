@@ -30,7 +30,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
-
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 /**
  * Service implementation for handling post-related operations.
  */
@@ -155,12 +158,18 @@ public class PostServiceImpl implements PostService {
 
     @Transactional(readOnly = true)
     @Override
-    public List<PostDTO> getUserPosts(UUID userId) {
+    public List<PostDTO> getUserPosts(UUID userId, int page, int size) {
         userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found with ID: " + userId));
 
-        List<Post> posts = postRepository.findByUserUserId(userId);
-        return posts.stream()
+        // Tạo Pageable với page, size và sắp xếp theo createdAt (mới nhất trước)
+        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
+
+        // Lấy danh sách bài đăng theo trang
+        Page<Post> postPage = postRepository.findByUserUserId(userId, pageable);
+
+        // Chuyển đổi sang PostDTO
+        return postPage.getContent().stream()
                 .map(this::mapToPostDTO)
                 .collect(Collectors.toList());
     }

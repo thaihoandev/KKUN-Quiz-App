@@ -44,9 +44,25 @@ export interface PostDTO {
   media: MediaResponseDTO[];
 }
 
+export interface CommentRequestDTO {
+  postId: string;
+  content: string;
+  parentCommentId?: string; // Thêm parentCommentId
+}
+
+export interface CommentDTO {
+  commentId: string;
+  content: string;
+  createdAt: string;
+  userId: string;
+  postId: string;
+  user: UserDto;
+  parentCommentId?: string;
+  replies?: CommentDTO[];
+}
+
 export async function createPost(userId: string, formData: FormData): Promise<PostDTO> {
   try {
-    // Log FormData for debugging
     console.log('FormData contents:');
     for (const [key, value] of formData.entries()) {
       console.log(`${key}:`, value instanceof File ? `${value.name} (${value.type})` : value.toString());
@@ -73,12 +89,44 @@ export async function likePost(postId: string, reactionType: 'LIKE' | 'LOVE' | '
   }
 }
 
-export async function getUserPosts(userId: string): Promise<PostDTO[]> {
+export async function getUserPosts(userId: string, page: number = 0, size: number = 10): Promise<PostDTO[]> {
   try {
-    const response: AxiosResponse<PostDTO[]> = await axiosInstance.get(`/posts/user/${userId}`);
+    const response: AxiosResponse<PostDTO[]> = await axiosInstance.get(`/posts/user/${userId}`, {
+      params: { page, size },
+    });
+    console.log('User posts fetched:', response.data);
     return response.data;
   } catch (error) {
     console.error('Error fetching user posts:', error);
     throw new Error('Failed to fetch user posts');
+  }
+}
+
+export async function getCommentsByPostId(postId: string): Promise<CommentDTO[]> {
+  try {
+    const response: AxiosResponse<CommentDTO[]> = await axiosInstance.get(`/comments/post/${postId}`);
+    
+    return response.data;
+
+  } catch (error) {
+    console.error('Error fetching comments:', error);
+    throw new Error('Failed to fetch comments');
+  }
+}
+
+export async function createComment(postId: string, content: string, parentCommentId?: string): Promise<CommentDTO> {
+  try {
+    const commentRequest: CommentRequestDTO = { postId, content, parentCommentId };
+    console.log('Creating comment with request:', commentRequest);
+    
+    const response: AxiosResponse<CommentDTO> = await axiosInstance.post('/comments/create', commentRequest, {
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error creating comment:', error);
+    throw new Error('Failed to create comment');
   }
 }

@@ -1,8 +1,8 @@
 import { formatDateOnly } from "@/utils/dateUtils";
-import { UserResponseDTO, PostType } from "@/interfaces";
+import { UserResponseDTO} from "@/interfaces";
 import { useState, useEffect } from "react";
 import PostList from "../layouts/post/PostList";
-import { createPost, likePost, getUserPosts, PostDTO, PostRequestDTO } from "@/services/postService";
+import { createPost, getUserPosts, PostDTO, PostRequestDTO } from "@/services/postService";
 
 interface ProfileTabProps {
   profile: UserResponseDTO | null;
@@ -10,7 +10,7 @@ interface ProfileTabProps {
 }
 
 const ProfileTab = ({ profile, onEditProfile }: ProfileTabProps) => {
-  const [posts, setPosts] = useState<PostType[]>([]);
+  const [posts, setPosts] = useState<PostDTO[]>([]);
   const [newPostContent, setNewPostContent] = useState("");
   const [selectedImages, setSelectedImages] = useState<File[]>([]);
   const [postPrivacy, setPostPrivacy] = useState<'PUBLIC' | 'FRIENDS' | 'PRIVATE'>('PUBLIC');
@@ -22,17 +22,7 @@ const ProfileTab = ({ profile, onEditProfile }: ProfileTabProps) => {
       if (profile?.userId) {
         try {
           const userPosts = await getUserPosts(profile.userId);
-          setPosts(
-            userPosts.map((post) => ({
-              id: post.postId,
-              content: post.content,
-              createdAt: new Date(post.createdAt),
-              likes: post.likeCount,
-              comments: [],
-              images: post.media.map((m) => m.url),
-              privacy: post.privacy,
-            }))
-          );
+          setPosts(userPosts);
         } catch (err) {
           setError("Failed to load posts. Please try again.");
           console.error(err);
@@ -77,7 +67,7 @@ const ProfileTab = ({ profile, onEditProfile }: ProfileTabProps) => {
       };
 
       const formData = new FormData();
-      formData.append('post', new Blob([JSON.stringify(postData)], {type: "application/json"}));
+      formData.append('post', new Blob([JSON.stringify(postData)], { type: "application/json" }));
       if (selectedImages.length > 0) {
         selectedImages.forEach((file) => {
           formData.append('mediaFiles', file);
@@ -85,19 +75,7 @@ const ProfileTab = ({ profile, onEditProfile }: ProfileTabProps) => {
       }
 
       const newPost: PostDTO = await createPost(profile.userId, formData);
-
-      setPosts([
-        {
-          id: newPost.postId,
-          content: newPost.content,
-          createdAt: new Date(newPost.createdAt),
-          likes: newPost.likeCount,
-          comments: [],
-          images: newPost.media.map((m) => m.url),
-          privacy: newPost.privacy,
-        },
-        ...posts,
-      ]);
+      setPosts([newPost, ...posts]);
       setNewPostContent("");
       setSelectedImages([]);
       setPostPrivacy('PUBLIC');
@@ -106,21 +84,6 @@ const ProfileTab = ({ profile, onEditProfile }: ProfileTabProps) => {
       console.error(err);
     } finally {
       setIsPosting(false);
-    }
-  };
-
-  const handleLikePost = async (postId: string) => {
-    if (!profile?.userId) {
-      setError("User ID is required to like a post");
-      return;
-    }
-
-    try {
-      await likePost(postId, 'LIKE');
-      setPosts(posts.map((post) => (post.id === postId ? { ...post, likes: post.likes + 1 } : post)));
-    } catch (err) {
-      setError("Failed to like post. Please try again.");
-      console.error(err);
     }
   };
 
@@ -135,8 +98,8 @@ const ProfileTab = ({ profile, onEditProfile }: ProfileTabProps) => {
     setSelectedImages(selectedImages.filter((_, i) => i !== index));
   };
 
-  const handlePostUpdate = (updatedPost: PostType) => {
-    setPosts(posts.map((p) => (p.id === updatedPost.id ? updatedPost : p)));
+  const handlePostUpdate = (updatedPost: PostDTO) => {
+    setPosts(posts.map((p) => (p.postId === updatedPost.postId ? updatedPost : p)));
   };
 
   const getImageDimensions = (file: File): Promise<{ width: number; height: number }> => {
@@ -318,6 +281,7 @@ const ProfileTab = ({ profile, onEditProfile }: ProfileTabProps) => {
             posts={posts}
             profile={profile}
             onUpdate={handlePostUpdate}
+            userId={profile?.userId || ""} // Pass userId from profile
           />
         </div>
       </div>

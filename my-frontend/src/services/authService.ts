@@ -25,6 +25,7 @@ export const registerApi = async (userData: UserRequestDTO) => {
             `${API_URL}/register`,
             userData,
         );
+        
         return response.data;
     } catch (error) {
         handleApiError(error, "Registration failed");

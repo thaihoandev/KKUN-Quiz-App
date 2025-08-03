@@ -40,6 +40,9 @@ public class Post {
 
     private long shareCount = 0;
 
+    @Column(nullable = false)
+    private boolean locked = false;
+
     @CreationTimestamp
     private LocalDateTime createdAt;
 
