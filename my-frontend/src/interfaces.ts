@@ -25,10 +25,10 @@ export interface UserRequestDTO {
   username: string;
   email: string;
   password?: string;
-  school: string;
+  school?: string;
   name: string;
-  avatar: string;
-  role: string;
+  avatar?: string;
+  role?: string;
 }
 
 export interface UserProfile {
@@ -207,4 +207,11 @@ export interface Quiz {
     updatedAt: string;
     editors: UserDto[]; // Assuming editors are returned as an array of user IDs
     viewers: UserDto[]; // Assuming viewers are returned as an array of user IDs
+}
+
+
+export interface Comment {
+  id: string;
+  content: string;
+  createdAt: Date;
 }

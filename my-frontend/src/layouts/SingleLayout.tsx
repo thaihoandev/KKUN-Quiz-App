@@ -1,5 +1,5 @@
 import {Outlet} from "react-router-dom";
-import Header from "@/components/headers/Header";
+import Header from "@/components/sidebars/SidebarMain";
 import Footer from "@/components/Footer";
 import Navbar from "@/components/navbars/Navbar";
 import {getCurrentUser} from "@/services/userService";

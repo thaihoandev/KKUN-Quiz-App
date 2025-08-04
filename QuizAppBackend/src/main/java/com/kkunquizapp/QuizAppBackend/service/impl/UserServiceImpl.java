@@ -11,9 +11,11 @@ import com.kkunquizapp.QuizAppBackend.model.User;
 import com.kkunquizapp.QuizAppBackend.model.UserPrincipal;
 import com.kkunquizapp.QuizAppBackend.model.enums.UserRole;
 import com.kkunquizapp.QuizAppBackend.repo.UserRepo;
+import com.kkunquizapp.QuizAppBackend.service.CloudinaryService;
 import com.kkunquizapp.QuizAppBackend.service.CustomUserDetailsService;
 import com.kkunquizapp.QuizAppBackend.service.JwtService;
 import com.kkunquizapp.QuizAppBackend.service.UserService;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.modelmapper.ModelMapper;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -27,6 +29,8 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
@@ -51,6 +55,7 @@ public class UserServiceImpl implements UserService {
     private final CustomUserDetailsService customUserDetailsService;
     private final JwtService jwtService;
     private final Cloudinary cloudinary;
+    private final CloudinaryService cloudinaryService;
 
     @Override
     @Transactional
@@ -174,39 +179,67 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional
     public UserResponseDTO updateUserAvatar(UUID id, MultipartFile file, String token) {
-        // Lấy thông tin từ Access Token
+        // Validate access token and user permissions
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (!(authentication.getPrincipal() instanceof Jwt jwt)) {
-            throw new SecurityException("Không thể xác thực Access Token");
+            throw new SecurityException("Invalid Access Token");
         }
+
         String userIdFromToken = jwt.getClaim("userId");
         List<String> roles = jwt.getClaim("roles");
         boolean isAdmin = roles.contains(UserRole.ADMIN.name());
 
-        // Nếu không phải admin và không phải chủ tài khoản, trả về lỗi
+        // Check if user is admin or updating their own avatar
         if (!isAdmin && !userIdFromToken.equals(id.toString())) {
-            throw new SecurityException("Bạn không có quyền cập nhật avatar của người dùng này");
+            throw new SecurityException("You do not have permission to update this user's avatar");
         }
 
-        // Tìm người dùng
+        // Find user
         User user = userRepo.findById(id)
                 .orElseThrow(() -> new UserNotFoundException("User not found with ID: " + id));
 
         try {
-            // Upload file lên Cloudinary
-            Map uploadResult = cloudinary.uploader().upload(file.getBytes(),
-                    Map.of("resource_type", "image", "public_id", "user_avatars/" + id.toString()));
+            // Validate file
+            if (file == null || file.isEmpty()) {
+                throw new IllegalArgumentException("Avatar file cannot be empty");
+            }
 
-            // Lấy URL của ảnh từ Cloudinary
+            // Delete existing avatar if it exists
+            if (user.getAvatar() != null && !user.getAvatar().isEmpty()) {
+                String existingPublicId = "user_avatars/" + id.toString();
+                cloudinaryService.destroy(existingPublicId);
+            }
+
+            // Upload new avatar to Cloudinary
+            Map uploadResult = cloudinaryService.upload(file, "user_avatars/" + id.toString());
             String avatarUrl = (String) uploadResult.get("secure_url");
 
-            // Cập nhật avatar trong database
+            // Update user avatar
             user.setAvatar(avatarUrl);
             User updatedUser = userRepo.save(user);
 
+            // Map to DTO and return
             return modelMapper.map(updatedUser, UserResponseDTO.class);
         } catch (IOException e) {
-            throw new RuntimeException("Lỗi khi upload avatar lên Cloudinary: " + e.getMessage());
+            throw new RuntimeException("Failed to upload avatar to Cloudinary: " + e.getMessage(), e);
         }
+    }
+
+    @Override
+    public String getCurrentUserId() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication != null && authentication.getPrincipal() instanceof UserPrincipal) {
+            UserPrincipal userPrincipal = (UserPrincipal) authentication.getPrincipal();
+            return userPrincipal.getUserId().toString(); // Assuming getUserId() returns UUID or String
+        }
+
+        // Fallback to request attribute set by JwtInterceptor
+        HttpServletRequest request = ((ServletRequestAttributes) RequestContextHolder.currentRequestAttributes()).getRequest();
+        String userId = (String) request.getAttribute("currentUserId");
+        if (userId != null) {
+            return userId;
+        }
+
+        throw new IllegalStateException("Cannot get userId from Access Token or request");
     }
 }

@@ -65,7 +65,7 @@ const UserDropdown = ({profile}: {profile: any}) => {
                     <div className="dropdown-divider my-1"></div>
                 </li>
                 <li>
-                    <Link className="dropdown-item" to="/profile">
+                    <Link className="dropdown-item" to="/dashboard">
                         <i className="icon-base bx bx-user icon-md me-3"></i>
                         <span>My Profile</span>
                     </Link>

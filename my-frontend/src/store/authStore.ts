@@ -4,6 +4,7 @@ import {loginApi, loginGoogleApi, registerApi} from "@/services/authService";
 import axios from "axios";
 import {TokenResponse} from "@react-oauth/google";
 import Cookies from "js-cookie";
+import { handleApiError } from "@/utils/apiErrorHandler";
 
 interface User {
     userId: string;
@@ -64,9 +65,7 @@ export const useAuthStore = create<AuthState>()(
                     set({ user: userData });
                     
                 } catch (error) {
-                    if (axios.isAxiosError(error)) {
-                        throw error.response?.data || "Login failed";
-                    }
+                    handleApiError(error, "Login failed");
                     throw new Error("An unexpected error occurred");
                 }
             },
@@ -89,9 +88,7 @@ export const useAuthStore = create<AuthState>()(
                     };
                     set({user: userData});
                 } catch (error) {
-                    if (axios.isAxiosError(error)) {
-                        throw error.response?.data || "Registration failed";
-                    }
+                    handleApiError(error, "Registration failed");
                     throw new Error("An unexpected error occurred");
                 }
             },
@@ -116,6 +113,7 @@ export const useAuthStore = create<AuthState>()(
                     };
                     set({user: userData});
                 } catch (error) {
+                    handleApiError(error, "Google login failed");
                     throw new Error("Google login failed. Try again!");
                 }
             },
