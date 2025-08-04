@@ -45,6 +45,7 @@ export interface PostDTO {
   media: MediaResponseDTO[];
   likedByCurrentUser: boolean;
   currentUserReactionType?: 'LIKE' | 'LOVE' | 'HAHA' | 'CARE' | 'SAD' | 'ANGRY' | null;
+  actingUser?: UserDto | null; // User who performed the action (like/unlike)
 }
 
 export interface CommentRequestDTO {
@@ -116,7 +117,6 @@ export async function getUserPosts(userId: string, page: number = 0, size: numbe
     const response: AxiosResponse<PostDTO[]> = await axiosInstance.get(`/posts/user/${userId}`, {
       params: { page, size },
     });
-    console.log('User posts fetched:', response.data);
     return response.data;
   } catch (error) {
     console.error('Error fetching user posts:', error);
@@ -127,7 +127,6 @@ export async function getUserPosts(userId: string, page: number = 0, size: numbe
 export async function getPostById(postId: string): Promise<PostDTO> {
   try {
     const response: AxiosResponse<PostDTO> = await axiosInstance.get(`/posts/${postId}`);
-    console.log('Post fetched:', response.data);
     return response.data;
   } catch (error) {
     console.error('Error fetching post:', error);

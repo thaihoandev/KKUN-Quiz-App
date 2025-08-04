@@ -54,12 +54,17 @@ public class PostServiceImpl implements PostService {
     @Transactional
     @Override
     public PostDTO createPost(UUID userId, PostRequestDTO requestDTO, List<MultipartFile> mediaFiles) {
+        log.info("Creating post for userId: {}, requestDTO: {}", userId, requestDTO);
         validatePostRequest(userId, requestDTO, mediaFiles);
 
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("User not found with ID: " + userId));
+                .orElseThrow(() -> {
+                    log.error("User not found with ID: {}", userId);
+                    return new IllegalArgumentException("User not found with ID: " + userId);
+                });
 
         Post post = buildPost(user, requestDTO);
+        log.info("Saving post: {}", post);
         post = postRepository.save(post);
 
         List<MediaDTO> mediaDTOs = requestDTO.getMedia() != null ? requestDTO.getMedia() : List.of();
@@ -67,21 +72,25 @@ public class PostServiceImpl implements PostService {
 
         if (mediaFiles != null && !mediaFiles.isEmpty()) {
             try {
+                log.info("Saving media for postId: {}", post.getPostId());
                 savePostMedia(post, user, mediaDTOs, mediaFiles, uploadedPublicIds);
             } catch (IOException e) {
+                log.error("Failed to upload media for postId: {}", post.getPostId(), e);
                 cleanupCloudinaryFiles(uploadedPublicIds);
                 throw new RuntimeException("Failed to upload media: " + e.getMessage(), e);
             } catch (Exception e) {
+                log.error("Unexpected error during media upload for postId: {}", post.getPostId(), e);
                 cleanupCloudinaryFiles(uploadedPublicIds);
-                log.error("Unexpected error during media upload: {}", e.getMessage(), e);
                 throw new RuntimeException("Unexpected error during media upload: " + e.getMessage(), e);
             }
         }
 
-        PostDTO postDTO = mapToPostDTO(post, userId);
+        PostDTO postDTO = mapToPostDTO(post, userId, null);
+        log.info("Mapped Post to PostDTO: {}", postDTO);
         broadcastPost(post, userId, postDTO);
 
         if (requestDTO.getReplyToPostId() != null) {
+            log.info("Creating reply notification for replyToPostId: {}", requestDTO.getReplyToPostId());
             createReplyNotification(post);
         }
 
@@ -92,26 +101,38 @@ public class PostServiceImpl implements PostService {
     @Transactional
     @Override
     public void likePost(UUID userId, UUID postId, ReactionType type) {
+        log.info("Processing like for userId: {}, postId: {}, reactionType: {}", userId, postId, type);
         if (userId == null || postId == null) {
+            log.error("User ID or post ID is null: userId={}, postId={}", userId, postId);
             throw new IllegalArgumentException("User ID and post ID cannot be null");
         }
 
         Post post = postRepository.findById(postId)
-                .orElseThrow(() -> new IllegalArgumentException("Post not found with ID: " + postId));
+                .orElseThrow(() -> {
+                    log.error("Post not found with ID: {}", postId);
+                    return new IllegalArgumentException("Post not found with ID: " + postId);
+                });
 
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("User not found with ID: " + userId));
+                .orElseThrow(() -> {
+                    log.error("User not found with ID: {}", userId);
+                    return new IllegalArgumentException("User not found with ID: " + userId);
+                });
 
-        // Check if the user has already reacted to the post
+        log.info("Checking if user {} has already reacted to post {}", userId, postId);
         if (reactionRepository.existsByUserAndTargetIdAndTargetType(user, postId, ReactionTargetType.POST)) {
-            // Unlike: Remove the existing reaction
+            log.info("User {} has already reacted, removing existing reaction", userId);
             Reaction existingReaction = reactionRepository.findByUserAndTargetIdAndTargetType(user, postId, ReactionTargetType.POST)
-                    .orElseThrow(() -> new IllegalStateException("Reaction not found despite existence check"));
+                    .orElseThrow(() -> {
+                        log.error("Reaction not found despite existence check for userId: {}, postId: {}", userId, postId);
+                        return new IllegalStateException("Reaction not found despite existence check");
+                    });
             reactionRepository.delete(existingReaction);
             post.setLikeCount(post.getLikeCount() - 1);
             postRepository.save(post);
+            log.info("Unliked postId: {}, new likeCount: {}", postId, post.getLikeCount());
 
-            // Notify about unlike
+            log.info("Creating unlike notification for post owner: {}, from user: {}", post.getUser().getUserId(), userId);
             notificationService.createNotification(
                     post.getUser().getUserId(),
                     userId,
@@ -122,7 +143,7 @@ public class PostServiceImpl implements PostService {
 
             log.info("User {} unliked post {}", userId, postId);
         } else if (type != null) {
-            // Like: Create a new reaction
+            log.info("User {} has not reacted, creating new reaction with type: {}", userId, type);
             Reaction reaction = Reaction.builder()
                     .user(user)
                     .targetType(ReactionTargetType.POST)
@@ -133,7 +154,9 @@ public class PostServiceImpl implements PostService {
 
             post.setLikeCount(post.getLikeCount() + 1);
             postRepository.save(post);
+            log.info("Liked postId: {}, new likeCount: {}", postId, post.getLikeCount());
 
+            log.info("Creating like notification for post owner: {}, from user: {}", post.getUser().getUserId(), userId);
             notificationService.createNotification(
                     post.getUser().getUserId(),
                     userId,
@@ -144,37 +167,49 @@ public class PostServiceImpl implements PostService {
 
             log.info("User {} liked post {} with reaction type {}", userId, postId, type);
         } else {
+            log.error("Reaction type is null for like action on postId: {}", postId);
             throw new IllegalArgumentException("Reaction type cannot be null when liking a post");
         }
 
-        // Broadcast the updated post
-        PostDTO postDTO = mapToPostDTO(post, userId);
+        PostDTO postDTO = mapToPostDTO(post, userId, user);
+        log.info("Broadcasting post update to /topic/posts/{}: {}", postId, postDTO);
         messagingTemplate.convertAndSend("/topic/posts/" + postId, postDTO);
     }
 
     @Transactional
     @Override
     public void unlikePost(UUID userId, UUID postId) {
+        log.info("Processing unlike for userId: {}, postId: {}", userId, postId);
         if (userId == null || postId == null) {
+            log.error("User ID or post ID is null: userId={}, postId={}", userId, postId);
             throw new IllegalArgumentException("User ID and post ID cannot be null");
         }
 
         Post post = postRepository.findById(postId)
-                .orElseThrow(() -> new IllegalArgumentException("Post not found with ID: " + postId));
+                .orElseThrow(() -> {
+                    log.error("Post not found with ID: {}", postId);
+                    return new IllegalArgumentException("Post not found with ID: " + postId);
+                });
 
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("User not found with ID: " + userId));
+                .orElseThrow(() -> {
+                    log.error("User not found with ID: {}", userId);
+                    return new IllegalArgumentException("User not found with ID: " + userId);
+                });
 
-        // Check if the user has already reacted to the post
+        log.info("Checking if user {} has reacted to post {}", userId, postId);
         if (reactionRepository.existsByUserAndTargetIdAndTargetType(user, postId, ReactionTargetType.POST)) {
-            // Unlike: Remove the existing reaction
             Reaction existingReaction = reactionRepository.findByUserAndTargetIdAndTargetType(user, postId, ReactionTargetType.POST)
-                    .orElseThrow(() -> new IllegalStateException("Reaction not found despite existence check"));
+                    .orElseThrow(() -> {
+                        log.error("Reaction not found despite existence check for userId: {}, postId: {}", userId, postId);
+                        return new IllegalStateException("Reaction not found despite existence check");
+                    });
             reactionRepository.delete(existingReaction);
             post.setLikeCount(post.getLikeCount() - 1);
             postRepository.save(post);
+            log.info("Unliked postId: {}, new likeCount: {}", postId, post.getLikeCount());
 
-            // Notify about unlike
+            log.info("Creating unlike notification for post owner: {}, from user: {}", post.getUser().getUserId(), userId);
             notificationService.createNotification(
                     post.getUser().getUserId(),
                     userId,
@@ -185,19 +220,26 @@ public class PostServiceImpl implements PostService {
 
             log.info("User {} unliked post {}", userId, postId);
 
-            // Broadcast the updated post
-            PostDTO postDTO = mapToPostDTO(post, userId);
+            PostDTO postDTO = mapToPostDTO(post, userId, user);
+            log.info("Broadcasting post update to /topic/posts/{}: {}", postId, postDTO);
             messagingTemplate.convertAndSend("/topic/posts/" + postId, postDTO);
+        } else {
+            log.warn("No reaction found to unlike for userId: {}, postId: {}", userId, postId);
         }
     }
 
     @Transactional
     @Override
     public void deleteMedia(UUID mediaId, UUID userId) {
+        log.info("Deleting media with mediaId: {} for userId: {}", mediaId, userId);
         Media media = mediaRepository.findById(mediaId)
-                .orElseThrow(() -> new IllegalArgumentException("Media not found with ID: " + mediaId));
+                .orElseThrow(() -> {
+                    log.error("Media not found with ID: {}", mediaId);
+                    return new IllegalArgumentException("Media not found with ID: " + mediaId);
+                });
 
         if (!media.getOwnerUser().getUserId().equals(userId)) {
+            log.error("User {} does not have permission to delete media {}", userId, mediaId);
             throw new IllegalStateException("User does not have permission to delete this media");
         }
 
@@ -219,67 +261,87 @@ public class PostServiceImpl implements PostService {
     @Transactional(readOnly = true)
     @Override
     public PostDTO getPostById(UUID postId, UUID currentUserId) {
+        log.info("Fetching post with postId: {} for currentUserId: {}", postId, currentUserId);
         Post post = postRepository.findById(postId)
-                .orElseThrow(() -> new IllegalArgumentException("Post not found with ID: " + postId));
+                .orElseThrow(() -> {
+                    log.error("Post not found with ID: {}", postId);
+                    return new IllegalArgumentException("Post not found with ID: " + postId);
+                });
 
-        return mapToPostDTO(post, currentUserId);
+        PostDTO postDTO = mapToPostDTO(post, currentUserId, null);
+        log.info("Fetched PostDTO: {}", postDTO);
+        return postDTO;
     }
+
     @Transactional(readOnly = true)
     @Override
     public List<PostDTO> getUserPosts(UUID userId, int page, int size) {
+        log.info("Fetching posts for userId: {}, page: {}, size: {}", userId, page, size);
         userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("User not found with ID: " + userId));
+                .orElseThrow(() -> {
+                    log.error("User not found with ID: {}", userId);
+                    return new IllegalArgumentException("User not found with ID: " + userId);
+                });
 
         Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
         Page<Post> postPage = postRepository.findByUserUserId(userId, pageable);
-
-        // Pass the current userId to mapToPostDTO to check like status
-        return postPage.getContent().stream()
-                .map(post -> mapToPostDTO(post, userId))
+        List<PostDTO> postDTOs = postPage.getContent().stream()
+                .map(post -> mapToPostDTO(post, userId, null))
                 .collect(Collectors.toList());
+        log.info("Fetched {} posts for userId: {}", postDTOs.size(), userId);
+        return postDTOs;
     }
 
     private void validatePostRequest(UUID userId, PostRequestDTO requestDTO, List<MultipartFile> mediaFiles) {
+        log.info("Validating post request for userId: {}", userId);
         if (userId == null) {
+            log.error("User ID is null");
             throw new IllegalArgumentException("User ID cannot be null");
         }
         if (requestDTO == null) {
+            log.error("Post request is null");
             throw new IllegalArgumentException("Post request cannot be null");
         }
         if (!StringUtils.hasText(requestDTO.getContent()) &&
                 (mediaFiles == null || mediaFiles.isEmpty()) &&
                 (requestDTO.getMedia() == null || requestDTO.getMedia().isEmpty())) {
+            log.error("Post has no content or media");
             throw new IllegalArgumentException("Post must have either content or media");
         }
         if (mediaFiles != null && mediaFiles.size() > MAX_MEDIA_FILES) {
+            log.error("Too many media files: {}, max allowed: {}", mediaFiles.size(), MAX_MEDIA_FILES);
             throw new IllegalArgumentException("Cannot upload more than " + MAX_MEDIA_FILES + " media files");
         }
-    }
-
-    private void validateReaction(UUID userId, UUID postId, ReactionType type) {
-        if (userId == null || postId == null || type == null) {
-            throw new IllegalArgumentException("User ID, post ID, and reaction type cannot be null");
-        }
+        log.info("Post request validated successfully");
     }
 
     private Post buildPost(User user, PostRequestDTO requestDTO) {
-        return Post.builder()
+        log.info("Building post for user: {}, content: {}", user.getUserId(), requestDTO.getContent());
+        Post post = Post.builder()
                 .user(user)
                 .content(requestDTO.getContent())
                 .privacy(requestDTO.getPrivacy() != null ? requestDTO.getPrivacy() : PostPrivacy.PUBLIC)
                 .replyToPost(requestDTO.getReplyToPostId() != null ?
                         postRepository.findById(requestDTO.getReplyToPostId())
-                                .orElseThrow(() -> new IllegalArgumentException("Reply-to post not found with ID: " + requestDTO.getReplyToPostId()))
+                                .orElseThrow(() -> {
+                                    log.error("Reply-to post not found with ID: {}", requestDTO.getReplyToPostId());
+                                    return new IllegalArgumentException("Reply-to post not found with ID: " + requestDTO.getReplyToPostId());
+                                })
                         : null)
                 .build();
+        log.info("Post built: {}", post);
+        return post;
     }
 
     private void savePostMedia(Post post, User user, List<MediaDTO> mediaDTOs, List<MultipartFile> mediaFiles, List<String> uploadedPublicIds) throws IOException {
+        log.info("Saving media for postId: {}, number of files: {}", post.getPostId(), mediaFiles.size());
         if (mediaFiles.isEmpty()) {
+            log.info("No media files to save");
             return;
         }
 
         if (mediaDTOs.size() != mediaFiles.size()) {
+            log.error("Media files count ({}) does not match media DTOs count ({})", mediaFiles.size(), mediaDTOs.size());
             throw new IllegalArgumentException("Number of media files must match number of media DTOs");
         }
 
@@ -287,13 +349,16 @@ public class PostServiceImpl implements PostService {
             MultipartFile file = mediaFiles.get(i);
             MediaDTO mediaDTO = mediaDTOs.get(i);
 
+            log.info("Validating media file at index: {}", i);
             validateMediaFile(file);
 
+            log.info("Uploading media file to Cloudinary: {}", file.getOriginalFilename());
             Map<String, Object> uploadResult = cloudinaryService.upload(file, CLOUDINARY_FOLDER);
             log.debug("Cloudinary upload result: {}", uploadResult);
 
             String publicId = (String) uploadResult.get("public_id");
             if (publicId == null) {
+                log.error("Cloudinary upload failed: public_id is null");
                 throw new IllegalStateException("Cloudinary upload failed: public_id is null");
             }
             uploadedPublicIds.add(publicId);
@@ -307,6 +372,7 @@ public class PostServiceImpl implements PostService {
             Long sizeBytes = toLong(uploadResult.get("bytes"));
 
             if (url == null || mimeType == null || sizeBytes == null) {
+                log.error("Cloudinary upload result missing required fields: url={}, mimeType={}, sizeBytes={}", url, mimeType, sizeBytes);
                 throw new IllegalStateException("Cloudinary upload result missing required fields: url=" + url + ", mimeType=" + mimeType + ", sizeBytes=" + sizeBytes);
             }
 
@@ -322,6 +388,7 @@ public class PostServiceImpl implements PostService {
                     .build();
 
             try {
+                log.info("Saving media entity: {}", media);
                 media = mediaRepository.save(media);
             } catch (Exception e) {
                 log.error("Failed to save Media entity: {}", e.getMessage(), e);
@@ -335,24 +402,31 @@ public class PostServiceImpl implements PostService {
                     .caption(mediaDTO.getCaption())
                     .isCover(mediaDTO.isCover())
                     .build();
+            log.info("Saving PostMedia: {}", postMedia);
             postMediaRepository.save(postMedia);
         }
     }
 
     private void validateMediaFile(MultipartFile file) {
+        log.info("Validating media file: {}", file.getOriginalFilename());
         if (file == null || file.isEmpty()) {
+            log.error("Media file is null or empty");
             throw new IllegalArgumentException("Media file cannot be null or empty");
         }
         String contentType = file.getContentType();
         if (contentType == null || !contentType.startsWith("image/")) {
+            log.error("Invalid media file content type: {}", contentType);
             throw new IllegalArgumentException("Only image files are supported");
         }
-        if (file.getSize() > 10 * 1024 * 1024) { // 10MB limit
+        if (file.getSize() > 10 * 1024 * 1024) {
+            log.error("Media file size exceeds 10MB: {}", file.getSize());
             throw new IllegalArgumentException("Media file size cannot exceed 10MB");
         }
+        log.info("Media file validated successfully");
     }
 
     private void cleanupCloudinaryFiles(List<String> publicIds) {
+        log.info("Cleaning up Cloudinary files: {}", publicIds);
         for (String publicId : publicIds) {
             try {
                 cloudinaryService.destroy(publicId);
@@ -367,12 +441,14 @@ public class PostServiceImpl implements PostService {
         String destination = post.getPrivacy() == PostPrivacy.PUBLIC ?
                 "/topic/posts" :
                 "/topic/posts/user/" + userId;
+        log.info("Broadcasting post to destination: {}, postDTO: {}", destination, postDTO);
         messagingTemplate.convertAndSend(destination, postDTO);
     }
 
     private void createReplyNotification(Post post) {
         Post replyTo = post.getReplyToPost();
         if (replyTo != null) {
+            log.info("Creating reply notification for postId: {}, replyToPostId: {}", post.getPostId(), replyTo.getPostId());
             notificationService.createNotification(
                     replyTo.getUser().getUserId(),
                     post.getUser().getUserId(),
@@ -380,15 +456,20 @@ public class PostServiceImpl implements PostService {
                     "post",
                     post.getPostId()
             );
+        } else {
+            log.info("No reply notification created, replyToPost is null");
         }
     }
 
-    private PostDTO mapToPostDTO(Post post, UUID currentUserId) {
+    private PostDTO mapToPostDTO(Post post, UUID currentUserId, User actingUser) {
+        log.info("Mapping Post to PostDTO for postId: {}, currentUserId: {}, actingUser: {}",
+                post.getPostId(), currentUserId, actingUser != null ? actingUser.getUserId() : "null");
+
         List<PostMedia> postMediaList = postMediaRepository.findByPostPostId(post.getPostId());
         List<MediaDTO> mediaDTOs = postMediaList.stream()
                 .map(pm -> {
                     Media media = pm.getMedia();
-                    return MediaDTO.builder()
+                    MediaDTO mediaDTO = MediaDTO.builder()
                             .mediaId(media.getMediaId())
                             .url(media.getUrl())
                             .thumbnailUrl(media.getThumbnailUrl())
@@ -399,49 +480,62 @@ public class PostServiceImpl implements PostService {
                             .caption(pm.getCaption())
                             .isCover(pm.isCover())
                             .build();
+                    log.debug("Mapped PostMedia to MediaDTO: {}", mediaDTO);
+                    return mediaDTO;
                 })
                 .collect(Collectors.toList());
 
-        // Check if the current user has liked the post
         boolean isLikedByCurrentUser = currentUserId != null &&
                 userRepository.findById(currentUserId)
-                        .map(user -> reactionRepository.existsByUserAndTargetIdAndTargetType(user, post.getPostId(), ReactionTargetType.POST))
+                        .map(user -> {
+                            boolean liked = reactionRepository.existsByUserAndTargetIdAndTargetType(user, post.getPostId(), ReactionTargetType.POST);
+                            log.debug("isLikedByCurrentUser for userId: {}, postId: {}: {}", currentUserId, post.getPostId(), liked);
+                            return liked;
+                        })
                         .orElse(false);
 
-        // Get the reaction type if the user has liked the post
         ReactionType currentUserReactionType = null;
         if (isLikedByCurrentUser) {
             currentUserReactionType = userRepository.findById(currentUserId)
                     .flatMap(user -> reactionRepository.findByUserAndTargetIdAndTargetType(user, post.getPostId(), ReactionTargetType.POST))
                     .map(Reaction::getType)
                     .orElse(null);
+            log.debug("currentUserReactionType for userId: {}, postId: {}: {}", currentUserId, post.getPostId(), currentUserReactionType);
         }
 
-        return PostDTO.builder()
+        UserDTO actingUserDTO = actingUser != null ? mapToUserDTO(actingUser) : null;
+        log.info("Mapped actingUser to UserDTO: {}", actingUserDTO);
+
+        PostDTO postDTO = PostDTO.builder()
                 .postId(post.getPostId())
                 .user(mapToUserDTO(post.getUser()))
                 .content(post.getContent())
                 .privacy(post.getPrivacy())
                 .replyToPostId(post.getReplyToPost() != null ? post.getReplyToPost().getPostId() : null)
-                .likeCount(post.getLikeCount())
-                .commentCount(post.getCommentCount())
-                .shareCount(post.getShareCount())
-                .createdAt(post.getCreatedAt())
-                .updatedAt(post.getUpdatedAt())
+                .likeCount((int) post.getLikeCount())
+                .commentCount((int) post.getCommentCount())
+                .shareCount((int) post.getShareCount())
+                .createdAt(post.getCreatedAt().toString())
+                .updatedAt(post.getUpdatedAt().toString())
                 .media(mediaDTOs)
                 .isLikedByCurrentUser(isLikedByCurrentUser)
-                .currentUserReactionType(currentUserReactionType)
+                .currentUserReactionType(currentUserReactionType != null ? currentUserReactionType.name() : null)
+                .actingUser(actingUserDTO)
                 .build();
+        log.info("Final PostDTO: {}", postDTO);
+        return postDTO;
     }
 
     private UserDTO mapToUserDTO(User user) {
-        return UserDTO.builder()
+        UserDTO userDTO = UserDTO.builder()
                 .userId(user.getUserId())
                 .username(user.getUsername())
                 .name(user.getName())
                 .avatar(user.getAvatar())
                 .school(user.getSchool())
                 .build();
+        log.debug("Mapped User to UserDTO: {}", userDTO);
+        return userDTO;
     }
 
     private static Long toLong(Object o) {

@@ -10,6 +10,8 @@ import com.kkunquizapp.QuizAppBackend.service.NotificationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 
@@ -50,11 +52,10 @@ public class NotificationImpl implements NotificationService {
         messagingTemplate.convertAndSend("/topic/notifications/user/" + userId, notificationDTO);
     }
 
-    public List<NotificationDTO> getNotifications(UUID userId) {
-        List<Notification> notifications = notificationRepository.findByUserUserId(userId);
-        return notifications.stream()
-                .map(this::mapToNotificationDTO)
-                .collect(Collectors.toList());
+    @Override
+    public Page<NotificationDTO> getNotifications(UUID userId, Pageable pageable) {
+        Page<Notification> page = notificationRepository.findByUserUserId(userId, pageable);
+        return page.map(this::mapToNotificationDTO);
     }
 
     private NotificationDTO mapToNotificationDTO(Notification notification) {

@@ -21,7 +21,6 @@ const PostList = ({ profile, onUpdate, userId, newPost }: PostListProps) => {
   useEffect(() => {
   const fetchInitialPosts = async () => {
     if (!userId) {
-      console.warn('No userId provided for fetching posts');
       setCurrentPosts([]);
       setHasMore(false);
       return;
@@ -35,9 +34,7 @@ const PostList = ({ profile, onUpdate, userId, newPost }: PostListProps) => {
 
     setIsLoading(true);
     try {
-      console.log('Fetching initial posts for userId:', userId, 'page: 0');
       const initialPosts = await getUserPosts(userId, 0, 10);
-      console.log('Initial posts fetched:', initialPosts, 'length:', initialPosts.length);
       setCurrentPosts((prevPosts) => {
         const newPostIds = prevPosts.map((p) => p.postId);
         const filteredFetchedPosts = initialPosts.filter((post) => !newPostIds.includes(post.postId));
@@ -74,14 +71,11 @@ const PostList = ({ profile, onUpdate, userId, newPost }: PostListProps) => {
   const loadMorePosts = async () => {
     if (isLoading || !hasMore || !userId) {
       console.log('Skipping loadMorePosts:', { isLoading, hasMore, userId });
-      return;
     }
 
     setIsLoading(true);
     try {
-      console.log('Fetching more posts for userId:', userId, 'page:', page);
       const newPosts = await getUserPosts(userId, page, 10);
-      console.log('Lazy-loaded posts:', newPosts, 'length:', newPosts.length);
       if (newPosts.length === 0) {
         setHasMore(false);
       } else {
@@ -89,7 +83,6 @@ const PostList = ({ profile, onUpdate, userId, newPost }: PostListProps) => {
           const uniquePosts = [...prevPosts, ...newPosts].filter(
             (post, index, self) => self.findIndex((p) => p.postId === post.postId) === index
           );
-          console.log('Updated currentPosts:', uniquePosts);
           return uniquePosts;
         });
         setPage((prevPage) => prevPage + 1);
@@ -105,7 +98,6 @@ const PostList = ({ profile, onUpdate, userId, newPost }: PostListProps) => {
 
   // Set up IntersectionObserver for lazy loading
   useEffect(() => {
-    console.log('Setting up IntersectionObserver - hasMore:', hasMore, 'isLoading:', isLoading);
     const observer = new IntersectionObserver(
       (entries) => {
         console.log('IntersectionObserver triggered:', entries[0].isIntersecting, 'hasMore:', hasMore, 'isLoading:', isLoading);

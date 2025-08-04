@@ -31,7 +31,6 @@ const PostCard: React.FC<PostCardProps> = ({ post, profile, onUpdate }) => {
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
   const commentInputRef = useRef<HTMLInputElement | null>(null);
   const replyInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
-  console.log("PostCard rendered with post:", post);
 
   // Fetch post data on mount to sync likedByCurrentUser
   useEffect(() => {
