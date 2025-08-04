@@ -34,9 +34,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
-/**
- * Service implementation for handling post-related operations.
- */
+
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -80,7 +78,7 @@ public class PostServiceImpl implements PostService {
             }
         }
 
-        PostDTO postDTO = mapToPostDTO(post);
+        PostDTO postDTO = mapToPostDTO(post, userId);
         broadcastPost(post, userId, postDTO);
 
         if (requestDTO.getReplyToPostId() != null) {
@@ -94,7 +92,9 @@ public class PostServiceImpl implements PostService {
     @Transactional
     @Override
     public void likePost(UUID userId, UUID postId, ReactionType type) {
-        validateReaction(userId, postId, type);
+        if (userId == null || postId == null) {
+            throw new IllegalArgumentException("User ID and post ID cannot be null");
+        }
 
         Post post = postRepository.findById(postId)
                 .orElseThrow(() -> new IllegalArgumentException("Post not found with ID: " + postId));
@@ -102,33 +102,93 @@ public class PostServiceImpl implements PostService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found with ID: " + userId));
 
+        // Check if the user has already reacted to the post
         if (reactionRepository.existsByUserAndTargetIdAndTargetType(user, postId, ReactionTargetType.POST)) {
-            throw new IllegalStateException("User has already reacted to this post");
+            // Unlike: Remove the existing reaction
+            Reaction existingReaction = reactionRepository.findByUserAndTargetIdAndTargetType(user, postId, ReactionTargetType.POST)
+                    .orElseThrow(() -> new IllegalStateException("Reaction not found despite existence check"));
+            reactionRepository.delete(existingReaction);
+            post.setLikeCount(post.getLikeCount() - 1);
+            postRepository.save(post);
+
+            // Notify about unlike
+            notificationService.createNotification(
+                    post.getUser().getUserId(),
+                    userId,
+                    "unliked",
+                    "post",
+                    postId
+            );
+
+            log.info("User {} unliked post {}", userId, postId);
+        } else if (type != null) {
+            // Like: Create a new reaction
+            Reaction reaction = Reaction.builder()
+                    .user(user)
+                    .targetType(ReactionTargetType.POST)
+                    .targetId(postId)
+                    .type(type)
+                    .build();
+            reactionRepository.save(reaction);
+
+            post.setLikeCount(post.getLikeCount() + 1);
+            postRepository.save(post);
+
+            notificationService.createNotification(
+                    post.getUser().getUserId(),
+                    userId,
+                    "liked",
+                    "post",
+                    postId
+            );
+
+            log.info("User {} liked post {} with reaction type {}", userId, postId, type);
+        } else {
+            throw new IllegalArgumentException("Reaction type cannot be null when liking a post");
         }
 
-        Reaction reaction = Reaction.builder()
-                .user(user)
-                .targetType(ReactionTargetType.POST)
-                .targetId(postId)
-                .type(type)
-                .build();
-        reactionRepository.save(reaction);
-
-        post.setLikeCount(post.getLikeCount() + 1);
-        postRepository.save(post);
-
-        notificationService.createNotification(
-                post.getUser().getUserId(),
-                userId,
-                "liked",
-                "post",
-                postId
-        );
-
-        PostDTO postDTO = mapToPostDTO(post);
+        // Broadcast the updated post
+        PostDTO postDTO = mapToPostDTO(post, userId);
         messagingTemplate.convertAndSend("/topic/posts/" + postId, postDTO);
+    }
 
-        log.info("User {} liked post {} with reaction type {}", userId, postId, type);
+    @Transactional
+    @Override
+    public void unlikePost(UUID userId, UUID postId) {
+        if (userId == null || postId == null) {
+            throw new IllegalArgumentException("User ID and post ID cannot be null");
+        }
+
+        Post post = postRepository.findById(postId)
+                .orElseThrow(() -> new IllegalArgumentException("Post not found with ID: " + postId));
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("User not found with ID: " + userId));
+
+        // Check if the user has already reacted to the post
+        if (reactionRepository.existsByUserAndTargetIdAndTargetType(user, postId, ReactionTargetType.POST)) {
+            // Unlike: Remove the existing reaction
+            Reaction existingReaction = reactionRepository.findByUserAndTargetIdAndTargetType(user, postId, ReactionTargetType.POST)
+                    .orElseThrow(() -> new IllegalStateException("Reaction not found despite existence check"));
+            reactionRepository.delete(existingReaction);
+            post.setLikeCount(post.getLikeCount() - 1);
+            postRepository.save(post);
+
+            // Notify about unlike
+            notificationService.createNotification(
+                    post.getUser().getUserId(),
+                    userId,
+                    "unliked",
+                    "post",
+                    postId
+            );
+
+            log.info("User {} unliked post {}", userId, postId);
+
+            // Broadcast the updated post
+            PostDTO postDTO = mapToPostDTO(post, userId);
+            messagingTemplate.convertAndSend("/topic/posts/" + postId, postDTO);
+        }
     }
 
     @Transactional
@@ -158,19 +218,24 @@ public class PostServiceImpl implements PostService {
 
     @Transactional(readOnly = true)
     @Override
+    public PostDTO getPostById(UUID postId, UUID currentUserId) {
+        Post post = postRepository.findById(postId)
+                .orElseThrow(() -> new IllegalArgumentException("Post not found with ID: " + postId));
+
+        return mapToPostDTO(post, currentUserId);
+    }
+    @Transactional(readOnly = true)
+    @Override
     public List<PostDTO> getUserPosts(UUID userId, int page, int size) {
         userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found with ID: " + userId));
 
-        // Tạo Pageable với page, size và sắp xếp theo createdAt (mới nhất trước)
         Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
-
-        // Lấy danh sách bài đăng theo trang
         Page<Post> postPage = postRepository.findByUserUserId(userId, pageable);
 
-        // Chuyển đổi sang PostDTO
+        // Pass the current userId to mapToPostDTO to check like status
         return postPage.getContent().stream()
-                .map(this::mapToPostDTO)
+                .map(post -> mapToPostDTO(post, userId))
                 .collect(Collectors.toList());
     }
 
@@ -274,7 +339,6 @@ public class PostServiceImpl implements PostService {
         }
     }
 
-
     private void validateMediaFile(MultipartFile file) {
         if (file == null || file.isEmpty()) {
             throw new IllegalArgumentException("Media file cannot be null or empty");
@@ -319,7 +383,7 @@ public class PostServiceImpl implements PostService {
         }
     }
 
-    private PostDTO mapToPostDTO(Post post) {
+    private PostDTO mapToPostDTO(Post post, UUID currentUserId) {
         List<PostMedia> postMediaList = postMediaRepository.findByPostPostId(post.getPostId());
         List<MediaDTO> mediaDTOs = postMediaList.stream()
                 .map(pm -> {
@@ -338,6 +402,21 @@ public class PostServiceImpl implements PostService {
                 })
                 .collect(Collectors.toList());
 
+        // Check if the current user has liked the post
+        boolean isLikedByCurrentUser = currentUserId != null &&
+                userRepository.findById(currentUserId)
+                        .map(user -> reactionRepository.existsByUserAndTargetIdAndTargetType(user, post.getPostId(), ReactionTargetType.POST))
+                        .orElse(false);
+
+        // Get the reaction type if the user has liked the post
+        ReactionType currentUserReactionType = null;
+        if (isLikedByCurrentUser) {
+            currentUserReactionType = userRepository.findById(currentUserId)
+                    .flatMap(user -> reactionRepository.findByUserAndTargetIdAndTargetType(user, post.getPostId(), ReactionTargetType.POST))
+                    .map(Reaction::getType)
+                    .orElse(null);
+        }
+
         return PostDTO.builder()
                 .postId(post.getPostId())
                 .user(mapToUserDTO(post.getUser()))
@@ -350,6 +429,8 @@ public class PostServiceImpl implements PostService {
                 .createdAt(post.getCreatedAt())
                 .updatedAt(post.getUpdatedAt())
                 .media(mediaDTOs)
+                .isLikedByCurrentUser(isLikedByCurrentUser)
+                .currentUserReactionType(currentUserReactionType)
                 .build();
     }
 

@@ -316,60 +316,14 @@ const SidebarMain: React.FC<HeaderProps> = ({ profile }) => {
               </span>
             </li>
 
-            <li
-              className={`menu-item ${
-                isActive("/courses") || isActive("/classes") || isActive("/quizzes")
-                  ? "active"
-                  : ""
-              } ${isSubmenuOpen("my-category") ? "open" : ""}`}
-            >
-              <a
-                href="#"
-                className="menu-link menu-toggle"
-                onClick={(e) => toggleSubmenu(e, "my-category")}
-              >
-                <i className="menu-icon icon-base bx bx-chart"></i>
-                <div data-i18n="My Category">My Category</div>
-              </a>
-              <ul className="menu-sub">
-                <li className={`menu-item ${isActive("/courses") ? "active" : ""}`}>
-                  <Link
-                    to="/courses"
-                    className="menu-link"
-                    onClick={() => handleMenuItemClick("/courses")}
-                  >
-                    <div data-i18n="Courses">Courses</div>
-                  </Link>
-                </li>
-                <li className={`menu-item ${isActive("/classes") ? "active" : ""}`}>
-                  <Link
-                    to="/classes"
-                    className="menu-link"
-                    onClick={() => handleMenuItemClick("/classes")}
-                  >
-                    <div data-i18n="Classes">Classes</div>
-                  </Link>
-                </li>
-                <li className={`menu-item ${isActive("/quizzes") ? "active" : ""}`}>
-                  <Link
-                    to="/quizzes"
-                    className="menu-link"
-                    onClick={() => handleMenuItemClick("/quizzes")}
-                  >
-                    <div data-i18n="Quizzes">Quizzes</div>
-                  </Link>
-                </li>
-              </ul>
-            </li>
-
             <li className={`menu-item ${isActive("/achievements") ? "active" : ""}`}>
               <Link
-                to="/achievements"
+                to="/dashboard"
                 className="menu-link"
                 onClick={() => handleMenuItemClick("/achievements")}
               >
                 <i className="menu-icon icon-base bx bx-map-alt"></i>
-                <div data-i18n="Achievements">Achievements</div>
+                <div data-i18n="Achievements">Profile Dashboard</div>
               </Link>
             </li>
           </>

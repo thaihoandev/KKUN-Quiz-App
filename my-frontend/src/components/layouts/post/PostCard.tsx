@@ -1,7 +1,7 @@
 import { formatDateOnly, parseDate } from "@/utils/dateUtils";
 import { UserDto } from "@/interfaces";
 import { useState, useRef, useCallback, KeyboardEvent, useEffect } from "react";
-import { createComment, getCommentsByPostId, likePost, PostDTO, CommentDTO } from "@/services/postService";
+import { createComment, getCommentsByPostId, likePost, PostDTO, CommentDTO, getPostById, unlikePost } from "@/services/postService";
 
 interface Comment {
   id: string;
@@ -24,11 +24,35 @@ const PostCard: React.FC<PostCardProps> = ({ post, profile, onUpdate }) => {
   const [activeReplyId, setActiveReplyId] = useState<string | undefined>(undefined);
   const [comments, setComments] = useState<Comment[]>([]);
   const [likeCount, setLikeCount] = useState(post.likeCount);
+  const [isLiked, setIsLiked] = useState(post.likedByCurrentUser);
+  const [isLiking, setIsLiking] = useState(false);
   const [visibleComments, setVisibleComments] = useState(3);
   const [expandedReplies, setExpandedReplies] = useState<{ [id: string]: number }>({});
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
   const commentInputRef = useRef<HTMLInputElement | null>(null);
   const replyInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  console.log("PostCard rendered with post:", post);
+
+  // Fetch post data on mount to sync likedByCurrentUser
+  useEffect(() => {
+    const fetchPost = async () => {
+      try {
+        const updatedPost = await getPostById(post.postId);
+        setLikeCount(updatedPost.likeCount);
+        setIsLiked(updatedPost.likedByCurrentUser ?? false); // Fallback to false if undefined
+        onUpdate(updatedPost);
+      } catch (error) {
+        console.error("Failed to fetch post data:", error);
+      }
+    };
+    fetchPost();
+  }, [post.postId, onUpdate]);
+
+  // Sync local likeCount and isLiked with prop changes
+  useEffect(() => {
+    setLikeCount(post.likeCount);
+    setIsLiked(post.likedByCurrentUser ?? false); // Fallback to false if undefined
+  }, [post.likeCount, post.likedByCurrentUser]);
 
   // Fetch comments on mount
   useEffect(() => {
@@ -73,18 +97,47 @@ const PostCard: React.FC<PostCardProps> = ({ post, profile, onUpdate }) => {
   }, [post.postId, post.commentCount, onUpdate]);
 
   const handleLike = useCallback(async () => {
+    if (isLiking) return;
+    setIsLiking(true);
+
     const previousLikeCount = likeCount;
-    setLikeCount(likeCount + 1);
-    onUpdate({ ...post, likeCount: likeCount + 1 });
+    const previousIsLiked = isLiked;
 
     try {
-      await likePost(post.postId, "LIKE");
+      console.log("Before handleLike, isLiked:", isLiked, "likeCount:", likeCount);
+      let updatedPost: PostDTO;
+      if (previousIsLiked) {
+        updatedPost = await unlikePost(post.postId);
+      } else {
+        updatedPost = await likePost(post.postId, "LIKE");
+      }
+      console.log("API response:", updatedPost);
+      // Update state based on API response with fallback
+      setLikeCount(updatedPost.likeCount ?? previousLikeCount);
+      setIsLiked(updatedPost.likedByCurrentUser ?? !previousIsLiked); // Fallback to toggle if undefined
+      onUpdate({
+        ...post,
+        likeCount: updatedPost.likeCount ?? previousLikeCount,
+        likedByCurrentUser: updatedPost.likedByCurrentUser ?? !previousIsLiked,
+        currentUserReactionType: updatedPost.likedByCurrentUser ? "LIKE" : null,
+      });
+      console.log("After API call, likedByCurrentUser:", updatedPost.likedByCurrentUser, "likeCount:", updatedPost.likeCount);
     } catch (error) {
+      // Revert to previous state on error
       setLikeCount(previousLikeCount);
-      onUpdate({ ...post, likeCount: previousLikeCount });
-      alert("Failed to like post. Please try again.");
+      setIsLiked(previousIsLiked);
+      onUpdate({
+        ...post,
+        likeCount: previousLikeCount,
+        likedByCurrentUser: previousIsLiked,
+        currentUserReactionType: previousIsLiked ? "LIKE" : null,
+      });
+      console.error("Failed to like/unlike post:", error);
+      alert(previousIsLiked ? "Failed to unlike post. Please try again." : "Failed to like post. Please try again.");
+    } finally {
+      setIsLiking(false);
     }
-  }, [likeCount, post, onUpdate]);
+  }, [likeCount, isLiked, post, onUpdate, isLiking]);
 
   const findCommentById = (id: string, comments: Comment[]): Comment | undefined => {
     for (const comment of comments) {
@@ -360,14 +413,13 @@ const PostCard: React.FC<PostCardProps> = ({ post, profile, onUpdate }) => {
   const topLevelComments = comments.filter((comment) => !comment.parentCommentId);
   const hasMoreComments = topLevelComments.length > visibleComments;
 
-  const maxVisibleImages = 4; // Show up to 4 images in a 2x2 grid
+  const maxVisibleImages = 4;
   const visibleImages = post.media ? post.media.slice(0, maxVisibleImages) : [];
   const remainingImageCount = post.media ? post.media.length - maxVisibleImages : 0;
 
   return (
     <div className="card h-100 shadow-lg rounded-3 mb-4">
       <div className="card-body">
-        {/* Header */}
         <div className="d-flex justify-content-between align-items-center mb-3">
           <div className="d-flex align-items-center">
             <div className="me-2">
@@ -391,12 +443,10 @@ const PostCard: React.FC<PostCardProps> = ({ post, profile, onUpdate }) => {
           </button>
         </div>
 
-        {/* Content */}
         <p className="card-text mb-3" style={{ whiteSpace: "pre-wrap" }}>
           {post.content}
         </p>
 
-        {/* Images */}
         {post.media && post.media.length > 0 && (
           <div className="mb-3">
             <div
@@ -463,7 +513,6 @@ const PostCard: React.FC<PostCardProps> = ({ post, profile, onUpdate }) => {
           </div>
         )}
 
-        {/* Zoomed Image Modal */}
         {zoomedImage && (
           <div
             className="position-fixed top-0 start-0 w-100 h-100 bg-black bg-opacity-75 d-flex align-items-center justify-content-center"
@@ -495,17 +544,36 @@ const PostCard: React.FC<PostCardProps> = ({ post, profile, onUpdate }) => {
           </div>
         )}
 
-        {/* Actions */}
         <div className="border-top pt-3 mt-3">
           <div className="d-flex w-100 gap-3 justify-content-start align-items-center mb-3">
             <button
               type="button"
-              aria-label="Like"
-              className="btn btn-outline-primary btn-sm d-flex align-items-center"
+              aria-label={isLiked ? "Unlike" : "Like"}
+              className={`btn ${isLiked ? "btn-primary" : "btn-outline-secondary"} btn-sm d-flex align-items-center position-relative`}
               onClick={handleLike}
+              disabled={isLiking}
+              style={{
+                transition: "all 0.3s ease",
+              }}
             >
-              <i className="icon-base bx bx-like me-1" aria-hidden="true" />
-              <span>{likeCount} Likes</span>
+              {isLiking ? (
+                <i
+                  className="icon-base bx bx-loader-alt bx-spin me-1"
+                  aria-hidden="true"
+                />
+              ) : (
+                <i
+                  className={`icon-base bx ${isLiked ? "bxs-like" : "bx-like"} me-1`}
+                  aria-hidden="true"
+                  style={{
+                    transform: isLiked ? "scale(1.2)" : "scale(1)",
+                    transition: "transform 0.2s ease",
+                  }}
+                />
+              )}
+              <span>
+                {likeCount} {likeCount === 1 ? "Like" : "Likes"}
+              </span>
             </button>
 
             <button
@@ -530,7 +598,6 @@ const PostCard: React.FC<PostCardProps> = ({ post, profile, onUpdate }) => {
           </div>
         </div>
 
-        {/* Comments Section */}
         {topLevelComments.length > 0 && (
           <div className="mt-3 border-top pt-3">
             {topLevelComments.slice(0, visibleComments).map((comment) => renderComment(comment))}
@@ -547,7 +614,6 @@ const PostCard: React.FC<PostCardProps> = ({ post, profile, onUpdate }) => {
           </div>
         )}
 
-        {/* Top-level Comment Input */}
         <div className="mt-3 d-flex align-items-center">
           <div className="me-2">
             <i className="icon-base bx bxs-user-circle fs-5 text-primary" aria-hidden="true" />

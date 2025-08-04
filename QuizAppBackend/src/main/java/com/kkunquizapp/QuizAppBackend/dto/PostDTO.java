@@ -1,6 +1,7 @@
 package com.kkunquizapp.QuizAppBackend.dto;
 
 import com.kkunquizapp.QuizAppBackend.model.enums.PostPrivacy;
+import com.kkunquizapp.QuizAppBackend.model.enums.ReactionType;
 import lombok.Builder;
 import lombok.Data;
 
@@ -22,4 +23,6 @@ public class PostDTO {
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private List<MediaDTO> media;
+    private boolean isLikedByCurrentUser;
+    private ReactionType currentUserReactionType;
 }

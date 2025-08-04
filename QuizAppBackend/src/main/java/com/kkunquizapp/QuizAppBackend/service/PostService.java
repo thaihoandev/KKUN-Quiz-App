@@ -13,4 +13,6 @@ public interface PostService {
     void likePost(UUID userId, UUID postId, ReactionType type);
     void deleteMedia(UUID mediaId, UUID userId);
     List<PostDTO> getUserPosts(UUID userId, int page, int size);
+    PostDTO getPostById(UUID postId, UUID currentUserId);
+    void unlikePost(UUID userId, UUID postId);
 }
