@@ -11,6 +11,7 @@ export interface NotificationDTO {
   targetId: string;
   read: boolean;
   createdAt: string;
+  content: string;
 }
 
 export interface PaginatedResponse<T> {

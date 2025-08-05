@@ -23,7 +23,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
-
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
@@ -138,7 +137,8 @@ public class PostServiceImpl implements PostService {
                     userId,
                     "unliked",
                     "post",
-                    postId
+                    postId,
+                    com.kkunquizapp.QuizAppBackend.utils.StringUtils.abbreviate(post.getContent(),10)
             );
 
             log.info("User {} unliked post {}", userId, postId);
@@ -162,7 +162,8 @@ public class PostServiceImpl implements PostService {
                     userId,
                     "liked",
                     "post",
-                    postId
+                    postId,
+                    com.kkunquizapp.QuizAppBackend.utils.StringUtils.abbreviate(post.getContent(),10)
             );
 
             log.info("User {} liked post {} with reaction type {}", userId, postId, type);
@@ -215,7 +216,8 @@ public class PostServiceImpl implements PostService {
                     userId,
                     "unliked",
                     "post",
-                    postId
+                    postId,
+                    com.kkunquizapp.QuizAppBackend.utils.StringUtils.abbreviate(post.getContent(),10)
             );
 
             log.info("User {} unliked post {}", userId, postId);
@@ -275,20 +277,43 @@ public class PostServiceImpl implements PostService {
 
     @Transactional(readOnly = true)
     @Override
-    public List<PostDTO> getUserPosts(UUID userId, int page, int size) {
-        log.info("Fetching posts for userId: {}, page: {}, size: {}", userId, page, size);
-        userRepository.findById(userId)
+    public List<PostDTO> getUserPosts(UUID userId, UUID currentUserId, int page, int size) {
+        log.info("Fetching posts for userId: {}, viewed by currentUserId: {}, page: {}, size: {}", userId, currentUserId, page, size);
+
+        User targetUser = userRepository.findById(userId)
                 .orElseThrow(() -> {
                     log.error("User not found with ID: {}", userId);
                     return new IllegalArgumentException("User not found with ID: " + userId);
                 });
 
+        // Determine visibility based on relationship
+        boolean isOwner = currentUserId != null && currentUserId.equals(userId);
+        boolean isFriend = false;
+        if (currentUserId != null && !isOwner) {
+            isFriend = userRepository.existsFriendship(userId, currentUserId); // Use the new method
+            log.debug("Friendship check: userId={} and currentUserId={} -> isFriend={}", userId, currentUserId, isFriend);
+        }
+
         Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
-        Page<Post> postPage = postRepository.findByUserUserId(userId, pageable);
+
+        // Filter posts based on privacy
+        Page<Post> postPage;
+        if (isOwner) {
+            // Owner sees all their posts
+            postPage = postRepository.findByUserUserId(userId, pageable);
+        } else if (isFriend) {
+            // Friends see PUBLIC and FRIENDS posts
+            postPage = postRepository.findByUserUserIdAndPrivacyIn(userId, List.of(PostPrivacy.PUBLIC, PostPrivacy.FRIENDS), pageable);
+        } else {
+            // Non-friends (or not logged in) see only PUBLIC posts
+            postPage = postRepository.findByUserUserIdAndPrivacy(userId, PostPrivacy.PUBLIC, pageable);
+        }
+
         List<PostDTO> postDTOs = postPage.getContent().stream()
-                .map(post -> mapToPostDTO(post, userId, null))
+                .map(post -> mapToPostDTO(post, currentUserId, null))
                 .collect(Collectors.toList());
-        log.info("Fetched {} posts for userId: {}", postDTOs.size(), userId);
+
+        log.info("Fetched {} posts for userId: {} (filtered by privacy)", postDTOs.size(), userId);
         return postDTOs;
     }
 
@@ -454,7 +479,8 @@ public class PostServiceImpl implements PostService {
                     post.getUser().getUserId(),
                     "commented",
                     "post",
-                    post.getPostId()
+                    post.getPostId(),
+                    com.kkunquizapp.QuizAppBackend.utils.StringUtils.abbreviate(post.getContent(),10)
             );
         } else {
             log.info("No reply notification created, replyToPost is null");

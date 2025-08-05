@@ -89,9 +89,15 @@ public class PostController {
     public ResponseEntity<List<PostDTO>> getUserPosts(
             @PathVariable UUID userId,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "10") int size) {
+            @RequestParam(defaultValue = "10") int size,
+            Authentication authentication) {  // Thêm Authentication
+        if (authentication == null) {
+            return ResponseEntity.status(401).build(); // Unauthorized nếu chưa login
+        }
         try {
-            List<PostDTO> posts = postService.getUserPosts(userId, page, size);
+            String currentUserIdStr = authService.getCurrentUserId();  // Lấy currentUserId từ auth
+            UUID currentUserId = UUID.fromString(currentUserIdStr);
+            List<PostDTO> posts = postService.getUserPosts(userId, currentUserId, page, size);  // Truyền thêm currentUserId
             return ResponseEntity.ok(posts);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(null);

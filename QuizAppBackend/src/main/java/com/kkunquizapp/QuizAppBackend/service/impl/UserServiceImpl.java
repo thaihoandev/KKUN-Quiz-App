@@ -101,25 +101,36 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public UserResponseDTO getUserById(String userId, String token) {
-        // Lấy thông tin từ Access Token bằng SecurityContextHolder
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (!(authentication.getPrincipal() instanceof Jwt jwt)) {
-            throw new SecurityException("Không thể xác thực Access Token");
-        }
-        String userIdFromToken = jwt.getClaim("userId");
-        List<String> roles = jwt.getClaim("roles");
-        boolean isAdmin = roles.contains(UserRole.ADMIN.name()); // Kiểm tra quyền admin
+        String userIdFromToken = null;
+        boolean isAdmin = false;
 
-        // Nếu không phải admin và không phải chủ tài khoản, trả về lỗi
-        if (!isAdmin && !userIdFromToken.equals(userId)) {
-            throw new SecurityException("Bạn không có quyền truy cập vào thông tin người dùng này");
+        // Nếu có token, lấy thông tin user từ token
+        if (token != null) {
+            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+            if (authentication != null && authentication.getPrincipal() instanceof Jwt jwt) {
+                userIdFromToken = jwt.getClaim("userId");
+                List<String> roles = jwt.getClaim("roles");
+                isAdmin = roles.contains(UserRole.ADMIN.name());
+            }
         }
 
         // Lấy thông tin người dùng
         User user = userRepo.findById(UUID.fromString(userId))
                 .orElseThrow(() -> new UserNotFoundException("User not found with ID: " + userId));
 
-        return modelMapper.map(user, UserResponseDTO.class);
+        // Map to DTO
+        UserResponseDTO dto = modelMapper.map(user, UserResponseDTO.class);
+
+        // Nếu không phải owner hoặc admin, ẩn thông tin nhạy cảm (như email)
+        boolean isOwner = userIdFromToken != null && userIdFromToken.equals(userId);
+        if (!isAdmin && !isOwner) {
+            dto.setEmail(null); // Ẩn email
+            dto.setRoles(null);
+            dto.setUsername(null);
+            // Có thể ẩn thêm fields nhạy cảm khác nếu cần
+        }
+
+        return dto;
     }
 
     @Override

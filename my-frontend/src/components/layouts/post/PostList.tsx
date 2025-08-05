@@ -7,7 +7,7 @@ interface PostListProps {
   profile: UserResponseDTO | null;
   onUpdate: (updatedPost: PostDTO) => void;
   userId: string;
-  newPost?: PostDTO | null; // Prop for new post notification
+  newPost?: PostDTO | null;
 }
 
 const PostList = ({ profile, onUpdate, userId, newPost }: PostListProps) => {
@@ -15,44 +15,52 @@ const PostList = ({ profile, onUpdate, userId, newPost }: PostListProps) => {
   const [page, setPage] = useState<number>(0);
   const [hasMore, setHasMore] = useState<boolean>(true);
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
   const loaderRef = useRef<HTMLDivElement>(null);
+
+  // Check if current user is the profile owner
+  const isOwner = profile?.userId === userId;
 
   // Fetch initial posts on mount or userId change
   useEffect(() => {
-  const fetchInitialPosts = async () => {
-    if (!userId) {
-      setCurrentPosts([]);
-      setHasMore(false);
-      return;
-    }
+    const fetchInitialPosts = async () => {
+      if (!userId) {
+        setCurrentPosts([]);
+        setHasMore(false);
+        setError("No user ID provided.");
+        return;
+      }
 
-    // Skip initial fetch if a new post is being processed
-    if (newPost) {
-      console.log('Skipping initial fetch due to new post');
-      return;
-    }
+      if (newPost) {
+        console.log('Skipping initial fetch due to new post');
+        return;
+      }
 
-    setIsLoading(true);
-    try {
-      const initialPosts = await getUserPosts(userId, 0, 10);
-      setCurrentPosts((prevPosts) => {
-        const newPostIds = prevPosts.map((p) => p.postId);
-        const filteredFetchedPosts = initialPosts.filter((post) => !newPostIds.includes(post.postId));
-        const updatedPosts = [...prevPosts, ...filteredFetchedPosts];
-        return updatedPosts.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-      });
-      setPage(1);
-      setHasMore(initialPosts.length >= 10);
-    } catch (error) {
-      console.error('Error fetching initial posts:', error);
-      setHasMore(false);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+      setIsLoading(true);
+      setError(null);
+      try {
+        const initialPosts = await getUserPosts(userId, 0, 10);
+        setCurrentPosts((prevPosts) => {
+          const newPostIds = prevPosts.map((p) => p.postId);
+          const filteredFetchedPosts = initialPosts.filter((post) => !newPostIds.includes(post.postId));
+          const updatedPosts = [...prevPosts, ...filteredFetchedPosts].sort(
+            (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          );
+          return updatedPosts;
+        });
+        setPage(1);
+        setHasMore(initialPosts.length >= 10);
+      } catch (error: any) {
+        console.error('Error fetching initial posts:', error);
+        setError(error.message || 'Failed to load posts.');
+        setHasMore(false);
+      } finally {
+        setIsLoading(false);
+      }
+    };
 
-  fetchInitialPosts();
-}, [userId]);
+    fetchInitialPosts();
+  }, [userId]);
 
   // Handle new post notifications
   useEffect(() => {
@@ -62,8 +70,10 @@ const PostList = ({ profile, onUpdate, userId, newPost }: PostListProps) => {
         if (prevPosts.some((p) => p.postId === newPost.postId)) {
           return prevPosts;
         }
-        const updatedPosts = [newPost, ...prevPosts];
-        return updatedPosts.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        const updatedPosts = [newPost, ...prevPosts].sort(
+          (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
+        return updatedPosts;
       });
     }
   }, [newPost]);
@@ -71,9 +81,11 @@ const PostList = ({ profile, onUpdate, userId, newPost }: PostListProps) => {
   const loadMorePosts = async () => {
     if (isLoading || !hasMore || !userId) {
       console.log('Skipping loadMorePosts:', { isLoading, hasMore, userId });
+      return;
     }
 
     setIsLoading(true);
+    setError(null);
     try {
       const newPosts = await getUserPosts(userId, page, 10);
       if (newPosts.length === 0) {
@@ -83,13 +95,16 @@ const PostList = ({ profile, onUpdate, userId, newPost }: PostListProps) => {
           const uniquePosts = [...prevPosts, ...newPosts].filter(
             (post, index, self) => self.findIndex((p) => p.postId === post.postId) === index
           );
-          return uniquePosts;
+          return uniquePosts.sort(
+            (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          );
         });
         setPage((prevPage) => prevPage + 1);
         setHasMore(newPosts.length >= 10);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error loading more posts:", error);
+      setError(error.message || 'Failed to load more posts.');
       setHasMore(false);
     } finally {
       setIsLoading(false);
@@ -129,9 +144,14 @@ const PostList = ({ profile, onUpdate, userId, newPost }: PostListProps) => {
         </div>
       </div>
       <div className="post-list" style={{ minHeight: '200px' }}>
-        {currentPosts.length === 0 ? (
+        {error && (
+          <div className="text-center text-danger py-3">
+            {error}
+          </div>
+        )}
+        {currentPosts.length === 0 && !error ? (
           <div className="text-center text-muted py-3">
-            {isLoading ? 'Loading posts...' : 'No posts yet. Share something!'}
+            {isLoading ? 'Loading posts...' : isOwner ? 'No posts yet. Share something!' : 'No visible posts.'}
           </div>
         ) : (
           <div className="d-flex flex-column gap-3">
@@ -156,7 +176,7 @@ const PostList = ({ profile, onUpdate, userId, newPost }: PostListProps) => {
             )}
           </div>
         ) : (
-          currentPosts.length > 0 && (
+          currentPosts.length > 0 && !error && (
             <div className="text-center py-3 text-muted">
               No more posts to load.
             </div>

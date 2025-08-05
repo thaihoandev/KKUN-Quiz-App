@@ -2,7 +2,7 @@ import * as StompJs from '@stomp/stompjs';
 import SockJS from 'sockjs-client';
 import { PostDTO } from '@/services/postService';
 import { NotificationDTO } from '@/services/notificationService';
-
+import unknownAvatar from '@/assets/img/avatars/unknown.jpg';
 interface Notification {
   id: number;
   title: string;
@@ -43,7 +43,6 @@ export class WebSocketService {
       this.isConnected = true;
       this.postUpdateCallbacks.forEach((_, postId) => {
         console.log('Re-subscribing to post topic:', postId);
-        this.subscribeToPostTopic(postId);
       });
       if (this.currentUserId) {
         this.subscribeToNotificationTopic(this.currentUserId);
@@ -63,56 +62,6 @@ export class WebSocketService {
     this.client.activate();
   }
 
-  public subscribeToPost(postId: string, callback: PostUpdateCallback) {
-    console.log(`Registering callback for postId: ${postId}`);
-    if (!this.postUpdateCallbacks.has(postId)) {
-      this.postUpdateCallbacks.set(postId, []);
-      if (this.isConnected) {
-        this.subscribeToPostTopic(postId);
-      }
-    }
-    const callbacks = this.postUpdateCallbacks.get(postId)!;
-    if (!callbacks.includes(callback)) {
-      callbacks.push(callback);
-    }
-  }
-
-  public unsubscribeFromPost(postId: string, callback: PostUpdateCallback) {
-    console.log(`Unsubscribing callback for postId: ${postId}`);
-    const callbacks = this.postUpdateCallbacks.get(postId);
-    if (callbacks) {
-      const updatedCallbacks = callbacks.filter((cb) => cb !== callback);
-      if (updatedCallbacks.length === 0) {
-        this.postUpdateCallbacks.delete(postId);
-        if (this.isConnected && this.client) {
-          this.client.unsubscribe(`/topic/posts/${postId}`);
-          console.log(`Unsubscribed from topic: /topic/posts/${postId}`);
-        }
-      } else {
-        this.postUpdateCallbacks.set(postId, updatedCallbacks);
-      }
-    }
-  }
-
-  private subscribeToPostTopic(postId: string) {
-    if (this.client && this.isConnected) {
-      console.log(`Subscribing to topic: /topic/posts/${postId}`);
-      this.client.subscribe(`/topic/posts/${postId}`, (message) => {
-        try {
-          const updatedPost: PostDTO = JSON.parse(message.body);
-          console.log('Received post update for postId:', postId, updatedPost);
-          const callbacks = this.postUpdateCallbacks.get(postId) || [];
-          callbacks.forEach((callback) => callback(updatedPost));
-          this.handlePostUpdateNotification(updatedPost, postId);
-        } catch (error) {
-          console.error('Error parsing post update:', error);
-        }
-      });
-    } else {
-      console.warn(`Cannot subscribe to /topic/posts/${postId}: client not connected`);
-    }
-  }
-
   private subscribeToNotificationTopic(userId: string) {
     if (this.client && this.isConnected) {
       console.log(`Subscribing to notification topic: /topic/notifications/user/${userId}`);
@@ -122,12 +71,12 @@ export class WebSocketService {
           console.log('Received notification for userId:', userId, notification);
           const mappedNotification: Notification = {
             id: parseInt(notification.notificationId.split('-')[1], 10) || Date.now(),
-            title: `${notification.actor?.name || 'Someone'} ${notification.verb} your ${notification.targetType}`,
-            message: `${notification.actor?.name || 'Someone'} ${notification.verb} your ${notification.targetType}.`,
+            title: `<strong>${notification.actor?.name || 'Someone'}</strong> ${notification.verb} your ${notification.targetType} ${notification.content ? `: "<strong>${notification.content}</strong>"` : ''}.`,
+            message: `<strong>${notification.actor?.name || 'Someone'}</strong> ${notification.verb} your ${notification.targetType} ${notification.content ? `: "<strong>${notification.content}</strong>"` : ''}.`,
             time: new Date(notification.createdAt).toLocaleTimeString(),
-            avatar: notification.actor?.avatar || '/default-avatar.png',
+            avatar: notification.actor?.avatar || unknownAvatar,
           };
-          console.log('Mapped notification:', mappedNotification);
+          console.log('Mapped notification:', notification);
           this.notificationCallbacks.forEach((callback) => callback(mappedNotification));
           if (Notification.permission === 'granted') {
             console.log('Showing browser notification:', mappedNotification.message);
@@ -165,23 +114,6 @@ export class WebSocketService {
   public unregisterNotificationCallback(callback: NotificationCallback) {
     console.log('Unregistering notification callback');
     this.notificationCallbacks = this.notificationCallbacks.filter((cb) => cb !== callback);
-  }
-
-  private handlePostUpdateNotification(post: PostDTO, postId: string) {
-    console.log('Checking post update notification for postId:', postId, 'currentUserId:', this.currentUserId, 'post.user?.userId:', post.user?.userId);
-    if (this.currentUserId && post.user?.userId === this.currentUserId) {
-      const notification: Notification = {
-        id: parseInt(`${postId}-${Date.now()}`, 10) || Date.now(),
-        title: `${post.actingUser?.name || 'Someone'} ${post.likedByCurrentUser ? 'liked' : 'unliked'} your post`,
-        message: `${post.actingUser?.name || 'Someone'} ${post.likedByCurrentUser ? 'liked' : 'unliked'} your post.`,
-        time: new Date().toLocaleTimeString(),
-        avatar: post.actingUser?.avatar || '/default-avatar.png',
-      };
-      console.log('Generated post update notification:', notification);
-      this.notificationCallbacks.forEach((callback) => callback(notification));
-    } else {
-      console.log('Post update notification skipped: post not owned by current user');
-    }
   }
 
   public setUserId(userId: string | null) {

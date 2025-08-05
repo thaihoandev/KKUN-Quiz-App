@@ -12,7 +12,7 @@ public interface PostService {
     PostDTO createPost(UUID userId, PostRequestDTO requestDTO, List<MultipartFile> mediaFiles);
     void likePost(UUID userId, UUID postId, ReactionType type);
     void deleteMedia(UUID mediaId, UUID userId);
-    List<PostDTO> getUserPosts(UUID userId, int page, int size);
+    List<PostDTO> getUserPosts(UUID userId, UUID currentUserId, int page, int size);
     PostDTO getPostById(UUID postId, UUID currentUserId);
     void unlikePost(UUID userId, UUID postId);
 }

@@ -34,4 +34,7 @@ public class Notification {
 
     @CreationTimestamp
     private LocalDateTime createdAt;
+
+    @Column(columnDefinition = "TEXT")
+    private String content;
 }
