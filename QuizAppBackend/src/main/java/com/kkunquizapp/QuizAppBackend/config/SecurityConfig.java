@@ -17,6 +17,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.Resource;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
@@ -30,7 +31,10 @@ import org.springframework.security.oauth2.jwt.*;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.AccessDeniedHandlerImpl;
+import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.authentication.preauth.AbstractPreAuthenticatedProcessingFilter;
+import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -66,32 +70,61 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
-        return http
+        http
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-                .csrf(csrf -> csrf.disable())
+                .csrf(cs -> cs.disable())
+                .sessionManagement(sm -> sm
+                        .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
+                )
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/ws/**").permitAll() // Cho phép WebSocket
-                        .requestMatchers("/api/games/join", "/api/games/{gameId}/answer", "/api/auth/refresh-token", "/api/auth/logout").permitAll()
-                        .requestMatchers("/api/quizzes/**", "/api/questions/**", "/api/files/upload/**").hasAnyAuthority(UserRole.USER.name(), UserRole.ADMIN.name())
-                        .requestMatchers("/api/admin/**").hasAnyAuthority(UserRole.ADMIN.name())
-                        .requestMatchers("/api/profile/**").hasAnyAuthority(UserRole.USER.name())
-                        .requestMatchers("/api/users/**", "/api/users/me", "/api/games/create", "/api/games/{gameId}/start", "/api/games/{gameId}/end").authenticated()
+                        .requestMatchers("/ws/**").permitAll()
+                        .requestMatchers(
+                                "/api/auth/refresh-token",
+                                "/api/auth/logout",
+                                "/api/games/join",
+                                "/api/games/{gameId}/answer"
+                        ).permitAll()
+                        .requestMatchers("/api/quizzes/**", "/api/questions/**", "/api/files/upload/**")
+                        .hasAnyAuthority(UserRole.USER.name(), UserRole.ADMIN.name())
+                        .requestMatchers("/api/admin/**")
+                        .hasAuthority(UserRole.ADMIN.name())
+                        .requestMatchers("/api/profile/**")
+                        .hasAuthority(UserRole.USER.name())
+                        .requestMatchers(
+                                "/api/users/**",
+                                "/api/users/me",
+                                "/api/games/create",
+                                "/api/games/{gameId}/start",
+                                "/api/games/{gameId}/end"
+                        ).authenticated()
                         .anyRequest().permitAll()
+                )
+                .exceptionHandling(ex -> ex
+                        .defaultAuthenticationEntryPointFor(
+                                new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED),
+                                new AntPathRequestMatcher("/api/**")
+                        )
+                        .defaultAccessDeniedHandlerFor(
+                                new AccessDeniedHandlerImpl(),
+                                new AntPathRequestMatcher("/api/**")
+                        )
                 )
                 .oauth2Login(oauth2 -> oauth2
                         .loginPage("/oauth2/authorization/google")
                         .defaultSuccessUrl("/api/auth/login-success", true)
                 )
-                .oauth2ResourceServer(oauth2 -> oauth2
+                .oauth2ResourceServer(rs -> rs
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter()))
                 )
-                .sessionManagement(session -> session
-                        .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
-                )
-                .addFilterBefore(new CookieJwtFilter(), AbstractPreAuthenticatedProcessingFilter.class)
-                .build();
+                .addFilterBefore(new CookieJwtFilter(),
+                        AbstractPreAuthenticatedProcessingFilter.class);
+
+        return http.build();
     }
 
+    /**
+     * Filter để lấy accessToken từ cookie và gắn vào header Authorization
+     */
     public static class CookieJwtFilter extends AbstractPreAuthenticatedProcessingFilter {
         @Override
         public void doFilter(jakarta.servlet.ServletRequest request, jakarta.servlet.ServletResponse response, FilterChain filterChain)
@@ -134,18 +167,21 @@ public class SecurityConfig {
         }
     }
 
+    /**
+     * Wrapper để trả về header Authorization từ cookie
+     */
     private static class AuthHeaderRequestWrapper extends HttpServletRequestWrapper {
-        private final String authorizationHeader;
+        private final String authHeader;
 
-        public AuthHeaderRequestWrapper(HttpServletRequest request, String authorizationHeader) {
+        AuthHeaderRequestWrapper(HttpServletRequest request, String authHeader) {
             super(request);
-            this.authorizationHeader = authorizationHeader;
+            this.authHeader = authHeader;
         }
 
         @Override
         public String getHeader(String name) {
             if ("Authorization".equalsIgnoreCase(name)) {
-                return authorizationHeader;
+                return authHeader;
             }
             return super.getHeader(name);
         }
@@ -153,7 +189,7 @@ public class SecurityConfig {
         @Override
         public java.util.Enumeration<String> getHeaders(String name) {
             if ("Authorization".equalsIgnoreCase(name)) {
-                return java.util.Collections.enumeration(Arrays.asList(authorizationHeader));
+                return Collections.enumeration(Arrays.asList(authHeader));
             }
             return super.getHeaders(name);
         }
@@ -162,7 +198,33 @@ public class SecurityConfig {
         public java.util.Enumeration<String> getHeaderNames() {
             List<String> names = Collections.list(super.getHeaderNames());
             names.add("Authorization");
-            return java.util.Collections.enumeration(names);
+            return Collections.enumeration(names);
+        }
+    }
+
+    @Bean
+    public RSAPublicKey publicKey() throws Exception {
+        try (InputStream is = publicKeyPath.getInputStream()) {
+            String pem = new String(is.readAllBytes(), StandardCharsets.UTF_8)
+                    .replace("-----BEGIN PUBLIC KEY-----", "")
+                    .replace("-----END PUBLIC KEY-----", "")
+                    .replaceAll("\\s", "");
+            byte[] bytes = Base64.getDecoder().decode(pem);
+            X509EncodedKeySpec spec = new X509EncodedKeySpec(bytes);
+            return (RSAPublicKey) KeyFactory.getInstance("RSA").generatePublic(spec);
+        }
+    }
+
+    @Bean
+    public RSAPrivateKey privateKey() throws Exception {
+        try (InputStream is = privateKeyPath.getInputStream()) {
+            String pem = new String(is.readAllBytes(), StandardCharsets.UTF_8)
+                    .replace("-----BEGIN PRIVATE KEY-----", "")
+                    .replace("-----END PRIVATE KEY-----", "")
+                    .replaceAll("\\s", "");
+            byte[] bytes = Base64.getDecoder().decode(pem);
+            PKCS8EncodedKeySpec spec = new PKCS8EncodedKeySpec(bytes);
+            return (RSAPrivateKey) KeyFactory.getInstance("RSA").generatePrivate(spec);
         }
     }
 
@@ -172,53 +234,22 @@ public class SecurityConfig {
     }
 
     @Bean
-    public RSAPublicKey publicKey() throws Exception {
-        try (InputStream is = publicKeyPath.getInputStream()) {
-            String key = new String(is.readAllBytes(), StandardCharsets.UTF_8);
-            key = key.replace("-----BEGIN PUBLIC KEY-----", "")
-                    .replace("-----END PUBLIC KEY-----", "")
-                    .replaceAll("\\s", "");
-            byte[] keyBytes = Base64.getDecoder().decode(key);
-            X509EncodedKeySpec spec = new X509EncodedKeySpec(keyBytes);
-            KeyFactory keyFactory = KeyFactory.getInstance("RSA");
-            RSAPublicKey publicKey = (RSAPublicKey) keyFactory.generatePublic(spec);
-            System.out.println("Public key loaded, size: " + publicKey.getModulus().bitLength() + " bits.");
-            return publicKey;
-        }
-    }
-
-    @Bean
-    public RSAPrivateKey privateKey() throws Exception {
-        try (InputStream is = privateKeyPath.getInputStream()) {
-            String key = new String(is.readAllBytes(), StandardCharsets.UTF_8);
-            key = key.replace("-----BEGIN PRIVATE KEY-----", "")
-                    .replace("-----END PRIVATE KEY-----", "")
-                    .replaceAll("\\s", "");
-            byte[] keyBytes = Base64.getDecoder().decode(key);
-            PKCS8EncodedKeySpec spec = new PKCS8EncodedKeySpec(keyBytes);
-            KeyFactory keyFactory = KeyFactory.getInstance("RSA");
-            RSAPrivateKey privateKey = (RSAPrivateKey) keyFactory.generatePrivate(spec);
-            System.out.println("Private key loaded, size: " + privateKey.getModulus().bitLength() + " bits.");
-            return privateKey;
-        }
-    }
-
-    @Bean
     public JwtEncoder jwtEncoder(RSAPublicKey publicKey, RSAPrivateKey privateKey) {
-        JWK jwk = new RSAKey.Builder(publicKey).privateKey(privateKey).build();
-        JWKSource<SecurityContext> jwkSource = new ImmutableJWKSet<>(new JWKSet(jwk));
-        return new NimbusJwtEncoder(jwkSource);
+        JWK jwk = new RSAKey.Builder(publicKey)
+                .privateKey(privateKey)
+                .build();
+        JWKSource<SecurityContext> jwkSrc = new ImmutableJWKSet<>(new JWKSet(jwk));
+        return new NimbusJwtEncoder(jwkSrc);
     }
 
     @Bean
     public JwtAuthenticationConverter jwtAuthenticationConverter() {
-        JwtGrantedAuthoritiesConverter grantedAuthoritiesConverter = new JwtGrantedAuthoritiesConverter();
-        grantedAuthoritiesConverter.setAuthorityPrefix("");
-        grantedAuthoritiesConverter.setAuthoritiesClaimName("roles");
-
-        JwtAuthenticationConverter jwtAuthenticationConverter = new JwtAuthenticationConverter();
-        jwtAuthenticationConverter.setJwtGrantedAuthoritiesConverter(grantedAuthoritiesConverter);
-        return jwtAuthenticationConverter;
+        JwtGrantedAuthoritiesConverter gaConverter = new JwtGrantedAuthoritiesConverter();
+        gaConverter.setAuthorityPrefix("");
+        gaConverter.setAuthoritiesClaimName("roles");
+        JwtAuthenticationConverter conv = new JwtAuthenticationConverter();
+        conv.setJwtGrantedAuthoritiesConverter(gaConverter);
+        return conv;
     }
 
     @Bean
@@ -229,27 +260,26 @@ public class SecurityConfig {
     @Bean
     public AuthenticationProvider authenticationProvider() {
         DaoAuthenticationProvider provider = new DaoAuthenticationProvider();
-        provider.setPasswordEncoder(passwordEncoder());
         provider.setUserDetailsService(userDetailsService);
+        provider.setPasswordEncoder(passwordEncoder());
         return provider;
     }
 
     @Bean
-    public AuthenticationManager authenticationManager(AuthenticationConfiguration config) throws Exception {
-        return config.getAuthenticationManager();
+    public AuthenticationManager authenticationManager(AuthenticationConfiguration cfg) throws Exception {
+        return cfg.getAuthenticationManager();
     }
 
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
-        CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(List.of("http://localhost:3000"));
-        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        configuration.setAllowedHeaders(List.of("*"));
-        configuration.setExposedHeaders(List.of("Authorization"));
-        configuration.setAllowCredentials(true);
-        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/**", configuration);
-        System.out.println("CORS configuration applied for http://localhost:3000");
-        return source;
+        CorsConfiguration cfg = new CorsConfiguration();
+        cfg.setAllowedOrigins(List.of("http://localhost:3000"));
+        cfg.setAllowedMethods(List.of("GET","POST","PUT","PATCH","DELETE","OPTIONS"));
+        cfg.setAllowedHeaders(List.of("*"));
+        cfg.setExposedHeaders(List.of("Authorization"));
+        cfg.setAllowCredentials(true);
+        UrlBasedCorsConfigurationSource src = new UrlBasedCorsConfigurationSource();
+        src.registerCorsConfiguration("/**", cfg);
+        return src;
     }
 }
