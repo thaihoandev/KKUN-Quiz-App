@@ -1,0 +1,13 @@
+model:
+  name: 'bert-base-uncased'
+  output_dir: './models/mcq_ner_model'
+training:
+  epochs: 3
+  batch_size: 16
+  warmup_steps: 500
+  weight_decay: 0.01
+data:
+  input_dir: './data/input'
+  dataset_path: './data/dataset'
+  use_custom_dataset: false  # Set true nếu dùng custom NER dataset
+  custom_dataset_file: 'custom_ner_dataset.conll'
