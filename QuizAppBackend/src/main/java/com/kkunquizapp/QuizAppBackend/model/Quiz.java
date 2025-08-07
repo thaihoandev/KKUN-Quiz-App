@@ -6,6 +6,7 @@ import jakarta.persistence.*;
 import lombok.Data;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -36,7 +37,7 @@ public class Quiz {
 
     @Enumerated(EnumType.STRING) // Lưu giá trị enum dưới dạng chuỗi
     @Column(nullable = false, length = 20)
-    private QuizStatus status; // "draft", "live", "completed"
+    private QuizStatus status; // "PUBLISHED", "ACHIEVED", "CLOSED", "DRAFT"
 
     @ManyToMany(fetch = FetchType.EAGER)
     @JoinTable(
@@ -44,7 +45,7 @@ public class Quiz {
             joinColumns = @JoinColumn(name = "quiz_id"),
             inverseJoinColumns = @JoinColumn(name = "user_id")
     )
-    private List<User> viewers; // Danh sách người dùng được phép xem
+    private List<User> viewers = new ArrayList<>();; // Danh sách người dùng được phép xem
 
     @ManyToMany(fetch = FetchType.EAGER)
     @JoinTable(
@@ -52,5 +53,7 @@ public class Quiz {
             joinColumns = @JoinColumn(name = "quiz_id"),
             inverseJoinColumns = @JoinColumn(name = "user_id")
     )
-    private List<User> editors; // Danh sách người dùng được phép chỉnh sửa
+    private List<User> editors = new ArrayList<>();; // Danh sách người dùng được phép chỉnh sửa
+    @Column(nullable = false)
+    private double recommendationScore = 0.0;
 }

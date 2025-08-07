@@ -198,15 +198,20 @@ export enum QuizStatus {
 }
 
 export interface Quiz {
-    quizId: string;
-    title: string;
-    description?: string;
-    host: UserDto
-    status: QuizStatus;
-    createdAt: string;
-    updatedAt: string;
-    editors: UserDto[]; // Assuming editors are returned as an array of user IDs
-    viewers: UserDto[]; // Assuming viewers are returned as an array of user IDs
+  quizId: string;
+  title: string;
+  description?: string;
+  host: UserDto;
+  createdAt: string;
+  updatedAt: string;
+  status: QuizStatus;
+  viewers: UserDto[];
+  editors: UserDto[];
+  questions: Question[];
+  recommendationScore: number;
+  category?: string; // Added for category-based filtering
+  duration?: string; // Added for display
+  image?: string; // Added for quiz thumbnail
 }
 
 

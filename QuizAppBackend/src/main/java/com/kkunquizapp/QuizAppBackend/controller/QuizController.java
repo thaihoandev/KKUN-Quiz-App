@@ -11,6 +11,7 @@ import com.kkunquizapp.QuizAppBackend.service.QuizService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
@@ -148,6 +149,18 @@ public class QuizController {
         }
     }
 
+    @GetMapping("/published")
+    public Page<QuizResponseDTO> getPublishedQuizzes(Pageable pageable) {
+        Page<QuizResponseDTO> quizzes = quizService.getPublishedQuizzes(pageable);
+
+        // Sort by recommendation score (if needed)
+        List<QuizResponseDTO> sortedQuizzes = quizzes.getContent().stream()
+                .sorted(Comparator.comparingDouble(QuizResponseDTO::getRecommendationScore).reversed())
+                .collect(Collectors.toList());
+
+        // Create a new Page object with sorted content
+        return new PageImpl<>(sortedQuizzes, pageable, quizzes.getTotalElements());
+    }
 
     @PostMapping(value = "/create/from-file", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<QuizResponseDTO> createQuizFromFile(
