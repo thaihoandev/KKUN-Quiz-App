@@ -94,10 +94,6 @@ const ProcessQuizCard = ({ quiz }: QuizCardProps) => {
             <i className="icon-base bx bx-time-five me-1"></i>
             {displayDuration}
           </p>
-          <p className="d-flex align-items-center mb-1">
-            <i className="icon-base bx bx-user me-1"></i>
-            Hosted by {quiz.host.name}
-          </p>
           <div className="progress mb-4" style={{ height: "8px" }}>
             <div
               className="progress-bar w-25"
@@ -117,7 +113,7 @@ const ProcessQuizCard = ({ quiz }: QuizCardProps) => {
               <i className="icon-base bx bx-play-circle icon-sm lh-1 scaleX-n1-rtl"></i>
             </button>
             <a
-              className="w-100 btn btn-label-primary d-flex align-items-center"
+              className="w-100 btn btn-label-warning d-flex align-items-center"
               href={`/quizzes/${quiz.quizId}`}
             >
               <span className="me-2">Continue</span>

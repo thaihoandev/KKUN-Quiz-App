@@ -2,7 +2,8 @@ import { formatDateOnly, parseDate } from "@/utils/dateUtils";
 import { UserDto } from "@/interfaces";
 import { useState, useRef, useCallback, KeyboardEvent, useEffect } from "react";
 import { createComment, getCommentsByPostId, likePost, PostDTO, CommentDTO, getPostById, unlikePost } from "@/services/postService";
-
+import Modal from "react-bootstrap/Modal";
+import unknownAvatar from "@/assets/img/avatars/unknown.jpg";
 interface Comment {
   id: string;
   content: string;
@@ -38,7 +39,7 @@ const PostCard: React.FC<PostCardProps> = ({ post, profile, onUpdate }) => {
       try {
         const updatedPost = await getPostById(post.postId);
         setLikeCount(updatedPost.likeCount);
-        setIsLiked(updatedPost.likedByCurrentUser ?? false); // Fallback to false if undefined
+        setIsLiked(updatedPost.likedByCurrentUser ?? false);
         onUpdate(updatedPost);
       } catch (error) {
         console.error("Failed to fetch post data:", error);
@@ -50,7 +51,7 @@ const PostCard: React.FC<PostCardProps> = ({ post, profile, onUpdate }) => {
   // Sync local likeCount and isLiked with prop changes
   useEffect(() => {
     setLikeCount(post.likeCount);
-    setIsLiked(post.likedByCurrentUser ?? false); // Fallback to false if undefined
+    setIsLiked(post.likedByCurrentUser ?? false);
   }, [post.likeCount, post.likedByCurrentUser]);
 
   // Fetch comments on mount
@@ -103,26 +104,21 @@ const PostCard: React.FC<PostCardProps> = ({ post, profile, onUpdate }) => {
     const previousIsLiked = isLiked;
 
     try {
-      console.log("Before handleLike, isLiked:", isLiked, "likeCount:", likeCount);
       let updatedPost: PostDTO;
       if (previousIsLiked) {
         updatedPost = await unlikePost(post.postId);
       } else {
         updatedPost = await likePost(post.postId, "LIKE");
       }
-      console.log("API response:", updatedPost);
-      // Update state based on API response with fallback
       setLikeCount(updatedPost.likeCount ?? previousLikeCount);
-      setIsLiked(updatedPost.likedByCurrentUser ?? !previousIsLiked); // Fallback to toggle if undefined
+      setIsLiked(updatedPost.likedByCurrentUser ?? !previousIsLiked);
       onUpdate({
         ...post,
         likeCount: updatedPost.likeCount ?? previousLikeCount,
         likedByCurrentUser: updatedPost.likedByCurrentUser ?? !previousIsLiked,
         currentUserReactionType: updatedPost.likedByCurrentUser ? "LIKE" : null,
       });
-      console.log("After API call, likedByCurrentUser:", updatedPost.likedByCurrentUser, "likeCount:", updatedPost.likeCount);
     } catch (error) {
-      // Revert to previous state on error
       setLikeCount(previousLikeCount);
       setIsLiked(previousIsLiked);
       onUpdate({
@@ -311,7 +307,19 @@ const PostCard: React.FC<PostCardProps> = ({ post, profile, onUpdate }) => {
     return (
       <div key={comment.id} className={`d-flex mb-3 ${level > 0 ? "ms-4" : ""}`}>
         <div className="me-2">
-          <i className="icon-base bx bxs-user-circle fs-5 text-primary" aria-hidden="true" />
+          {comment.user?.avatar ? (
+            <img
+              src={comment.user.avatar}
+              alt={`${comment.user.name || "User"}'s avatar`}
+              className="rounded-circle"
+              style={{ width: "24px", height: "24px", objectFit: "cover" }}
+              onError={(e) => {
+                e.currentTarget.src = unknownAvatar; // Fallback image
+              }}
+            />
+          ) : (
+            <i className="icon-base bx bxs-user-circle fs-5 text-primary" aria-hidden="true" />
+          )}
         </div>
         <div className="flex-grow-1 px-2 pb-2 rounded">
           <small className="fw-bold">{comment.user?.name || "User"}</small>
@@ -370,7 +378,19 @@ const PostCard: React.FC<PostCardProps> = ({ post, profile, onUpdate }) => {
           {!isReply && activeReplyId === comment.id && (
             <div className="mt-2 d-flex align-items-center">
               <div className="me-2">
-                <i className="icon-base bx bxs-user-circle fs-5 text-primary" aria-hidden="true" />
+                {profile?.avatar ? (
+                  <img
+                    src={profile.avatar}
+                    alt={`${profile.name || "User"}'s avatar`}
+                    className="rounded-circle"
+                    style={{ width: "24px", height: "24px", objectFit: "cover" }}
+                    onError={(e) => {
+                      e.currentTarget.src = unknownAvatar; // Fallback image
+                    }}
+                  />
+                ) : (
+                  <i className="icon-base bx bxs-user-circle fs-5 text-primary" aria-hidden="true" />
+                )}
               </div>
               <div className="flex-grow-1">
                 <input
@@ -422,7 +442,19 @@ const PostCard: React.FC<PostCardProps> = ({ post, profile, onUpdate }) => {
         <div className="d-flex justify-content-between align-items-center mb-3">
           <div className="d-flex align-items-center">
             <div className="me-2">
-              <i className="icon-base bx bxs-user-circle fs-4 text-primary" aria-hidden="true" />
+              {post.user?.avatar ? (
+                <img
+                  src={post.user.avatar}
+                  alt={`${post.user.name || "User"}'s avatar`}
+                  className="rounded-circle"
+                  style={{ width: "32px", height: "32px", objectFit: "cover" }}
+                  onError={(e) => {
+                    e.currentTarget.src = unknownAvatar; // Fallback image
+                  }}
+                />
+              ) : (
+                <i className="icon-base bx bxs-user-circle fs-4 text-primary" aria-hidden="true" />
+              )}
             </div>
             <div>
               <h6 className="mb-0">{post.user?.name || "User"}</h6>
@@ -451,12 +483,12 @@ const PostCard: React.FC<PostCardProps> = ({ post, profile, onUpdate }) => {
             <div
               className={
                 post.media.length === 1
-                  ? "w-100"
+                  ? "d-flex justify-content-center"
                   : "d-grid gap-2"
               }
               style={
                 post.media.length === 1
-                  ? {}
+                  ? { maxWidth: "50%", margin: "0 auto" }
                   : {
                       gridTemplateColumns: `repeat(${Math.min(visibleImages.length, 2)}, 1fr)`,
                     }
@@ -513,34 +545,57 @@ const PostCard: React.FC<PostCardProps> = ({ post, profile, onUpdate }) => {
         )}
 
         {zoomedImage && (
-          <div
-            className="position-fixed top-0 start-0 w-100 h-100 bg-black bg-opacity-75 d-flex align-items-center justify-content-center"
-            style={{ zIndex: 1050 }}
-            onClick={handleCloseZoom}
+          <Modal
+            show={!!zoomedImage}
+            onHide={handleCloseZoom}
+            size="lg"
+            centered
+            className="post-modal"
           >
-            <div className="position-relative">
-              <img
-                src={zoomedImage}
-                alt="Zoomed image"
-                style={{
-                  maxWidth: "90%",
-                  maxHeight: "90%",
-                  objectFit: "contain",
-                }}
-                className="rounded"
-              />
-              {post.media?.find((img) => img.url === zoomedImage)?.caption && (
-                <div
-                  className="position-absolute bottom-0 start-0 w-100 p-3 text-white text-center"
-                  style={{
-                    background: "linear-gradient(to top, rgba(0, 0, 0, 0.7), transparent)",
-                  }}
-                >
-                  <small>{post.media.find((img) => img.url === zoomedImage)?.caption}</small>
+            <Modal.Body className="p-0">
+              <div className="d-flex flex-column flex-md-row">
+                <div className="flex-shrink-0" style={{ maxWidth: "50%" }}>
+                  <img
+                    src={zoomedImage}
+                    alt="Zoomed image"
+                    style={{
+                      width: "100%",
+                      height: "100%",
+                      objectFit: "contain",
+                    }}
+                    className="rounded-start"
+                  />
+                  {post.media?.find((img) => img.url === zoomedImage)?.caption && (
+                    <div
+                      className="p-2 text-white text-center"
+                      style={{
+                        background: "linear-gradient(to top, rgba(0, 0, 0, 0.7), transparent)",
+                      }}
+                    >
+                      <small>{post.media.find((img) => img.url === zoomedImage)?.caption}</small>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          </div>
+                <div className="flex-grow-1 p-3">
+                  <PostCard
+                    post={post}
+                    profile={profile}
+                    onUpdate={onUpdate}
+                  />
+                </div>
+              </div>
+            </Modal.Body>
+            <Modal.Footer>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={handleCloseZoom}
+                aria-label="Close"
+              >
+                Close
+              </button>
+            </Modal.Footer>
+          </Modal>
         )}
 
         <div className="border-top pt-3 mt-3">
@@ -615,7 +670,19 @@ const PostCard: React.FC<PostCardProps> = ({ post, profile, onUpdate }) => {
 
         <div className="mt-3 d-flex align-items-center">
           <div className="me-2">
-            <i className="icon-base bx bxs-user-circle fs-5 text-primary" aria-hidden="true" />
+            {profile?.avatar ? (
+              <img
+                src={profile.avatar}
+                alt={`${profile.name || "User"}'s avatar`}
+                className="rounded-circle"
+                style={{ width: "24px", height: "24px", objectFit: "cover" }}
+                onError={(e) => {
+                  e.currentTarget.src = unknownAvatar; // Fallback image
+                }}
+              />
+            ) : (
+              <i className="icon-base bx bxs-user-circle fs-5 text-primary" aria-hidden="true" />
+            )}
           </div>
           <div className="flex-grow-1">
             <input

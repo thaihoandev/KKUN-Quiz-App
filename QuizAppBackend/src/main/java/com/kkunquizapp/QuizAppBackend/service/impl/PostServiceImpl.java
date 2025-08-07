@@ -108,9 +108,9 @@ public class PostServiceImpl implements PostService {
 
         Post post = postRepository.findById(postId)
                 .orElseThrow(() -> {
-                    log.error("Post not found with ID: {}", postId);
-                    return new IllegalArgumentException("Post not found with ID: " + postId);
-                });
+            log.error("Post not found with ID: {}", postId);
+            return new IllegalArgumentException("Post not found with ID: " + postId);
+        });
 
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> {
@@ -286,26 +286,21 @@ public class PostServiceImpl implements PostService {
                     return new IllegalArgumentException("User not found with ID: " + userId);
                 });
 
-        // Determine visibility based on relationship
         boolean isOwner = currentUserId != null && currentUserId.equals(userId);
         boolean isFriend = false;
         if (currentUserId != null && !isOwner) {
-            isFriend = userRepository.existsFriendship(userId, currentUserId); // Use the new method
+            isFriend = userRepository.existsFriendship(userId, currentUserId);
             log.debug("Friendship check: userId={} and currentUserId={} -> isFriend={}", userId, currentUserId, isFriend);
         }
 
         Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
 
-        // Filter posts based on privacy
         Page<Post> postPage;
         if (isOwner) {
-            // Owner sees all their posts
             postPage = postRepository.findByUserUserId(userId, pageable);
         } else if (isFriend) {
-            // Friends see PUBLIC and FRIENDS posts
             postPage = postRepository.findByUserUserIdAndPrivacyIn(userId, List.of(PostPrivacy.PUBLIC, PostPrivacy.FRIENDS), pageable);
         } else {
-            // Non-friends (or not logged in) see only PUBLIC posts
             postPage = postRepository.findByUserUserIdAndPrivacy(userId, PostPrivacy.PUBLIC, pageable);
         }
 
@@ -314,6 +309,71 @@ public class PostServiceImpl implements PostService {
                 .collect(Collectors.toList());
 
         log.info("Fetched {} posts for userId: {} (filtered by privacy)", postDTOs.size(), userId);
+        return postDTOs;
+    }
+
+    @Transactional(readOnly = true)
+    @Override
+    public List<PostDTO> getPublicPosts(UUID currentUserId, int page, int size, String sortBy, String sortDir) {
+        log.info("Fetching public posts for currentUserId: {}, page: {}, size: {}, sortBy: {}, sortDir: {}",
+                currentUserId, page, size, sortBy, sortDir);
+
+        // Validate sort parameters
+        if (!List.of("createdAt", "likeCount", "commentCount").contains(sortBy)) {
+            log.error("Invalid sortBy parameter: {}", sortBy);
+            throw new IllegalArgumentException("Invalid sortBy parameter. Allowed values: createdAt, likeCount, commentCount");
+        }
+        Sort.Direction direction = sortDir.equalsIgnoreCase("asc") ? Sort.Direction.ASC : Sort.Direction.DESC;
+
+        Pageable pageable = PageRequest.of(page, size, Sort.by(direction, sortBy));
+        Page<Post> postPage = postRepository.findByPrivacy(PostPrivacy.PUBLIC, pageable);
+
+        List<PostDTO> postDTOs = postPage.getContent().stream()
+                .map(post -> mapToPostDTO(post, currentUserId, null))
+                .collect(Collectors.toList());
+
+        log.info("Fetched {} public posts", postDTOs.size());
+        return postDTOs;
+    }
+
+    @Transactional(readOnly = true)
+    @Override
+    public List<PostDTO> getFriendsPosts(UUID currentUserId, int page, int size, String sortBy, String sortDir) {
+        log.info("Fetching friends' posts for currentUserId: {}, page: {}, size: {}, sortBy: {}, sortDir: {}",
+                currentUserId, page, size, sortBy, sortDir);
+
+        User currentUser = userRepository.findById(currentUserId)
+                .orElseThrow(() -> {
+                    log.error("User not found with ID: {}", currentUserId);
+                    return new IllegalArgumentException("User not found with ID: " + currentUserId);
+                });
+
+        // Get list of friend IDs
+        List<UUID> friendIds = currentUser.getFriends().stream()
+                .map(User::getUserId)
+                .collect(Collectors.toList());
+
+        if (friendIds.isEmpty()) {
+            log.info("User {} has no friends, returning empty post list", currentUserId);
+            return List.of();
+        }
+
+        // Validate sort parameters
+        if (!List.of("createdAt", "likeCount", "commentCount").contains(sortBy)) {
+            log.error("Invalid sortBy parameter: {}", sortBy);
+            throw new IllegalArgumentException("Invalid sortBy parameter. Allowed values: createdAt, likeCount, commentCount");
+        }
+        Sort.Direction direction = sortDir.equalsIgnoreCase("asc") ? Sort.Direction.ASC : Sort.Direction.DESC;
+
+        Pageable pageable = PageRequest.of(page, size, Sort.by(direction, sortBy));
+        Page<Post> postPage = postRepository.findByUserUserIdInAndPrivacyIn(
+                friendIds, List.of(PostPrivacy.PUBLIC, PostPrivacy.FRIENDS), pageable);
+
+        List<PostDTO> postDTOs = postPage.getContent().stream()
+                .map(post -> mapToPostDTO(post, currentUserId, null))
+                .collect(Collectors.toList());
+
+        log.info("Fetched {} posts from friends for userId: {}", postDTOs.size(), currentUserId);
         return postDTOs;
     }
 
