@@ -1,3 +1,4 @@
+import { useAuthStore } from "@/store/authStore";
 import axiosInstance from "./axiosInstance";
 import { UserRequestDTO, UserResponseDTO } from "@/interfaces";
 
@@ -13,8 +14,12 @@ export const getAllUsers = async (): Promise<any[]> => {
  * Lấy thông tin người dùng hiện tại
  */
 export const getCurrentUser = async (): Promise<any> => {
-    const response = await axiosInstance.get("/users/me");
-    return response.data;
+    const persistedUser = useAuthStore.getState().user;
+    if (persistedUser) {
+        const response = await axiosInstance.get("/users/me");
+        return response.data;
+    }
+
 };
 
 /**

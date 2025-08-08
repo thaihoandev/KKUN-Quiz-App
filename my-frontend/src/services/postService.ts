@@ -1,6 +1,7 @@
 import { AxiosResponse } from 'axios';
 import axiosInstance from './axiosInstance';
 import { UserDto } from '@/interfaces';
+import { handleApiError } from '@/utils/apiErrorHandler';
 
 export interface MediaRequestDTO {
   mimeType: string;
@@ -32,7 +33,7 @@ export interface PostRequestDTO {
 
 export interface PostDTO {
   postId: string;
-  user: UserDto;
+  user: UserDto | null;
   content: string;
   privacy: 'PUBLIC' | 'FRIENDS' | 'PRIVATE';
   replyToPostId?: string;
@@ -42,12 +43,15 @@ export interface PostDTO {
   createdAt: string;
   updatedAt: string;
   media: MediaResponseDTO[];
+  likedByCurrentUser: boolean;
+  currentUserReactionType?: 'LIKE' | 'LOVE' | 'HAHA' | 'CARE' | 'SAD' | 'ANGRY' | null;
+  actingUser?: UserDto | null;
 }
 
 export interface CommentRequestDTO {
   postId: string;
   content: string;
-  parentCommentId?: string; // Thêm parentCommentId
+  parentCommentId?: string;
 }
 
 export interface CommentDTO {
@@ -70,47 +74,81 @@ export async function createPost(userId: string, formData: FormData): Promise<Po
 
     const response: AxiosResponse<PostDTO> = await axiosInstance.post('/posts/create', formData);
     return response.data;
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error creating post:', error);
-    throw new Error('Failed to create post');
+    throw handleApiError(error, 'Failed to create post');
   }
 }
 
-export async function likePost(postId: string, reactionType: 'LIKE' | 'LOVE' | 'HAHA' | 'WOW' | 'SAD' | 'ANGRY'): Promise<void> {
+export const likePost = async (postId: string, reactionType: string): Promise<PostDTO> => {
   try {
-    await axiosInstance.post(`/posts/${postId}/like`, { type: reactionType }, {
+    console.log('Sending like request for post:', postId, 'with type:', reactionType);
+    await axiosInstance.post(`/posts/${postId}/like`, `"${reactionType}"`, {
       headers: {
         'Content-Type': 'application/json',
       },
     });
-  } catch (error) {
-    console.error('Error liking post:', error);
-    throw new Error('Failed to like post');
+    const updatedPost = await getPostById(postId);
+    console.log('Fetched updated post after like:', updatedPost);
+    return updatedPost;
+  } catch (err) {
+    throw handleApiError(err, 'Failed to like post');
   }
-}
+};
+
+export const unlikePost = async (postId: string): Promise<PostDTO> => {
+  try {
+    console.log('Sending unlike request for post:', postId);
+    await axiosInstance.post(`/posts/${postId}/unlike`);
+    const updatedPost = await getPostById(postId);
+    console.log('Fetched updated post after unlike:', updatedPost);
+    return updatedPost;
+  } catch (err) {
+    throw handleApiError(err, 'Failed to unlike post');
+  }
+};
 
 export async function getUserPosts(userId: string, page: number = 0, size: number = 10): Promise<PostDTO[]> {
   try {
     const response: AxiosResponse<PostDTO[]> = await axiosInstance.get(`/posts/user/${userId}`, {
       params: { page, size },
     });
-    console.log('User posts fetched:', response.data);
     return response.data;
-  } catch (error) {
-    console.error('Error fetching user posts:', error);
-    throw new Error('Failed to fetch user posts');
+  } catch (error: any) {
+    if (error.response?.status === 401) {
+      throw new Error('Please log in to view posts.');
+    } else if (error.response?.status === 400) {
+      throw new Error('Invalid user ID.');
+    } else {
+      console.error('Error fetching user posts:', error);
+      throw handleApiError(error, 'Failed to fetch user posts');
+    }
+  }
+}
+
+export async function getPostById(postId: string): Promise<PostDTO> {
+  try {
+    const response: AxiosResponse<PostDTO> = await axiosInstance.get(`/posts/${postId}`);
+    return response.data;
+  } catch (error: any) {
+    if (error.response?.status === 401) {
+      throw new Error('Please log in to view this post.');
+    } else if (error.response?.status === 400) {
+      throw new Error('Invalid post ID.');
+    } else {
+      console.error('Error fetching post:', error);
+      throw handleApiError(error, 'Failed to fetch post');
+    }
   }
 }
 
 export async function getCommentsByPostId(postId: string): Promise<CommentDTO[]> {
   try {
     const response: AxiosResponse<CommentDTO[]> = await axiosInstance.get(`/comments/post/${postId}`);
-    
     return response.data;
-
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error fetching comments:', error);
-    throw new Error('Failed to fetch comments');
+    throw handleApiError(error, 'Failed to fetch comments');
   }
 }
 
@@ -118,15 +156,15 @@ export async function createComment(postId: string, content: string, parentComme
   try {
     const commentRequest: CommentRequestDTO = { postId, content, parentCommentId };
     console.log('Creating comment with request:', commentRequest);
-    
+
     const response: AxiosResponse<CommentDTO> = await axiosInstance.post('/comments/create', commentRequest, {
       headers: {
         'Content-Type': 'application/json',
       },
     });
     return response.data;
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error creating comment:', error);
-    throw new Error('Failed to create comment');
+    throw handleApiError(error, 'Failed to create comment');
   }
 }

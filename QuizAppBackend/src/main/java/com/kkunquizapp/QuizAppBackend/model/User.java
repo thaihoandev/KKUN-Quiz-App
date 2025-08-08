@@ -8,6 +8,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
 import java.time.LocalDateTime;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.UUID;
 
 @Entity
@@ -50,6 +52,24 @@ public class User {
 
     @Column(nullable = true)
     private boolean isActive = true;
+
+    @ManyToMany
+    @JoinTable(
+            name = "user_friends",
+            joinColumns = @JoinColumn(name = "user_id"),
+            inverseJoinColumns = @JoinColumn(name = "friend_id")
+    )
+    private Set<User> friends = new HashSet<>();
+
+    public void addFriend(User friend) {
+        friends.add(friend);
+        friend.friends.add(this); // Ensure bidirectional relationship
+    }
+
+    public void removeFriend(User friend) {
+        friends.remove(friend);
+        friend.friends.remove(this);
+    }
 
     @Transient
     private BCryptPasswordEncoder passwordEncoder;

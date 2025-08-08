@@ -21,4 +21,6 @@ public interface QuizService {
     QuizResponseDTO deleteQuiz(UUID quizId);
     void addViewerByEmail(UUID quizId, String email);
     void addEditorByEmail(UUID quizId, String email);
+
+    Page<QuizResponseDTO> getPublishedQuizzes(Pageable pageable);
 }

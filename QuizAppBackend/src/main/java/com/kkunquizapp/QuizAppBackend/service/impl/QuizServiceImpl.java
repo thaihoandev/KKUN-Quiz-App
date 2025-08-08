@@ -9,6 +9,7 @@ import com.kkunquizapp.QuizAppBackend.model.User;
 import com.kkunquizapp.QuizAppBackend.model.enums.QuizStatus;
 import com.kkunquizapp.QuizAppBackend.repo.QuizRepo;
 import com.kkunquizapp.QuizAppBackend.repo.UserRepo;
+import com.kkunquizapp.QuizAppBackend.service.AuthService;
 import com.kkunquizapp.QuizAppBackend.service.QuizService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
@@ -18,6 +19,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.time.Duration;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -27,6 +30,7 @@ public class QuizServiceImpl implements QuizService {
     private final QuizRepo quizRepo;
     private final UserRepo userRepo;
     private final ModelMapper modelMapper;
+    private final AuthService authService;
 
     @Override
     public Page<QuizResponseDTO> getAllQuizzes(Pageable pageable) {
@@ -63,6 +67,7 @@ public class QuizServiceImpl implements QuizService {
         quiz.setHost(userRepo.findById(UUID.fromString(hostId))
                 .orElseThrow(() -> new IllegalArgumentException("User not found with ID: " + hostId)));
         quiz.setStatus(QuizStatus.DRAFT);
+        quiz.setRecommendationScore(calculateRecommendationScore(quiz, UUID.fromString(hostId)));
         Quiz savedQuiz = quizRepo.save(quiz);
 
         return modelMapper.map(savedQuiz, QuizResponseDTO.class);
@@ -80,6 +85,7 @@ public class QuizServiceImpl implements QuizService {
             throw new RuntimeException("Failed to update quiz: " + e.getMessage(), e);
         }
 
+        existingQuiz.setRecommendationScore(calculateRecommendationScore(existingQuiz, existingQuiz.getHost().getUserId()));
         Quiz updatedQuiz = quizRepo.save(existingQuiz);
         return modelMapper.map(updatedQuiz, QuizResponseDTO.class);
     }
@@ -91,7 +97,7 @@ public class QuizServiceImpl implements QuizService {
 
         existingQuiz.setStatus(QuizStatus.PUBLISHED);
         existingQuiz.setUpdatedAt(LocalDateTime.now());
-
+        existingQuiz.setRecommendationScore(calculateRecommendationScore(existingQuiz, existingQuiz.getHost().getUserId()));
         Quiz updatedQuiz = quizRepo.save(existingQuiz);
         return modelMapper.map(updatedQuiz, QuizResponseDTO.class);
     }
@@ -102,6 +108,7 @@ public class QuizServiceImpl implements QuizService {
                 .orElseThrow(() -> new IllegalArgumentException("Quiz not found with ID: " + quizId));
 
         existingQuiz.setStatus(QuizStatus.CLOSED);
+        existingQuiz.setRecommendationScore(calculateRecommendationScore(existingQuiz, existingQuiz.getHost().getUserId()));
         Quiz deletedQuiz = quizRepo.save(existingQuiz);
         return modelMapper.map(deletedQuiz, QuizResponseDTO.class);
     }
@@ -119,6 +126,7 @@ public class QuizServiceImpl implements QuizService {
             quiz.getViewers().add(user);
         }
 
+        quiz.setRecommendationScore(calculateRecommendationScore(quiz, quiz.getHost().getUserId()));
         quizRepo.save(quiz);
     }
 
@@ -134,6 +142,63 @@ public class QuizServiceImpl implements QuizService {
             quiz.getEditors().add(user);
         }
 
+        quiz.setRecommendationScore(calculateRecommendationScore(quiz, quiz.getHost().getUserId()));
         quizRepo.save(quiz);
+    }
+
+    @Override
+    public Page<QuizResponseDTO> getPublishedQuizzes(Pageable pageable) {
+        // Lấy Optional<UUID> để xử lý null-safe
+        Optional<UUID> currentUserId = getCurrentUserUuid();
+
+        // Chỉ đọc, không save lại entity trên DB
+        Page<Quiz> publishedQuizzes = quizRepo.findByStatus(QuizStatus.PUBLISHED, pageable);
+
+        // Chuyển mỗi Quiz thành DTO và gắn recommendationScore ngay trên DTO
+        return publishedQuizzes.map(quiz -> {
+            double score = calculateRecommendationScore(quiz, currentUserId.orElse(null));
+            QuizResponseDTO dto = modelMapper.map(quiz, QuizResponseDTO.class);
+            dto.setRecommendationScore(score);
+            return dto;
+        });
+    }
+
+    private double calculateRecommendationScore(Quiz quiz, UUID currentUserId) {
+        double score = 0.0;
+
+        // 1. Recency
+        LocalDateTime now = LocalDateTime.now();
+        long daysSinceUpdate = Duration.between(quiz.getUpdatedAt(), now).toDays();
+        score += Math.max(0, 100 - daysSinceUpdate);
+
+        // 2. Popularity
+        int viewerCount = quiz.getViewers()   != null ? quiz.getViewers().size()   : 0;
+        int editorCount = quiz.getEditors()   != null ? quiz.getEditors().size()   : 0;
+        score += (viewerCount + editorCount) * 5;
+
+        // 3. User affinity (chỉ khi có currentUserId)
+        if (currentUserId != null) {
+            boolean isViewer = quiz.getViewers().stream()
+                    .anyMatch(u -> u.getUserId().equals(currentUserId));
+            boolean isEditor = quiz.getEditors().stream()
+                    .anyMatch(u -> u.getUserId().equals(currentUserId));
+            if (isViewer || isEditor) {
+                score += 50;
+            }
+        }
+
+        return score;
+    }
+    private Optional<UUID> getCurrentUserUuid() {
+        try {
+            String userIdStr = authService.getCurrentUserId();
+            if (userIdStr != null && !userIdStr.isBlank()) {
+                return Optional.of(UUID.fromString(userIdStr));
+            }
+        } catch (Exception ex) {
+            // Nếu chưa auth hoặc token invalid, getCurrentUserId() có thể ném exception
+            // Bỏ qua để trả về Optional.empty()
+        }
+        return Optional.empty();
     }
 }

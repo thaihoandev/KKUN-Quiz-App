@@ -4,7 +4,6 @@ import com.kkunquizapp.QuizAppBackend.model.enums.PostPrivacy;
 import lombok.Builder;
 import lombok.Data;
 
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -16,10 +15,13 @@ public class PostDTO {
     private String content;
     private PostPrivacy privacy;
     private UUID replyToPostId;
-    private long likeCount;
-    private long commentCount;
-    private long shareCount;
-    private LocalDateTime createdAt;
-    private LocalDateTime updatedAt;
+    private int likeCount;
+    private int commentCount;
+    private int shareCount;
+    private String createdAt;
+    private String updatedAt;
     private List<MediaDTO> media;
+    private boolean isLikedByCurrentUser;
+    private String currentUserReactionType;
+    private UserDTO actingUser; // Added for the user who performed the action (e.g., liked/unliked)
 }

@@ -23,6 +23,8 @@ import JoinGamePage from "@/pages/gameSession/JoinGamePage";
 import WaitingRoomSessionPage from "@/pages/gameSession/WaitingRoomSessionPage";
 import GamePlayPage from "@/pages/game/GamePlayPage";
 import UserDashboardPage from "@/pages/UserDashboardPage";
+import UserProfilePage from "@/pages/UserProfilePage";
+import HomePostPage from "@/pages/HomePostPage";
 
 const AppRoutes: React.FC = () => (
   <>
@@ -41,9 +43,12 @@ const AppRoutes: React.FC = () => (
         <Route path="/" element={<MainLayout />}>
           {/* index = "/" */}
           <Route index element={<HomePage />} />
+          <Route path="posts" element={<HomePostPage />} />
 
+          {/* 4) User profile and dashboard */}
           {/* nested paths */}
-          <Route path="dashboard"           element={<UserDashboardPage />} />
+          <Route path="dashboard" element={<UserDashboardPage />} />
+          <Route path="profile/:userId"   element={<UserProfilePage />} />
           <Route path="quizzes/:quizId"   element={<QuizManagementPage />} />
           <Route path="achievements"      element={<AchievementPage />} />
           <Route path="settings"          element={<SettingProfilePage />} />

@@ -1,0 +1,22 @@
+version: '3.8'
+services:
+  frontend:
+    build:
+      context: ./my-frontend
+      dockerfile: Dockerfile
+    image: $DOCKERHUB_USERNAME/kkun-quiz-system:latest
+    restart: always
+    ports:
+      - "80:80"
+
+  backend:
+    build:
+      context: ./QuizAppBackend
+      dockerfile: Dockerfile
+    image: $DOCKERHUB_USERNAME/kkun-quiz-system:latest
+    restart: always
+    environment:
+      - SPRING_PROFILES_ACTIVE=prod
+      # thêm các biến DB_URL, DB_USER,... nếu cần
+    ports:
+      - "8080:8080"

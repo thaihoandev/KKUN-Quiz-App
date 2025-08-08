@@ -170,6 +170,9 @@ const SidebarMain: React.FC<HeaderProps> = ({ profile }) => {
     }
   };
 
+  // Kiểm tra xem sidebar có collapsed và không hover
+  const isCollapsedAndNotHovered = menuCollapsed && !isHovered;
+
   return (
     <aside
       id="layout-menu"
@@ -202,41 +205,71 @@ const SidebarMain: React.FC<HeaderProps> = ({ profile }) => {
 
       <div className="menu-inner-shadow"></div>
 
-      <div className="px-4 py-3">
-        <div className="form-group">
-          <label htmlFor="roomCode" className="form-label">
-            Room Code
-          </label>
-          <div className="input-group">
-            <input
-              type="text"
-              className="form-control"
-              id="roomCode"
-              placeholder="Enter room code"
-            />
-            <button
-              className="btn btn-primary"
-              type="button"
-              disabled={isLoading || !!playerSession} // Vô hiệu hóa nếu đã có playerSession
-              onClick={() => {
-                const roomCode = (document.getElementById("roomCode") as HTMLInputElement).value;
-                if (roomCode) {
-                  setTempRoomCode(roomCode);
-                  setShowNicknameModal(true);
-                } else {
-                  setError("Please enter a room code");
-                }
-              }}
-            >
-              {isLoading ? (
-                <span className="spinner-border spinner-border-sm"></span>
-              ) : (
-                "Join"
-              )}
-            </button>
+      {/* Room Code Section - Only show when not collapsed or when hovered */}
+      {!isCollapsedAndNotHovered && (
+        <div className="px-4 py-3">
+          <div className="form-group">
+            <label htmlFor="roomCode" className="form-label small text-muted">
+              Room Code
+            </label>
+            <div className="input-group">
+              <input
+                type="text"
+                className="form-control form-control-sm"
+                id="roomCode"
+                placeholder="Enter code"
+              />
+              <button
+                className="btn btn-primary btn-sm"
+                type="button"
+                disabled={isLoading || !!playerSession}
+                onClick={() => {
+                  const roomCode = (document.getElementById("roomCode") as HTMLInputElement).value;
+                  if (roomCode) {
+                    setTempRoomCode(roomCode);
+                    setShowNicknameModal(true);
+                  } else {
+                    setError("Please enter a room code");
+                  }
+                }}
+              >
+                {isLoading ? (
+                  <span className="spinner-border spinner-border-sm"></span>
+                ) : (
+                  "Join"
+                )}
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+      )}
+
+      {/* Collapsed state - Show only icon button */}
+      {isCollapsedAndNotHovered && (
+        <div className="px-2 py-3 text-center">
+          <button
+            className="btn btn-primary btn-sm rounded-circle"
+            type="button"
+            disabled={isLoading || !!playerSession}
+            title="Join Room"
+            onClick={() => {
+              // Mở rộng sidebar khi click vào nút join trong collapsed state
+              setMenuCollapsed(false);
+            }}
+          >
+            <i className="bx bx-plus"></i>
+          </button>
+        </div>
+      )}
+
+      {/* Error message - show even when collapsed */}
+      {error && !isCollapsedAndNotHovered && (
+        <div className="px-4 pb-2">
+          <div className="alert alert-danger alert-sm py-2" role="alert">
+            <small>{error}</small>
+          </div>
+        </div>
+      )}
 
       {showNicknameModal && (
         <div className="modal fade show d-block" style={{ backgroundColor: "rgba(0,0,0,0.5)" }}>
@@ -296,6 +329,7 @@ const SidebarMain: React.FC<HeaderProps> = ({ profile }) => {
       )}
 
       <ul className="menu-inner py-1">
+        {/* Home - Always visible */}
         <li className={`menu-item ${isActive("/") ? "active" : ""}`}>
           <Link
             to="/"
@@ -304,90 +338,257 @@ const SidebarMain: React.FC<HeaderProps> = ({ profile }) => {
           >
             <i className="menu-icon icon-base bx bx-home-smile"></i>
             <div data-i18n="Home">Home</div>
-            <div className="badge text-bg-danger rounded-pill ms-auto">5</div>
+          </Link>
+        </li>
+        <li className={`menu-item ${isActive("/posts") ? "active" : ""}`}>
+          <Link
+            to="/posts"
+            className="menu-link"
+            onClick={() => handleMenuItemClick("/posts")}
+          >
+            <i className="menu-icon icon-base bx bx-news"></i>
+            <div data-i18n="Posts">Posts</div>
           </Link>
         </li>
 
         {profile ? (
           <>
+            {/* User Dashboard Section */}
             <li className="menu-header small">
-              <span className="menu-header-text" data-i18n="Charts & Maps">
-                Lesson
+              <span className="menu-header-text" data-i18n="Dashboard">
+                Dashboard
               </span>
             </li>
 
-            <li
-              className={`menu-item ${
-                isActive("/courses") || isActive("/classes") || isActive("/quizzes")
-                  ? "active"
-                  : ""
-              } ${isSubmenuOpen("my-category") ? "open" : ""}`}
-            >
+            <li className={`menu-item ${isActive("/dashboard") ? "active" : ""}`}>
+              <Link
+                to="/dashboard"
+                className="menu-link"
+                onClick={() => handleMenuItemClick("/dashboard")}
+              >
+                <i className="menu-icon icon-base bx bx-tachometer"></i>
+                <div data-i18n="Dashboard">My Profile</div>
+              </Link>
+            </li>
+
+            {/* Quiz Management Section */}
+            <li className="menu-header small">
+              <span className="menu-header-text" data-i18n="Quiz Management">
+                Quiz Management
+              </span>
+            </li>
+
+            <li className={`menu-item ${location.pathname.includes("/quizzes") && !location.pathname.includes("/edit") && !location.pathname.includes("/questions") ? "open" : ""}`}>
               <a
                 href="#"
                 className="menu-link menu-toggle"
-                onClick={(e) => toggleSubmenu(e, "my-category")}
+                onClick={(e) => toggleSubmenu(e, "quizzes")}
               >
-                <i className="menu-icon icon-base bx bx-chart"></i>
-                <div data-i18n="My Category">My Category</div>
+                <i className="menu-icon icon-base bx bx-book-content"></i>
+                <div data-i18n="Quizzes">My Quizzes</div>
+                <div className="badge text-bg-info rounded-pill ms-auto">New</div>
               </a>
-              <ul className="menu-sub">
-                <li className={`menu-item ${isActive("/courses") ? "active" : ""}`}>
+              <ul className={`menu-sub ${isSubmenuOpen("quizzes") ? "open" : ""}`}>
+                <li className={`menu-item ${location.pathname === "/quizzes/browse" ? "active" : ""}`}>
                   <Link
-                    to="/courses"
+                    to="/quizzes/browse"
                     className="menu-link"
-                    onClick={() => handleMenuItemClick("/courses")}
+                    onClick={() => handleMenuItemClick("/quizzes/browse")}
                   >
-                    <div data-i18n="Courses">Courses</div>
+                    <div data-i18n="Browse Quizzes">Browse Quizzes</div>
                   </Link>
                 </li>
-                <li className={`menu-item ${isActive("/classes") ? "active" : ""}`}>
+                <li className={`menu-item ${location.pathname === "/quizzes/create" ? "active" : ""}`}>
                   <Link
-                    to="/classes"
+                    to="/quizzes/create"
                     className="menu-link"
-                    onClick={() => handleMenuItemClick("/classes")}
+                    onClick={() => handleMenuItemClick("/quizzes/create")}
                   >
-                    <div data-i18n="Classes">Classes</div>
-                  </Link>
-                </li>
-                <li className={`menu-item ${isActive("/quizzes") ? "active" : ""}`}>
-                  <Link
-                    to="/quizzes"
-                    className="menu-link"
-                    onClick={() => handleMenuItemClick("/quizzes")}
-                  >
-                    <div data-i18n="Quizzes">Quizzes</div>
+                    <div data-i18n="Create Quiz">Create Quiz</div>
                   </Link>
                 </li>
               </ul>
             </li>
 
+            {/* Game Session Section */}
+            <li className="menu-header small">
+              <span className="menu-header-text" data-i18n="Game Session">
+                Game Session
+              </span>
+            </li>
+
+            <li className={`menu-item ${location.pathname.includes("/game-session") ? "open" : ""}`}>
+              <a
+                href="#"
+                className="menu-link menu-toggle"
+                onClick={(e) => toggleSubmenu(e, "game-session")}
+              >
+                <i className="menu-icon icon-base bx bx-game"></i>
+                <div data-i18n="Game Sessions">Game Sessions</div>
+              </a>
+              <ul className={`menu-sub ${isSubmenuOpen("game-session") ? "open" : ""}`}>
+                <li className={`menu-item ${location.pathname.includes("/game-session/") ? "active" : ""}`}>
+                  <Link
+                    to="/game-session/active"
+                    className="menu-link"
+                    onClick={() => handleMenuItemClick("/game-session/active")}
+                  >
+                    <div data-i18n="Active Sessions">Active Sessions</div>
+                  </Link>
+                </li>
+                <li className={`menu-item ${location.pathname.includes("/game-play/") ? "active" : ""}`}>
+                  <Link
+                    to="/game-play/history"
+                    className="menu-link"
+                    onClick={() => handleMenuItemClick("/game-play/history")}
+                  >
+                    <div data-i18n="Game History">Game History</div>
+                  </Link>
+                </li>
+              </ul>
+            </li>
+
+            {/* Achievements */}
             <li className={`menu-item ${isActive("/achievements") ? "active" : ""}`}>
               <Link
                 to="/achievements"
                 className="menu-link"
                 onClick={() => handleMenuItemClick("/achievements")}
               >
-                <i className="menu-icon icon-base bx bx-map-alt"></i>
+                <i className="menu-icon icon-base bx bx-trophy"></i>
                 <div data-i18n="Achievements">Achievements</div>
+                <div className="badge text-bg-warning rounded-pill ms-auto">3</div>
               </Link>
             </li>
+
+            {/* Settings Section */}
+            <li className="menu-header small">
+              <span className="menu-header-text" data-i18n="Settings">
+                Settings
+              </span>
+            </li>
+
+            <li className={`menu-item ${location.pathname.includes("/settings") || location.pathname.includes("/change-password") ? "open" : ""}`}>
+              <a
+                href="#"
+                className="menu-link menu-toggle"
+                onClick={(e) => toggleSubmenu(e, "settings")}
+              >
+                <i className="menu-icon icon-base bx bx-cog"></i>
+                <div data-i18n="Settings">Settings</div>
+              </a>
+              <ul className={`menu-sub ${isSubmenuOpen("settings") ? "open" : ""}`}>
+                <li className={`menu-item ${isActive("/settings") ? "active" : ""}`}>
+                  <Link
+                    to="/settings"
+                    className="menu-link"
+                    onClick={() => handleMenuItemClick("/settings")}
+                  >
+                    <div data-i18n="Profile Settings">Profile Settings</div>
+                  </Link>
+                </li>
+                <li className={`menu-item ${isActive("/change-password") ? "active" : ""}`}>
+                  <Link
+                    to="/change-password"
+                    className="menu-link"
+                    onClick={() => handleMenuItemClick("/change-password")}
+                  >
+                    <div data-i18n="Change Password">Change Password</div>
+                  </Link>
+                </li>
+              </ul>
+            </li>
+
           </>
         ) : (
           <>
+            {/* Guest Section */}
             <li className="menu-header small">
-              <span className="menu-header-text" data-i18n="More information">
-                More information
+              <span className="menu-header-text" data-i18n="Get Started">
+                Get Started
               </span>
             </li>
-            <div className="d-flex justify-content-center align-items-center p-3 w-100">
-              <button
-                onClick={() => navigate("/login")}
-                className="btn btn-primary w-100"
+            
+            {/* Quick Join for Guests */}
+            <li className="menu-item">
+              <a
+                href="#"
+                className="menu-link"
+                onClick={(e) => {
+                  e.preventDefault();
+                  const roomCodeInput = document.getElementById("roomCode") as HTMLInputElement;
+                  if (roomCodeInput) {
+                    roomCodeInput.focus();
+                  }
+                }}
               >
-                Login
-              </button>
-            </div>
+                <i className="menu-icon icon-base bx bx-door-open"></i>
+                <div data-i18n="Quick Join">Quick Join Game</div>
+              </a>
+            </li>
+
+            {/* Separator */}
+            <li className="menu-header small">
+              <span className="menu-header-text" data-i18n="Account">
+                Account
+              </span>
+            </li>
+
+            {/* Auth Buttons */}
+            <li className="menu-item">
+              <div className="px-3 py-2">
+                <button
+                  onClick={() => navigate("/login")}
+                  className="btn btn-primary w-100 mb-2"
+                >
+                  <i className="bx bx-log-in me-2"></i>
+                  Login
+                </button>
+                <button
+                  onClick={() => navigate("/register")}
+                  className="btn btn-outline-primary w-100"
+                >
+                  <i className="bx bx-user-plus me-2"></i>
+                  Register
+                </button>
+              </div>
+            </li>
+
+            {/* About Section for Guests */}
+            <li className="menu-header small">
+              <span className="menu-header-text" data-i18n="About">
+                About KKUN
+              </span>
+            </li>
+
+            <li className="menu-item">
+              <a
+                href="#"
+                className="menu-link"
+                onClick={(e) => {
+                  e.preventDefault();
+                  // You can add a modal or navigate to an about page
+                }}
+              >
+                <i className="menu-icon icon-base bx bx-info-circle"></i>
+                <div data-i18n="How to Play">How to Play</div>
+              </a>
+            </li>
+
+            <li className="menu-item">
+              <a
+                href="#"
+                className="menu-link"
+                onClick={(e) => {
+                  e.preventDefault();
+                  // You can add a modal or navigate to features page
+                }}
+              >
+                <i className="menu-icon icon-base bx bx-star"></i>
+                <div data-i18n="Features">Features</div>
+              </a>
+            </li>
+
           </>
         )}
       </ul>

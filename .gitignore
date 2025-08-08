@@ -1,0 +1,20 @@
+# Env file chứa biến nhạy cảm
+.env
+
+# Node/Vite frontend
+/frontend/node_modules
+/frontend/dist
+
+# Spring Boot backend
+/backend/target
+/backend/.mvn
+/backend/*.jar
+
+# Docker Compose
+docker-compose.override.yml
+
+# IDE / OS
+*.log
+.vscode/
+.idea/
+.DS_Store

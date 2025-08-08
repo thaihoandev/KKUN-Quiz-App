@@ -20,7 +20,7 @@ spring:
               - openid
               - profile
               - email
-            redirect-uri: "{baseUrl}/login/oauth2/code/google"
+              - offline_access
         provider:
           google:
             issuer-uri: https://accounts.google.com

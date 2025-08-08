@@ -15,4 +15,5 @@ public class NotificationDTO {
     private UUID targetId;
     private boolean isRead;
     private LocalDateTime createdAt;
+    private String content;
 }

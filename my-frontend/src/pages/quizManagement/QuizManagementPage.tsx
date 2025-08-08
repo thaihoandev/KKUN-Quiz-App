@@ -31,7 +31,7 @@ const QuizManagementPage: React.FC = () => {
         setLoading(true);
         try {
             const data = await getQuestionsByQuizId(quizId);
-            setQuestions(data);
+            setQuestions(data ?? []);
         } catch (error) {
             console.error("Error fetching questions:", error);
         }
@@ -123,21 +123,7 @@ const QuizManagementPage: React.FC = () => {
                 </div>
             </div>
 
-            <div className="d-flex justify-content-between align-items-center my-3">
-                <div>
-                    <button className="btn btn-light border me-2">
-                        💾 Save
-                    </button>
-                    <button className="btn btn-light border me-2">
-                        📤 Share
-                    </button>
-                    <button className="btn btn-light border">
-                        📊 Spreadsheet
-                    </button>
-                </div>
-            </div>
-
-            <div className="card shadow-sm p-3">
+            <div className="card shadow-sm p-3 mt-2">
                 <div className="d-flex justify-content-between align-items-center p-2">
                     <h6 className="fw-bold mb-0">
                         {questions.length} QUESTIONS

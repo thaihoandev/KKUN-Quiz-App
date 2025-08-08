@@ -9,5 +9,5 @@ import java.util.UUID;
 public class QuizRequestDTO {
     private String title;
     private String description;
-    private String status; // "draft", "live", "completed", "closed"
+    private String status;
 }

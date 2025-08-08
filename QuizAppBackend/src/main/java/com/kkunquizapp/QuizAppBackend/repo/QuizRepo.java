@@ -17,4 +17,6 @@ import java.util.UUID;
 public interface QuizRepo extends JpaRepository<Quiz, UUID> {
     Page<Quiz> findByHost_UserId(UUID userId, Pageable pageable);
     Page<Quiz> findByHost_UserIdAndStatus(UUID userId, QuizStatus status, Pageable pageable);
+
+    Page<Quiz> findByStatus(QuizStatus status, Pageable pageable);
 }

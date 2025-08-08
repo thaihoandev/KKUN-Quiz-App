@@ -20,6 +20,7 @@ public class QuizResponseDTO {
     private List<UserDto> editors;
     private List<QuestionResponseDTO> questions;
     // Nested DTO for user data (to avoid exposing full User entity)
+    private double recommendationScore; // New field for recommendation score
     @Data
     public static class UserDto {
         private UUID userId;

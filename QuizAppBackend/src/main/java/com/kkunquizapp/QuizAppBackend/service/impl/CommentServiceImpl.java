@@ -78,7 +78,8 @@ public class CommentServiceImpl implements CommentService {
                         userId,
                         "commented",
                         requestDTO.getParentCommentId() != null ? "comment" : "post",
-                        requestDTO.getParentCommentId() != null ? comment.getCommentId() : post.getPostId()
+                        requestDTO.getParentCommentId() != null ? comment.getCommentId() : post.getPostId(),
+                        requestDTO.getContent()
                 );
             }
         } catch (Exception e) {

@@ -11,6 +11,10 @@ import java.util.UUID;
 public interface PostService {
     PostDTO createPost(UUID userId, PostRequestDTO requestDTO, List<MultipartFile> mediaFiles);
     void likePost(UUID userId, UUID postId, ReactionType type);
+    void unlikePost(UUID userId, UUID postId);
     void deleteMedia(UUID mediaId, UUID userId);
-    List<PostDTO> getUserPosts(UUID userId, int page, int size);
+    PostDTO getPostById(UUID postId, UUID currentUserId);
+    List<PostDTO> getUserPosts(UUID userId, UUID currentUserId, int page, int size);
+    List<PostDTO> getPublicPosts(UUID currentUserId, int page, int size, String sortBy, String sortDir);
+    List<PostDTO> getFriendsPosts(UUID currentUserId, int page, int size, String sortBy, String sortDir);
 }

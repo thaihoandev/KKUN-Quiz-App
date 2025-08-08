@@ -8,6 +8,7 @@ interface QuizCreatePayload {
   status: QuizStatus;
   userId?: string;
 }
+
 export const getQuizzesByUser = async (
   userId: string,
   page: number = 0,
@@ -55,13 +56,12 @@ export const createQuizFromFile = async (
   formData: FormData,
 ) => {
   try {
-    // If userId is provided, append it to the quiz JSON
-      const quizJson = formData.get("quiz");
-      if (quizJson instanceof Blob) {
-        const quizText = await quizJson.text();
-        const quizObj = JSON.parse(quizText);
-        formData.set("quiz", new Blob([JSON.stringify(quizObj)], { type: "application/json" }));
-      }
+    const quizJson = formData.get("quiz");
+    if (quizJson instanceof Blob) {
+      const quizText = await quizJson.text();
+      const quizObj = JSON.parse(quizText);
+      formData.set("quiz", new Blob([JSON.stringify(quizObj)], { type: "application/json" }));
+    }
 
     const response = await axiosInstance.post(
       `/quizzes/create/from-file`,
@@ -93,5 +93,20 @@ export const publishedQuiz = async (quizId: string) => {
     return response.data as Quiz;
   } catch (error) {
     handleApiError(error, "Failed to publish quiz");
+  }
+};
+
+export const getPublishedQuizzes = async (
+  page: number = 0,
+  size: number = 10,
+  sort: string = "recommendationScore,desc"
+) => {
+  try {
+    const response = await axiosInstance.get(`/quizzes/published`, {
+      params: { page, size, sort },
+    });
+    return response.data; // { content: Quiz[], totalPages, totalElements, ... }
+  } catch (error) {
+    handleApiError(error, "Failed to fetch published quizzes");
   }
 };
