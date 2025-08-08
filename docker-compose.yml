@@ -4,7 +4,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    image: $DOCKERHUB_USERNAME/leen-fe:latest
+    image: $DOCKERHUB_USERNAME/KKUN-QUIZ-SYSTEM:latest
     restart: always
     ports:
       - "80:80"
