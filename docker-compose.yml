@@ -2,7 +2,7 @@ version: '3.8'
 services:
   frontend:
     build:
-      context: ./frontend
+      context: ./my-frontend
       dockerfile: Dockerfile
     image: $DOCKERHUB_USERNAME/kkun-quiz-system:latest
     restart: always
@@ -11,7 +11,7 @@ services:
 
   backend:
     build:
-      context: ./backend
+      context: ./QuizAppBackend
       dockerfile: Dockerfile
     image: $DOCKERHUB_USERNAME/kkun-quiz-system:latest
     restart: always
