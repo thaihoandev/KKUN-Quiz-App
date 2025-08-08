@@ -2,7 +2,7 @@
 
 import axios, { AxiosError, InternalAxiosRequestConfig } from "axios";
 import { useAuthStore } from "@/store/authStore";
-
+import Cookies from "js-cookie";
 /**
  * Extend the Axios request config to track retry state
  */
@@ -69,23 +69,40 @@ axiosInstance.interceptors.response.use(
     }
 
     const originalRequest = error.config as CustomAxiosRequestConfig;
-
-    // Only intercept 401 once, and skip the refresh endpoint itself
     const is401 = error.response?.status === 401;
     const isRefreshCall = originalRequest.url?.endsWith("/auth/refresh-token");
-    if (is401 && !originalRequest._retry && !isRefreshCall) {
+
+    // Lấy cookie refresh-token
+    const hasRefreshCookie = Boolean(Cookies.get("refresh-token"));
+
+    // Chỉ thử refresh nếu:
+    // - Lần đầu gặp 401
+    // - Không phải call /auth/refresh-token
+    // - Và vẫn còn cookie refresh-token
+    if (is401 && !originalRequest._retry && !isRefreshCall && hasRefreshCookie) {
       originalRequest._retry = true;
 
       const ok = await refreshToken();
       if (ok) {
         console.log("Token refreshed, retrying:", originalRequest.url);
         return axiosInstance(originalRequest);
+      } else {
+        useAuthStore.getState().logout();
+        window.location.replace("/login");
       }
-      // If refresh failed, fall through to reject below
+    }
+
+    // Nếu không còn cookie refresh-token, logout luôn
+    if (is401 && !isRefreshCall && !hasRefreshCookie) {
+      useAuthStore.getState().logout();
+      window.location.replace("/login");
+      return; // ngăn axios tiếp tục retry
     }
 
     return Promise.reject(error);
   }
 );
+
+
 
 export default axiosInstance;

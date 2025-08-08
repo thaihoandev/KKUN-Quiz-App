@@ -20,6 +20,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.time.Duration;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -147,42 +148,57 @@ public class QuizServiceImpl implements QuizService {
 
     @Override
     public Page<QuizResponseDTO> getPublishedQuizzes(Pageable pageable) {
-        String userIdStr = authService.getCurrentUserId();
-        UUID currentUserId = UUID.fromString(userIdStr);
+        // Lấy Optional<UUID> để xử lý null-safe
+        Optional<UUID> currentUserId = getCurrentUserUuid();
 
+        // Chỉ đọc, không save lại entity trên DB
         Page<Quiz> publishedQuizzes = quizRepo.findByStatus(QuizStatus.PUBLISHED, pageable);
 
-        // Update recommendationScore for each quiz
-        publishedQuizzes.forEach(quiz -> {
-            quiz.setRecommendationScore(calculateRecommendationScore(quiz, currentUserId));
-            quizRepo.save(quiz);
+        // Chuyển mỗi Quiz thành DTO và gắn recommendationScore ngay trên DTO
+        return publishedQuizzes.map(quiz -> {
+            double score = calculateRecommendationScore(quiz, currentUserId.orElse(null));
+            QuizResponseDTO dto = modelMapper.map(quiz, QuizResponseDTO.class);
+            dto.setRecommendationScore(score);
+            return dto;
         });
-
-        return publishedQuizzes.map(quiz -> modelMapper.map(quiz, QuizResponseDTO.class));
     }
 
     private double calculateRecommendationScore(Quiz quiz, UUID currentUserId) {
         double score = 0.0;
 
-        // Factor 1: Recency
+        // 1. Recency
         LocalDateTime now = LocalDateTime.now();
         long daysSinceUpdate = Duration.between(quiz.getUpdatedAt(), now).toDays();
         score += Math.max(0, 100 - daysSinceUpdate);
 
-        // Factor 2: Popularity
-        int viewerCount = quiz.getViewers() != null ? quiz.getViewers().size() : 0;
-        int editorCount = quiz.getEditors() != null ? quiz.getEditors().size() : 0;
+        // 2. Popularity
+        int viewerCount = quiz.getViewers()   != null ? quiz.getViewers().size()   : 0;
+        int editorCount = quiz.getEditors()   != null ? quiz.getEditors().size()   : 0;
         score += (viewerCount + editorCount) * 5;
 
-        // Factor 3: User affinity
+        // 3. User affinity (chỉ khi có currentUserId)
         if (currentUserId != null) {
-            boolean isViewer = quiz.getViewers().stream().anyMatch(user -> user.getUserId().equals(currentUserId));
-            boolean isEditor = quiz.getEditors().stream().anyMatch(user -> user.getUserId().equals(currentUserId));
+            boolean isViewer = quiz.getViewers().stream()
+                    .anyMatch(u -> u.getUserId().equals(currentUserId));
+            boolean isEditor = quiz.getEditors().stream()
+                    .anyMatch(u -> u.getUserId().equals(currentUserId));
             if (isViewer || isEditor) {
                 score += 50;
             }
         }
 
         return score;
+    }
+    private Optional<UUID> getCurrentUserUuid() {
+        try {
+            String userIdStr = authService.getCurrentUserId();
+            if (userIdStr != null && !userIdStr.isBlank()) {
+                return Optional.of(UUID.fromString(userIdStr));
+            }
+        } catch (Exception ex) {
+            // Nếu chưa auth hoặc token invalid, getCurrentUserId() có thể ném exception
+            // Bỏ qua để trả về Optional.empty()
+        }
+        return Optional.empty();
     }
 }

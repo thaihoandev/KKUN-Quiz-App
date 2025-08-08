@@ -131,15 +131,38 @@ export const useAuthStore = create<AuthState>()(
                 }
             },
 
-            logout: () => {
-                set({user: null});
-                Cookies.remove("auth-storage", {path: "/"});
-                axios.post(
+            logout: async () => {
+                // 1. Gọi API logout để back xóa cookie HttpOnly (nếu có)
+                try {
+                    await axios.post(
                     `${import.meta.env.VITE_BASE_API_URL}/auth/logout`,
                     {},
-                    {withCredentials: true},
-                );
-            },
+                    { withCredentials: true }
+                    );
+                } catch (e) {
+                    console.warn("Logout API failed:", e);
+                    // vẫn tiếp tục dọn dẹp phía client
+                }
+
+                // 2. Xóa user trong store
+                set({ user: null });
+
+                // 3. Xóa toàn bộ storage liên quan
+                // Zustand persist cookie
+                Cookies.remove("auth-storage", { path: "/" });
+                // Nếu bạn từng lưu token trong cookie khác
+                Cookies.remove("access-token", { path: "/" });
+                Cookies.remove("refresh-token", { path: "/" });
+                // Nếu bạn có lưu token/refresh trong localStorage:
+                localStorage.removeItem("access-token");
+                localStorage.removeItem("refresh-token");
+
+                // 4. Dọn header Authorization mặc định (nếu bạn từng thêm vào)
+                delete axios.defaults.headers.common["Authorization"];
+
+                // 5. (Tuỳ chọn) Chuyển về trang đăng nhập
+                }
+
         }),
         {
             name: "auth-storage",
