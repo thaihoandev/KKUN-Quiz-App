@@ -4,7 +4,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    image: $DOCKERHUB_USERNAME/KKUN-QUIZ-SYSTEM:latest
+    image: $DOCKERHUB_USERNAME/kkun-quiz-system:latest
     restart: always
     ports:
       - "80:80"
@@ -13,7 +13,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    image: $DOCKERHUB_USERNAME/KKUN-QUIZ-SYSTEM:latest
+    image: $DOCKERHUB_USERNAME/kkun-quiz-system:latest
     restart: always
     environment:
       - SPRING_PROFILES_ACTIVE=prod
