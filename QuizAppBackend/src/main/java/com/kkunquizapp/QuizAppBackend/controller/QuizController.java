@@ -8,6 +8,7 @@ import com.kkunquizapp.QuizAppBackend.model.enums.QuizStatus;
 import com.kkunquizapp.QuizAppBackend.service.FileUploadService;
 import com.kkunquizapp.QuizAppBackend.service.QuestionService;
 import com.kkunquizapp.QuizAppBackend.service.QuizService;
+import jakarta.annotation.security.PermitAll;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
@@ -150,6 +151,7 @@ public class QuizController {
     }
 
     @GetMapping("/published")
+    @PermitAll
     public Page<QuizResponseDTO> getPublishedQuizzes(Pageable pageable) {
         Page<QuizResponseDTO> quizzes = quizService.getPublishedQuizzes(pageable);
 

@@ -30,7 +30,6 @@ public class WebConfig implements WebMvcConfigurer {
                 .addPathPatterns(
                         "/api/quizzes/*/edit",
                         "/api/quizzes/*/delete",
-                        "/api/quizzes/*/published",
                         "/api/quizzes/*/addViewerByEmail",
                         "/api/quizzes/*/addEditorByEmail",
                         "/api/questions/**",

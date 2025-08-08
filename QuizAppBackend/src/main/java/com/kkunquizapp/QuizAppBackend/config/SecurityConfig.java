@@ -82,7 +82,8 @@ public class SecurityConfig {
                                 "/api/auth/refresh-token",
                                 "/api/auth/logout",
                                 "/api/games/join",
-                                "/api/games/{gameId}/answer"
+                                "/api/games/{gameId}/answer",
+                                "/api/quizzes/published"
                         ).permitAll()
                         .requestMatchers("/api/quizzes/**", "/api/questions/**", "/api/files/upload/**")
                         .hasAnyAuthority(UserRole.USER.name(), UserRole.ADMIN.name())
