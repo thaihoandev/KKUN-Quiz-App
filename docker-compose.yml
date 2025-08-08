@@ -1,0 +1,22 @@
+version: '3.8'
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: $DOCKERHUB_USERNAME/leen-fe:latest
+    restart: always
+    ports:
+      - "80:80"
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: $DOCKERHUB_USERNAME/KKUN-QUIZ-SYSTEM:latest
+    restart: always
+    environment:
+      - SPRING_PROFILES_ACTIVE=prod
+      # thêm các biến DB_URL, DB_USER,... nếu cần
+    ports:
+      - "8080:8080"
