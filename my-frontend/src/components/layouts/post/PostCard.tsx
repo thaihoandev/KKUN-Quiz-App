@@ -4,6 +4,7 @@ import { useState, useRef, useCallback, KeyboardEvent, useEffect } from "react";
 import { createComment, getCommentsByPostId, likePost, PostDTO, CommentDTO, getPostById, unlikePost } from "@/services/postService";
 import Modal from "react-bootstrap/Modal";
 import unknownAvatar from "@/assets/img/avatars/unknown.jpg";
+import { Link } from "react-router-dom";
 interface Comment {
   id: string;
   content: string;
@@ -440,28 +441,37 @@ const PostCard: React.FC<PostCardProps> = ({ post, profile, onUpdate }) => {
     <div className="card h-100 shadow-lg rounded-3 mb-4">
       <div className="card-body">
         <div className="d-flex justify-content-between align-items-center mb-3">
-          <div className="d-flex align-items-center">
-            <div className="me-2">
-              {post.user?.avatar ? (
-                <img
-                  src={post.user.avatar}
-                  alt={`${post.user.name || "User"}'s avatar`}
-                  className="rounded-circle"
-                  style={{ width: "32px", height: "32px", objectFit: "cover" }}
-                  onError={(e) => {
-                    e.currentTarget.src = unknownAvatar; // Fallback image
-                  }}
-                />
-              ) : (
-                <i className="icon-base bx bxs-user-circle fs-4 text-primary" aria-hidden="true" />
-              )}
-            </div>
-            <div>
-              <h6 className="mb-0">{post.user?.name || "User"}</h6>
-              <small className="text-muted">
-                {formatDateOnly(post.createdAt)} | {post.privacy}
-              </small>
-            </div>
+          <div className="mb-3">
+            <Link
+              to={`/profile/${post.user?.userId}`}
+              className="d-flex align-items-center text-decoration-none text-dark"
+              style={{ cursor: "pointer" }}
+            >
+              <div className="me-2 flex-shrink-0">
+                {post.user?.avatar ? (
+                  <img
+                    src={post.user.avatar}
+                    alt={`${post.user.name || "User"}'s avatar`}
+                    className="rounded-circle"
+                    style={{ width: "32px", height: "32px", objectFit: "cover" }}
+                    onError={(e) => {
+                      e.currentTarget.src = unknownAvatar;
+                    }}
+                  />
+                ) : (
+                  <i
+                    className="icon-base bx bxs-user-circle fs-4 text-primary"
+                    aria-hidden="true"
+                  />
+                )}
+              </div>
+              <div>
+                <p className="mb-0 fw-semibold">{post.user?.name || "User"}</p>
+                <small className="text-muted">
+                  {formatDateOnly(post.createdAt)} &middot; {post.privacy}
+                </small>
+              </div>
+            </Link>
           </div>
           <button
             type="button"
