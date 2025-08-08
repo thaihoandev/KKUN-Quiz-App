@@ -5,6 +5,7 @@ import { createComment, getCommentsByPostId, likePost, PostDTO, CommentDTO, getP
 import Modal from "react-bootstrap/Modal";
 import unknownAvatar from "@/assets/img/avatars/unknown.jpg";
 import { Link } from "react-router-dom";
+
 interface Comment {
   id: string;
   content: string;
@@ -30,7 +31,7 @@ const PostCard: React.FC<PostCardProps> = ({ post, profile, onUpdate }) => {
   const [isLiking, setIsLiking] = useState(false);
   const [visibleComments, setVisibleComments] = useState(3);
   const [expandedReplies, setExpandedReplies] = useState<{ [id: string]: number }>({});
-  const [zoomedImage, setZoomedImage] = useState<string | null>(null);
+  const [zoomedImageIndex, setZoomedImageIndex] = useState<number | null>(null);
   const commentInputRef = useRef<HTMLInputElement | null>(null);
   const replyInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
@@ -292,12 +293,24 @@ const PostCard: React.FC<PostCardProps> = ({ post, profile, onUpdate }) => {
     }));
   };
 
-  const handleImageClick = (url: string) => {
-    setZoomedImage(url);
+  const handleImageClick = (index: number) => {
+    setZoomedImageIndex(index);
   };
 
   const handleCloseZoom = () => {
-    setZoomedImage(null);
+    setZoomedImageIndex(null);
+  };
+
+  const handleNextImage = () => {
+    if (post.media && zoomedImageIndex !== null && zoomedImageIndex < post.media.length - 1) {
+      setZoomedImageIndex(zoomedImageIndex + 1);
+    }
+  };
+
+  const handlePrevImage = () => {
+    if (zoomedImageIndex !== null && zoomedImageIndex > 0) {
+      setZoomedImageIndex(zoomedImageIndex - 1);
+    }
   };
 
   const renderComment = (comment: Comment, level: number = 0) => {
@@ -306,7 +319,7 @@ const PostCard: React.FC<PostCardProps> = ({ post, profile, onUpdate }) => {
     const isReply = !!comment.parentCommentId;
 
     return (
-      <div key={comment.id} className={`d-flex mb-3 ${level > 0 ? "ms-4" : ""}`}>
+      <div key={comment.id} className={`d-flex mb-3 ${level > 0 ? "ms-4 reply-container" : ""}`} style={isReply ? { borderLeft: "2px solid #e0e0e0", paddingLeft: "1rem" } : {}}>
         <div className="me-2">
           {comment.user?.avatar ? (
             <img
@@ -315,7 +328,7 @@ const PostCard: React.FC<PostCardProps> = ({ post, profile, onUpdate }) => {
               className="rounded-circle"
               style={{ width: "24px", height: "24px", objectFit: "cover" }}
               onError={(e) => {
-                e.currentTarget.src = unknownAvatar; // Fallback image
+                e.currentTarget.src = unknownAvatar;
               }}
             />
           ) : (
@@ -386,7 +399,7 @@ const PostCard: React.FC<PostCardProps> = ({ post, profile, onUpdate }) => {
                     className="rounded-circle"
                     style={{ width: "24px", height: "24px", objectFit: "cover" }}
                     onError={(e) => {
-                      e.currentTarget.src = unknownAvatar; // Fallback image
+                      e.currentTarget.src = unknownAvatar;
                     }}
                   />
                 ) : (
@@ -512,7 +525,7 @@ const PostCard: React.FC<PostCardProps> = ({ post, profile, onUpdate }) => {
                     aspectRatio: "1",
                     overflow: "hidden",
                   }}
-                  onClick={() => handleImageClick(image.url)}
+                  onClick={() => handleImageClick(index)}
                 >
                   <img
                     src={image.url}
@@ -545,7 +558,7 @@ const PostCard: React.FC<PostCardProps> = ({ post, profile, onUpdate }) => {
                     aspectRatio: "1",
                     cursor: "pointer",
                   }}
-                  onClick={() => handleImageClick(post.media[maxVisibleImages].url)}
+                  onClick={() => handleImageClick(maxVisibleImages)}
                 >
                   <span className="fs-4">+{remainingImageCount}</span>
                 </div>
@@ -554,57 +567,355 @@ const PostCard: React.FC<PostCardProps> = ({ post, profile, onUpdate }) => {
           </div>
         )}
 
-        {zoomedImage && (
+        {zoomedImageIndex !== null && (
           <Modal
-            show={!!zoomedImage}
+            show={zoomedImageIndex !== null}
             onHide={handleCloseZoom}
-            size="lg"
+            size="xl"
             centered
             className="post-modal"
           >
-            <Modal.Body className="p-0">
-              <div className="d-flex flex-column flex-md-row">
-                <div className="flex-shrink-0" style={{ maxWidth: "50%" }}>
-                  <img
-                    src={zoomedImage}
-                    alt="Zoomed image"
-                    style={{
-                      width: "100%",
-                      height: "100%",
-                      objectFit: "contain",
-                    }}
-                    className="rounded-start"
-                  />
-                  {post.media?.find((img) => img.url === zoomedImage)?.caption && (
-                    <div
-                      className="p-2 text-white text-center"
-                      style={{
-                        background: "linear-gradient(to top, rgba(0, 0, 0, 0.7), transparent)",
-                      }}
-                    >
-                      <small>{post.media.find((img) => img.url === zoomedImage)?.caption}</small>
-                    </div>
-                  )}
-                </div>
-                <div className="flex-grow-1 p-3">
-                  <PostCard
-                    post={post}
-                    profile={profile}
-                    onUpdate={onUpdate}
-                  />
-                </div>
-              </div>
-            </Modal.Body>
-            <Modal.Footer>
+            <Modal.Header className="border-0 pt-0 position-relative">
               <button
                 type="button"
-                className="btn btn-secondary"
+                className="btn-close position-absolute top-0 end-0 m-2"
                 onClick={handleCloseZoom}
                 aria-label="Close"
-              >
-                Close
-              </button>
-            </Modal.Footer>
+              />
+            </Modal.Header>
+            <Modal.Body className="p-0">
+              {post.media && post.media.length > 0 ? (
+                <div className="d-flex flex-column flex-md-row h-100">
+                  <div className="flex-shrink-0" style={{ maxWidth: "50%" }}>
+                    <div className="position-relative w-100 h-100">
+                      <img
+                        src={post.media[zoomedImageIndex].url}
+                        alt={post.media[zoomedImageIndex].caption || `Attachment ${zoomedImageIndex + 1}`}
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          objectFit: "contain",
+                        }}
+                        className="rounded-start"
+                      />
+                      {post.media[zoomedImageIndex].caption && (
+                        <div
+                          className="position-absolute bottom-0 start-0 w-100 p-2 text-white"
+                          style={{
+                            background: "linear-gradient(to top, rgba(0, 0, 0, 0.7), transparent)",
+                          }}
+                        >
+                          <small>{post.media[zoomedImageIndex].caption}</small>
+                        </div>
+                      )}
+                      {post.media.length > 1 && (
+                        <>
+                          <button
+                            type="button"
+                            className="btn btn-dark btn-sm position-absolute top-50 start-0 translate-middle-y"
+                            onClick={handlePrevImage}
+                            disabled={zoomedImageIndex === 0}
+                            aria-label="Previous image"
+                            style={{ zIndex: 10 }}
+                          >
+                            <i className="bx bx-chevron-left" />
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-dark btn-sm position-absolute top-50 end-0 translate-middle-y"
+                            onClick={handleNextImage}
+                            disabled={zoomedImageIndex === post.media.length - 1}
+                            aria-label="Next image"
+                            style={{ zIndex: 10 }}
+                          >
+                            <i className="bx bx-chevron-right" />
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex-grow-1 p-3">
+                    <div className="p-3">
+                      <Link
+                        to={`/profile/${post.user?.userId}`}
+                        className="d-flex align-items-center text-decoration-none text-dark"
+                      >
+                        <div className="me-2 flex-shrink-0">
+                          {post.user?.avatar ? (
+                            <img
+                              src={post.user.avatar}
+                              alt={`${post.user.name || "User"}'s avatar`}
+                              className="rounded-circle"
+                              style={{ width: "32px", height: "32px", objectFit: "cover" }}
+                              onError={(e) => {
+                                e.currentTarget.src = unknownAvatar;
+                              }}
+                            />
+                          ) : (
+                            <i
+                              className="icon-base bx bxs-user-circle fs-4 text-primary"
+                              aria-hidden="true"
+                            />
+                          )}
+                        </div>
+                        <div>
+                          <p className="mb-0 fw-semibold">{post.user?.name || "User"}</p>
+                          <small className="text-muted">
+                            {formatDateOnly(post.createdAt)} &middot; {post.privacy}
+                          </small>
+                        </div>
+                      </Link>
+                    </div>
+                    <p className="mb-3" style={{ whiteSpace: "pre-wrap" }}>
+                      {post.content}
+                    </p>
+                    <div className="border-top pt-3 mt-3">
+                      <div className="d-flex w-100 gap-3 justify-content-start align-items-center mb-3">
+                        <button
+                          type="button"
+                          aria-label={isLiked ? "Unlike" : "Like"}
+                          className={`btn ${isLiked ? "btn-primary" : "btn-outline-secondary"} btn-sm d-flex align-items-center position-relative`}
+                          onClick={handleLike}
+                          disabled={isLiking}
+                          style={{
+                            transition: "all 0.3s ease",
+                          }}
+                        >
+                          {isLiking ? (
+                            <i
+                              className="icon-base bx bx-loader-alt bx-spin me-1"
+                              aria-hidden="true"
+                            />
+                          ) : (
+                            <i
+                              className={`icon-base bx ${isLiked ? "bxs-like" : "bx-like"} me-1`}
+                              aria-hidden="true"
+                              style={{
+                                transform: isLiked ? "scale(1.2)" : "scale(1)",
+                                transition: "transform 0.2s ease",
+                              }}
+                            />
+                          )}
+                          <span>
+                            {likeCount} {likeCount === 1 ? "Like" : "Likes"}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          aria-label="Comment"
+                          className="btn btn-outline-secondary btn-sm d-flex align-items-center"
+                          onClick={focusCommentInput}
+                        >
+                          <i className="icon-base bx bx-comment me-1" aria-hidden="true" />
+                          <span>{comments.length} Comments</span>
+                        </button>
+                        <button
+                          type="button"
+                          aria-label="Share"
+                          className="btn btn-outline-secondary btn-sm d-flex align-items-center"
+                          onClick={handleShare}
+                        >
+                          <i className="icon-base bx bx-share me-1" aria-hidden="true" />
+                          <span>Share</span>
+                        </button>
+                      </div>
+                    </div>
+                    {topLevelComments.length > 0 && (
+                      <div className="mt-3 border-top pt-3" style={{ maxHeight: "300px", overflowY: "auto" }}>
+                        {topLevelComments.slice(0, visibleComments).map((comment) => renderComment(comment))}
+                        {hasMoreComments && (
+                          <button
+                            type="button"
+                            className="btn btn-link btn-sm text-primary p-0"
+                            onClick={handleShowMoreComments}
+                            aria-label={`Show more comments`}
+                          >
+                            <i className="bx bx-chevron-down me-1"></i>Show {topLevelComments.length - visibleComments} more {topLevelComments.length - visibleComments === 1 ? "comment" : "comments"}
+                          </button>
+                        )}
+                      </div>
+                    )}
+                    <div className="mt-3 d-flex align-items-center">
+                      <div className="me-2">
+                        {profile?.avatar ? (
+                          <img
+                            src={profile.avatar}
+                            alt={`${profile.name || "User"}'s avatar`}
+                            className="rounded-circle"
+                            style={{ width: "24px", height: "24px", objectFit: "cover" }}
+                            onError={(e) => {
+                              e.currentTarget.src = unknownAvatar;
+                            }}
+                          />
+                        ) : (
+                          <i className="icon-base bx bxs-user-circle fs-5 text-primary" aria-hidden="true" />
+                        )}
+                      </div>
+                      <div className="flex-grow-1">
+                        <input
+                          id={`comment-input-${post.postId}`}
+                          ref={commentInputRef}
+                          className="form-control form-control-sm"
+                          placeholder="Write a comment..."
+                          value={newComment}
+                          onChange={(e) => setNewComment(e.target.value)}
+                          onKeyDown={onCommentKeyDown}
+                          aria-label="Write a comment"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-sm ms-2"
+                        onClick={() => handleAddComment(newComment)}
+                        disabled={!newComment.trim()}
+                        aria-label="Post comment"
+                      >
+                        Post
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-3">
+                  <Link
+                    to={`/profile/${post.user?.userId}`}
+                    className="d-flex align-items-center text-decoration-none text-dark mb-3"
+                  >
+                    <div className="me-2 flex-shrink-0">
+                      {post.user?.avatar ? (
+                        <img
+                          src={post.user.avatar}
+                          alt={`${post.user.name || "User"}'s avatar`}
+                          className="rounded-circle"
+                          style={{ width: "32px", height: "32px", objectFit: "cover" }}
+                          onError={(e) => {
+                            e.currentTarget.src = unknownAvatar;
+                          }}
+                        />
+                      ) : (
+                        <i
+                          className="icon-base bx bxs-user-circle fs-4 text-primary"
+                          aria-hidden="true"
+                        />
+                      )}
+                    </div>
+                    <div>
+                      <p className="mb-0 fw-semibold">{post.user?.name || "User"}</p>
+                      <small className="text-muted">
+                        {formatDateOnly(post.createdAt)} &middot; {post.privacy}
+                      </small>
+                    </div>
+                  </Link>
+                  <p className="mb-3" style={{ whiteSpace: "pre-wrap" }}>
+                    {post.content}
+                  </p>
+                  <div className="border-top pt-3 mt-3">
+                    <div className="d-flex w-100 gap-3 justify-content-start align-items-center mb-3">
+                      <button
+                        type="button"
+                        aria-label={isLiked ? "Unlike" : "Like"}
+                        className={`btn ${isLiked ? "btn-primary" : "btn-outline-secondary"} btn-sm d-flex align-items-center position-relative`}
+                        onClick={handleLike}
+                        disabled={isLiking}
+                        style={{
+                          transition: "all 0.3s ease",
+                        }}
+                      >
+                        {isLiking ? (
+                          <i
+                            className="icon-base bx bx-loader-alt bx-spin me-1"
+                            aria-hidden="true"
+                          />
+                        ) : (
+                          <i
+                            className={`icon-base bx ${isLiked ? "bxs-like" : "bx-like"} me-1`}
+                            aria-hidden="true"
+                            style={{
+                              transform: isLiked ? "scale(1.2)" : "scale(1)",
+                              transition: "transform 0.2s ease",
+                            }}
+                          />
+                        )}
+                        <span>
+                          {likeCount} {likeCount === 1 ? "Like" : "Likes"}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        aria-label="Comment"
+                        className="btn btn-outline-secondary btn-sm d-flex align-items-center"
+                        onClick={focusCommentInput}
+                      >
+                        <i className="icon-base bx bx-comment me-1" aria-hidden="true" />
+                        <span>{comments.length} Comments</span>
+                      </button>
+                      <button
+                        type="button"
+                        aria-label="Share"
+                        className="btn btn-outline-secondary btn-sm d-flex align-items-center"
+                        onClick={handleShare}
+                      >
+                        <i className="icon-base bx bx-share me-1" aria-hidden="true" />
+                        <span>Share</span>
+                      </button>
+                    </div>
+                  </div>
+                  {topLevelComments.length > 0 && (
+                    <div className="mt-3 border-top pt-3" style={{ maxHeight: "300px", overflowY: "auto" }}>
+                      {topLevelComments.slice(0, visibleComments).map((comment) => renderComment(comment))}
+                      {hasMoreComments && (
+                        <button
+                          type="button"
+                          className="btn btn-link btn-sm text-primary p-0"
+                          onClick={handleShowMoreComments}
+                          aria-label={`Show more comments`}
+                        >
+                          <i className="bx bx-chevron-down me-1"></i>Show {topLevelComments.length - visibleComments} more {topLevelComments.length - visibleComments === 1 ? "comment" : "comments"}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  <div className="mt-3 d-flex align-items-center">
+                    <div className="me-2">
+                      {profile?.avatar ? (
+                        <img
+                          src={profile.avatar}
+                          alt={`${profile.name || "User"}'s avatar`}
+                          className="rounded-circle"
+                          style={{ width: "24px", height: "24px", objectFit: "cover" }}
+                          onError={(e) => {
+                            e.currentTarget.src = unknownAvatar;
+                          }}
+                        />
+                      ) : (
+                        <i className="icon-base bx bxs-user-circle fs-5 text-primary" aria-hidden="true" />
+                      )}
+                    </div>
+                    <div className="flex-grow-1">
+                      <input
+                        id={`comment-input-${post.postId}`}
+                        ref={commentInputRef}
+                        className="form-control form-control-sm"
+                        placeholder="Write a comment..."
+                        value={newComment}
+                        onChange={(e) => setNewComment(e.target.value)}
+                        onKeyDown={onCommentKeyDown}
+                        aria-label="Write a comment"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm ms-2"
+                      onClick={() => handleAddComment(newComment)}
+                      disabled={!newComment.trim()}
+                      aria-label="Post comment"
+                    >
+                      Post
+                    </button>
+                  </div>
+                </div>
+              )}
+            </Modal.Body>
           </Modal>
         )}
 
@@ -639,7 +950,6 @@ const PostCard: React.FC<PostCardProps> = ({ post, profile, onUpdate }) => {
                 {likeCount} {likeCount === 1 ? "Like" : "Likes"}
               </span>
             </button>
-
             <button
               type="button"
               aria-label="Comment"
@@ -649,7 +959,6 @@ const PostCard: React.FC<PostCardProps> = ({ post, profile, onUpdate }) => {
               <i className="icon-base bx bx-comment me-1" aria-hidden="true" />
               <span>{comments.length} Comments</span>
             </button>
-
             <button
               type="button"
               aria-label="Share"
@@ -687,7 +996,7 @@ const PostCard: React.FC<PostCardProps> = ({ post, profile, onUpdate }) => {
                 className="rounded-circle"
                 style={{ width: "24px", height: "24px", objectFit: "cover" }}
                 onError={(e) => {
-                  e.currentTarget.src = unknownAvatar; // Fallback image
+                  e.currentTarget.src = unknownAvatar;
                 }}
               />
             ) : (

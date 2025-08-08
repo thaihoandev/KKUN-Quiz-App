@@ -346,7 +346,7 @@ const SidebarMain: React.FC<HeaderProps> = ({ profile }) => {
             className="menu-link"
             onClick={() => handleMenuItemClick("/posts")}
           >
-            <i className="menu-icon icon-base bx bx-home-smile"></i>
+            <i className="menu-icon icon-base bx bx-news"></i>
             <div data-i18n="Posts">Posts</div>
           </Link>
         </li>

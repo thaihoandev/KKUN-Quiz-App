@@ -4,6 +4,7 @@ import { handleApiError } from "@/utils/apiErrorHandler";
 import axiosInstance from "@/services/axiosInstance";
 import { createGameSession } from "@/services/gameService";
 import { useNavigate, Link } from "react-router-dom";
+import unknownAvatar from "@/assets/img/avatars/unknown.jpg";
 
 interface QuizCardProps {
   quiz: Quiz;
@@ -30,7 +31,7 @@ const ProcessQuizCard = ({ quiz }: QuizCardProps) => {
   const displayCategory = quiz.category || "Other";
   const displayDuration = quiz.duration || "30 minutes";
   const displayAvatar =
-    quiz.host.avatar || "../../assets/img/pages/app-academy-tutor-1.png";
+    quiz.host.avatar || unknownAvatar;
 
   const handleStartQuiz = async () => {
     setIsStarting(true);
@@ -62,7 +63,7 @@ const ProcessQuizCard = ({ quiz }: QuizCardProps) => {
                 style={{ width: "40px", height: "40px" }}
                 onError={(e) => {
                   e.currentTarget.src =
-                    "../../assets/img/pages/app-academy-tutor-1.png";
+                    unknownAvatar;
                 }}
               />
             </Link>

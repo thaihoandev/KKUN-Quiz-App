@@ -1,35 +1,51 @@
 import * as yup from "yup";
+interface LoginFormData {
+  username: string;
+  password: string;
+  rememberMe?: boolean;
+}
 
-export const loginSchema = yup.object().shape({
-    username: yup
-        .string()
-        .required("Username is required")
-        .min(3, "Must be at least 3 characters"),
-    password: yup
-        .string()
-        .min(6, "Password must be at least 6 characters")
-        .required("Password is required"),
-    rememberMe: yup.boolean(),
-});
+interface RegisterFormData {
+  name: string;
+  username: string;
+  email: string;
+  password: string;
+  terms: boolean;
+}
+export const loginSchema: yup.ObjectSchema<LoginFormData> = yup.object({
+  username: yup
+    .string()
+    .required("Username is required")
+    .min(3, "Must be at least 3 characters"),
+  password: yup
+    .string()
+    .min(6, "Password must be at least 6 characters")
+    .required("Password is required"),
+  rememberMe: yup.boolean().optional(),
+}).required();
 
-export const registerSchema = yup.object().shape({
-    name: yup
-        .string()
-        .required("Fullname is required")
-        .min(3, "Must be at least 1 characters"),
-    username: yup
-        .string()
-        .required("Username is required")
-        .min(3, "Must be at least 3 characters"),
-    email: yup.string().email("Invalid email").required("Email is required"),
-    password: yup
-        .string()
-        .min(6, "Must be at least 6 characters")
-        .required("Password is required"),
-    terms: yup
-        .boolean()
-        .oneOf([true], "You must accept the terms and conditions"),
-});
+export const registerSchema: yup.ObjectSchema<RegisterFormData> = yup.object({
+  name: yup
+    .string()
+    .required("Full name is required")
+    .min(2, "Must be at least 2 characters"),
+  username: yup
+    .string()
+    .required("Username is required")
+    .min(3, "Must be at least 3 characters"),
+  email: yup
+    .string()
+    .email("Must be a valid email")
+    .required("Email is required"),
+  password: yup
+    .string()
+    .min(6, "Password must be at least 6 characters")
+    .required("Password is required"),
+  terms: yup
+    .boolean()
+    .required("You must agree to the terms")
+    .oneOf([true], "You must agree to the terms"),
+}).required();
 
 export const changePasswordschema = yup.object().shape({
     currentPassword: yup.string().required("Vui lòng nhập mật khẩu hiện tại"),
