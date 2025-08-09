@@ -9,14 +9,15 @@ on:
       - 'my-frontend/**'
       - 'mcq_extraction/**'
       - '.github/workflows/build-and-push-dockerhub.yml'
+    tags:
+    - 'v*'  # optional: khi tạo tag v1.2.3 sẽ retag
   pull_request:
     branches: [ main ]
     paths:
       - 'QuizAppBackend/**'
       - 'my-frontend/**'
       - 'mcq_extraction/**'
-  tags:
-    - 'v*'  # optional: khi tạo tag v1.2.3 sẽ retag
+  
 
 permissions:
   contents: read
