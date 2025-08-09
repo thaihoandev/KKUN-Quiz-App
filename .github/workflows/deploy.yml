@@ -1,0 +1,79 @@
+name: Deploy to Server (with env from secrets)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'infra/**'
+      - '.github/workflows/deploy.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prod-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+
+            REPO="${{ github.repository }}"
+            APP_DIR="${{ secrets.APP_DIR }}"
+            COMPOSE_FILE="infra/docker-compose.yml"
+
+            # 1) Clone/update code
+            if [ ! -d "$APP_DIR" ]; then
+              git clone --depth 1 https://github.com/${REPO} "$APP_DIR"
+            fi
+            cd "$APP_DIR"
+            git fetch --all --prune
+            git reset --hard origin/main
+
+            # 2) Tạo thư mục infra nếu chưa có
+            mkdir -p infra
+
+            # 3) Ghi env files từ GitHub Secrets (atomically)
+            umask 077
+
+            # Backend env
+            cat > infra/backend.env.new <<'EOF'
+            ${{ secrets.BACKEND_ENV }}
+            EOF
+            mv -f infra/backend.env.new infra/backend.env
+
+            # Frontend env
+            cat > infra/frontend.env.new <<'EOF'
+            ${{ secrets.FRONTEND_ENV }}
+            EOF
+            mv -f infra/frontend.env.new infra/frontend.env
+
+            # MCQ env
+            cat > infra/mcq.env.new <<'EOF'
+            ${{ secrets.MCQ_ENV }}
+            EOF
+            mv -f infra/mcq.env.new infra/mcq.env
+
+            # 4) (Tuỳ chọn) login GHCR nếu image private
+            if [ -n "${{ secrets.GHCR_TOKEN }}" ]; then
+              echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin || true
+            fi
+
+            # 5) Pull & run
+            docker compose -f "${COMPOSE_FILE}" pull
+            docker compose -f "${COMPOSE_FILE}" up -d --remove-orphans
+
+            # 6) Cleanup
+            docker image prune -f
