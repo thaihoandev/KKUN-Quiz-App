@@ -16,13 +16,14 @@ const NavigationMenu: React.FC<NavigationMenuProps> = ({ menuItems, activeTab, o
   return (
     <div className="nav-align-top">
       <ul className="nav nav-pills flex-column flex-md-row mb-3 flex-wrap row-gap-2">
-        {menuItems.map((item, index) => (
-          <li className="nav-item" key={index}>
+        {menuItems.map((item) => (
+          <li className="nav-item" key={item.path}>
             <button
               className={`nav-link ${activeTab === item.path ? "active" : ""}`}
               onClick={() => onTabChange(item.path)}
+              aria-current={activeTab === item.path ? "page" : undefined}
             >
-              <i className={`icon-base bx ${item.icon} icon-sm me-1_5`}></i>
+              <i className={`bx ${item.icon} me-2`}></i>
               {item.label}
             </button>
           </li>
