@@ -1,28 +1,54 @@
+version: "3.9"
+
 services:
   backend:
     image: ghcr.io/thaihoandev/kkun-quiz-app-backend:latest
     env_file:
-      - ./QuizAppBackend/.env
+      - ../QuizAppBackend/.env   # lùi 1 cấp từ infra
     ports:
       - "8080:8080"
     depends_on:
       - db
+    networks:
+      - appnet
 
   frontend:
     image: ghcr.io/thaihoandev/kkun-quiz-app-frontend:latest
     env_file:
-      - ./my-frontend/.env
+      - ../my-frontend/.env
     ports:
       - "80:80"
     depends_on:
       - backend
+    networks:
+      - appnet
 
   mcq:
     image: ghcr.io/thaihoandev/kkun-quiz-app-mcq:latest
-    # env_file: ./mcq.env
+    # Nếu cần env cho mcq thì bỏ comment và trỏ file
+    # env_file:
+    #   - ../mcq_extraction/.env
     depends_on:
       - backend
+    networks:
+      - appnet
 
   db:
     image: postgres:16-alpine
-    # ...
+    environment:
+      POSTGRES_DB: kkunquizapp
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 123456
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - appnet
+
+volumes:
+  dbdata:
+
+networks:
+  appnet:
+    driver: bridge
