@@ -26,7 +26,7 @@ const QuizEditorPage: React.FC = () => {
             setLoading(true);
             try {
                 const data = await getQuestionsByQuizId(quizId);
-                setQuestions(data);
+                setQuestions(data ?? []);
             } catch (error) {
                 console.error("Error fetching questions:", error);
             }
