@@ -2,7 +2,7 @@ services:
   backend:
     image: ghcr.io/thaihoandev/kkun-quiz-app-backend:latest
     env_file:
-      - ./QuizAppBackend.env
+      - ./QuizAppBackend/.env
     ports:
       - "8080:8080"
     depends_on:
@@ -11,7 +11,7 @@ services:
   frontend:
     image: ghcr.io/thaihoandev/kkun-quiz-app-frontend:latest
     env_file:
-      - ./my-frontend.env
+      - ./my-frontend/.env
     ports:
       - "80:80"
     depends_on:
