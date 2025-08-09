@@ -1,6 +1,7 @@
 name: Build & Push Images (Docker Hub)
 
 on:
+  workflow_dispatch: {}
   push:
     branches: [ main ]
     paths:
