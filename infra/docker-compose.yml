@@ -1,10 +1,8 @@
-version: "3.9"
-
 services:
   backend:
     image: ghcr.io/thaihoandev/kkun-quiz-app-backend:latest
     env_file:
-      - ../QuizAppBackend/.env   # lùi 1 cấp từ infra
+      - ./backend.env
     ports:
       - "8080:8080"
     depends_on:
@@ -14,8 +12,7 @@ services:
 
   frontend:
     image: ghcr.io/thaihoandev/kkun-quiz-app-frontend:latest
-    env_file:
-      - ../my-frontend/.env
+    # Thường FE (Nginx serve static) không dùng env_file lúc runtime
     ports:
       - "80:80"
     depends_on:
@@ -25,9 +22,9 @@ services:
 
   mcq:
     image: ghcr.io/thaihoandev/kkun-quiz-app-mcq:latest
-    # Nếu cần env cho mcq thì bỏ comment và trỏ file
+    # Nếu mcq cần biến môi trường thì bật dòng dưới:
     # env_file:
-    #   - ../mcq_extraction/.env
+    #   - ./mcq.env
     depends_on:
       - backend
     networks:

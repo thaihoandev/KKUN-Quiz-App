@@ -10,6 +10,17 @@
 /backend/.mvn
 /backend/*.jar
 
+/infra/
+# Bỏ qua tất cả file env trong infra
+/infra/*.env
+/infra/**/*.env
+
+# Nếu muốn bỏ qua env của toàn dự án
+*.env
+
+# Ngoại lệ: vẫn giữ file mẫu
+!infra/*.env.example
+!infra/**/*.env.example
 # Docker Compose
 docker-compose.override.yml
 
