@@ -12,8 +12,8 @@
 
 /infra/
 # Bỏ qua tất cả file env trong infra
-/infra/*.env
-/infra/**/*.env
+infra/*.env
+infra/**/*.env
 
 # Nếu muốn bỏ qua env của toàn dự án
 *.env
