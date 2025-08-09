@@ -1,64 +1,54 @@
 version: "3.9"
-services:
-  frontend:
-    build:
-      context: ../frontend
-      dockerfile: Dockerfile
-    image: kkun-quiz-app/frontend:latest
-    depends_on:
-      - backend
-    # Nếu để FE tự serve qua nginx bên trong image FE thì expose trực tiếp 80,
-    # còn nếu dùng nginx chung, thay thế `frontend` bằng volume static.
-    networks:
-      - web
 
+services:
   backend:
-    build:
-      context: ../backend
-      dockerfile: Dockerfile
-    image: yourrepo/backend:latest
-    environment:
-      SPRING_PROFILES_ACTIVE: prod
-      # ví dụ cấu hình DB:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/app
-      SPRING_DATASOURCE_USERNAME: app
-      SPRING_DATASOURCE_PASSWORD: secret
-      SERVER_FORWARD_HEADERS_STRATEGY: native
+    image: ghcr.io/thaihoandev/kkun-quiz-app-backend:latest
+    env_file:
+      - ../QuizAppBackend/.env   # lùi 1 cấp từ infra
+    ports:
+      - "8080:8080"
     depends_on:
       - db
     networks:
-      - web
+      - appnet
 
-  # Nginx proxy/serve FE (tuỳ chọn nhưng gọn nhất)
-  nginx:
-    image: nginx:alpine
-    volumes:
-      # lấy build FE từ container frontend (hoặc build ra volume/artifact rồi mount)
-      - frontend-static:/usr/share/nginx/html
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+  frontend:
+    image: ghcr.io/thaihoandev/kkun-quiz-app-frontend:latest
+    env_file:
+      - ../my-frontend/.env
     ports:
       - "80:80"
     depends_on:
-      - frontend
       - backend
     networks:
-      - web
+      - appnet
+
+  mcq:
+    image: ghcr.io/thaihoandev/kkun-quiz-app-mcq:latest
+    # Nếu cần env cho mcq thì bỏ comment và trỏ file
+    # env_file:
+    #   - ../mcq_extraction/.env
+    depends_on:
+      - backend
+    networks:
+      - appnet
 
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: app
-      POSTGRES_USER: app
-      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: kkunquizapp
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 123456
     volumes:
       - dbdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
     networks:
-      - web
+      - appnet
 
 volumes:
   dbdata:
-  frontend-static:
 
 networks:
-  web:
+  appnet:
     driver: bridge
