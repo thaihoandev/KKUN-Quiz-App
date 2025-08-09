@@ -1,10 +1,10 @@
 import { useForm } from "react-hook-form";
 import { yupResolver } from "@hookform/resolvers/yup";
 import { Button } from "react-bootstrap";
-import NavigationMenu from "@/components/NavigationMenu"; // Use the provided NavigationMenu
 import PasswordField from "@/components/formFields/PasswordField";
 import { changePasswordschema } from "@/schemas/authSchema";
 import { useState } from "react";
+import NavigationMenu from "@/components/NavigationMenuProfile";
 
 interface ChangePasswordForm {
   currentPassword: string;

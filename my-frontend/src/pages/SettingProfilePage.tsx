@@ -1,6 +1,6 @@
 import EditableField from "@/components/formFields/EditableField";
+import NavigationMenu from "@/components/NavigationMenuProfile";
 import React, { useState } from "react";
-import NavigationMenu from "@/components/NavigationMenu"; // Use the provided NavigationMenu
 
 const SettingProfilePage = () => {
   const [selectedAvatar, setSelectedAvatar] = useState(1);
