@@ -33,11 +33,15 @@ export const getCurrentUser = async (force = false): Promise<UserResponseDTO | n
   });
 
   if (res.status === 304) {
+    console.log("Using cached current user data");
+    
     return dataCache.get(key) ?? null;
   }
 
   const etag = res.headers?.etag || res.headers?.ETag;
   saveCache(key, res.data, etag);
+  console.log("Current user data fetched and cached", res.data);
+  
   return res.data;
 };
 
@@ -124,4 +128,15 @@ export const getFriendSuggestions = async (page = 0, size = 6) => {
 export const addFriend = async (friendId: string) => {
   // dùng current user endpoint
   await axiosInstance.post(`/users/me/friends/${friendId}`);
+};
+
+// ===== Email change via OTP =====
+export const requestEmailOtp = async (newEmail: string) => {
+  // gửi mã OTP về email mới
+  return axiosInstance.post("/users/me/request-email-otp", { email: newEmail });
+};
+
+export const verifyEmailOtp = async (code: string) => {
+  // xác thực mã OTP -> BE sẽ cập nhật email
+  return axiosInstance.post("/users/me/verify-email-otp", { code });
 };

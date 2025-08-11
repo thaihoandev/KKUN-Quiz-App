@@ -6,6 +6,8 @@ import {
   getCurrentUser,
   updateUser,
   deleteSoftUser,
+  requestEmailOtp,     // 👈 NEW
+  verifyEmailOtp,      // 👈 NEW
 } from "@/services/userService";
 import EditAvatarModal from "@/components/modals/EditAvatarModal";
 
@@ -21,7 +23,7 @@ type Notice = { type: "success" | "error"; message: string };
 
 const SettingProfilePage = () => {
   const navigate = useNavigate();
-  const { user, logout } = useAuthStore(); // giả định store có logout()
+  const { user, logout } = useAuthStore();
   const [me, setMe] = useState<any | null>(null);
 
   const [selectedAvatar, setSelectedAvatar] = useState(1);
@@ -31,11 +33,17 @@ const SettingProfilePage = () => {
   const [deleting, setDeleting] = useState(false);
   const [showEditAvatar, setShowEditAvatar] = useState(false);
 
+  // 👉 Email OTP modal state
+  const [showEmailOtp, setShowEmailOtp] = useState(false);
+  const [pendingEmail, setPendingEmail] = useState("");
+  const [otp, setOtp] = useState("");
+  const [requestingOtp, setRequestingOtp] = useState(false);
+  const [verifyingOtp, setVerifyingOtp] = useState(false);
+
   const [notice, setNotice] = useState<Notice | null>(null);
 
   const showMessage = (msg: Notice) => {
     setNotice(msg);
-    // Tự ẩn sau 4s (tuỳ chọn)
     setTimeout(() => setNotice(null), 4000);
   };
 
@@ -43,11 +51,8 @@ const SettingProfilePage = () => {
     (async () => {
       try {
         const current = await getCurrentUser();
-        if (current) {
-          setMe(current);
-        } else {
-          showMessage({ type: "error", message: "Không thể tải thông tin người dùng." });
-        }
+        if (current) setMe(current);
+        else showMessage({ type: "error", message: "Không thể tải thông tin người dùng." });
       } catch (err: any) {
         const message =
           err?.response?.data?.message ||
@@ -60,8 +65,42 @@ const SettingProfilePage = () => {
 
   const safeUserId = me?.userId || user?.userId;
 
+  const refreshMe = async () => {
+    try {
+      const curr = await getCurrentUser(true);
+      if (curr) setMe(curr);
+    } catch {}
+  };
+
   const handleFieldChange = async (fieldName: string, newValue: string) => {
     if (!safeUserId) return;
+
+    // ⚠️ Email: dùng OTP, không update trực tiếp
+    if (fieldName === "email") {
+      if (!newValue || newValue === me?.email) return;
+      setRequestingOtp(true);
+      try {
+        await requestEmailOtp(newValue);
+        setPendingEmail(newValue);
+        setOtp("");
+        setShowEmailOtp(true);
+        showMessage({
+          type: "success",
+          message: `Đã gửi mã xác thực đến ${newValue}. Vui lòng kiểm tra hộp thư.`,
+        });
+      } catch (err: any) {
+        const m =
+          err?.response?.data?.message ||
+          err?.response?.data ||
+          "Không thể gửi mã xác thực. Vui lòng thử lại.";
+        showMessage({ type: "error", message: m });
+      } finally {
+        setRequestingOtp(false);
+      }
+      return;
+    }
+
+    // Các field còn lại cập nhật như cũ
     setSaving(true);
     try {
       const payload: PartialUser = { [fieldName]: newValue } as PartialUser;
@@ -82,10 +121,9 @@ const SettingProfilePage = () => {
   const handleDeleteAccount = async () => {
     if (!safeUserId) return;
     if (!password || !confirmDelete) return;
-    
+
     setDeleting(true);
     try {
-      // YÊU CẦU: deleteSoftUser phải nhận password (xem ghi chú bên dưới)
       await deleteSoftUser(String(safeUserId), String(password));
       showMessage({ type: "success", message: "Tài khoản đã được vô hiệu hóa." });
       if (logout) logout();
@@ -101,14 +139,41 @@ const SettingProfilePage = () => {
     }
   };
 
-  const displayAvatar =
-    me?.avatar || `/assets/img/avatars/${selectedAvatar}.png`;
+  const displayAvatar = me?.avatar || `/assets/img/avatars/${selectedAvatar}.png`;
+
+  // ===== OTP handlers
+  const resendOtp = async () => {
+    if (!pendingEmail) return;
+    setRequestingOtp(true);
+    try {
+      await requestEmailOtp(pendingEmail);
+      showMessage({ type: "success", message: `Đã gửi lại mã đến ${pendingEmail}.` });
+    } catch (e: any) {
+      const m = e?.response?.data || "Không thể gửi lại mã. Vui lòng thử lại.";
+      showMessage({ type: "error", message: m });
+    } finally {
+      setRequestingOtp(false);
+    }
+  };
+
+  const confirmOtp = async () => {
+    if (!otp) return;
+    setVerifyingOtp(true);
+    try {
+      await verifyEmailOtp(otp);
+      await refreshMe();
+      setShowEmailOtp(false);
+      showMessage({ type: "success", message: "Xác minh thành công. Email đã được cập nhật." });
+    } catch (e: any) {
+      const m = e?.response?.data || "Mã không hợp lệ hoặc đã hết hạn.";
+      showMessage({ type: "error", message: m });
+    } finally {
+      setVerifyingOtp(false);
+    }
+  };
 
   return (
-    <div
-      className="container-xxl flex-grow-1 container-p-y text-white"
-      style={{ minHeight: "100vh" }}
-    >
+    <div className="container-xxl flex-grow-1 container-p-y text-white" style={{ minHeight: "100vh" }}>
       {/* Notification */}
       {notice && (
         <div
@@ -116,12 +181,7 @@ const SettingProfilePage = () => {
           role="alert"
         >
           {notice.message}
-          <button
-            type="button"
-            className="btn-close"
-            aria-label="Close"
-            onClick={() => setNotice(null)}
-          />
+          <button type="button" className="btn-close" aria-label="Close" onClick={() => setNotice(null)} />
         </div>
       )}
 
@@ -129,9 +189,7 @@ const SettingProfilePage = () => {
       <div className="row mb-4">
         <div className="col-12">
           <div className="card p-4 rounded-4 border-0 shadow">
-            <h5 className="card-header px-0 pb-3 border-bottom border-secondary">
-              Thông tin cá nhân
-            </h5>
+            <h5 className="card-header px-0 pb-3 border-bottom border-secondary">Thông tin cá nhân</h5>
 
             <div className="card-body px-0 pt-4">
               <div className="d-flex flex-column flex-md-row align-items-center gap-3 mb-4">
@@ -142,8 +200,6 @@ const SettingProfilePage = () => {
                     className="rounded-circle border border-2 border-primary"
                     style={{ width: "100px", height: "100px", objectFit: "cover" }}
                   />
-
-                  {/* Nút mở modal cắt ảnh */}
                   <button
                     type="button"
                     className="btn btn-sm btn-primary position-absolute bottom-0 end-0 rounded-circle"
@@ -179,7 +235,7 @@ const SettingProfilePage = () => {
                   fieldName="email"
                   fieldType="email"
                   onValueChange={handleFieldChange}
-                  disabled={true}
+                  disabled={requestingOtp || verifyingOtp}
                 />
                 <EditableField
                   label="Số điện thoại"
@@ -315,6 +371,43 @@ const SettingProfilePage = () => {
             showMessage({ type: "success", message: "Cập nhật ảnh đại diện thành công." });
           }}
         />
+      )}
+
+      {/* ===== Modal nhập OTP xác thực email ===== */}
+      {showEmailOtp && (
+        <div className="modal fade show" style={{ display: "block", background: "rgba(0,0,0,.5)" }}>
+          <div className="modal-dialog modal-dialog-centered">
+            <div className="modal-content bg-dark text-white rounded-4 border-0">
+              <div className="modal-header border-0">
+                <h5 className="modal-title">Xác thực email mới</h5>
+                <button className="btn-close btn-close-white" onClick={() => setShowEmailOtp(false)} />
+              </div>
+              <div className="modal-body">
+                <p className="text-muted">
+                  Nhập mã gồm 6 chữ số đã gửi tới <strong>{pendingEmail}</strong>.
+                </p>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={6}
+                  className="form-control"
+                  placeholder="Nhập mã OTP"
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
+                />
+              </div>
+              <div className="modal-footer border-0 d-flex justify-content-between">
+                <button className="btn btn-outline-secondary" onClick={resendOtp} disabled={requestingOtp}>
+                  {requestingOtp ? "Đang gửi lại..." : "Gửi lại mã"}
+                </button>
+                <button className="btn btn-primary" onClick={confirmOtp} disabled={!otp || verifyingOtp}>
+                  {verifyingOtp ? "Đang xác minh..." : "Xác nhận"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

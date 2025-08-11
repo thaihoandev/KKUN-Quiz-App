@@ -23,4 +23,9 @@ public interface UserService {
     List<FriendSuggestionDTO> getFriendSuggestions(UUID currentUserId, int page, int size);
 
     void addFriend(UUID requesterId, UUID targetUserId);
+
+    void requestEmailChange(String newEmail);
+    void confirmEmailChange(String token);
+    void requestEmailChangeOtp(String newEmail);
+    void verifyEmailChangeOtp(String code);
 }

@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -38,10 +39,10 @@ public class UserController {
 
     // -------- Current user: get profile (giống cách lấy userId ở PostController) --------
     @GetMapping("/me")
-    public ResponseEntity<UserResponseDTO> getCurrentUser(HttpServletRequest req) {
+    public ResponseEntity<UserResponseDTO> getCurrentUser(HttpServletRequest req, @RequestHeader("Authorization") String token) {
         String currentUserId = userService.getCurrentUserId();
         // lấy cả updatedAt (nếu DTO chưa có, bổ sung trường hoặc trả riêng)
-        UserResponseDTO dto = userService.getUserById(currentUserId, null);
+        UserResponseDTO dto = userService.getUserById(currentUserId, token);
 
         // Ví dụ etag dựa trên updatedAt + userId để ổn định
         String etag = "\"" + dto.getUserId() + "-" + dto.getUpdatedAt().toString() + "\"";
@@ -64,10 +65,10 @@ public class UserController {
     @GetMapping("/{id}")
     public ResponseEntity<UserResponseDTO> getUserById(
             @PathVariable String id,
-            HttpServletRequest request
+            HttpServletRequest request, @RequestHeader("Authorization") String token
     ) {
         // Lấy dữ liệu (service đã tự ẩn field nhạy cảm nếu không phải owner/admin)
-        UserResponseDTO dto = userService.getUserById(id, null);
+        UserResponseDTO dto = userService.getUserById(id, token);
 
         // Tạo ETag từ userId + updatedAt (đảm bảo thay đổi khi hồ sơ đổi)
         String updatedAtStr = dto.getUpdatedAt() != null ? dto.getUpdatedAt().toString() : "0";
@@ -184,4 +185,32 @@ public class UserController {
         userService.addFriend(id, friendId);
         return ResponseEntity.ok("Friend added successfully!");
     }
+
+    @PostMapping("/me/request-email-change")
+    public ResponseEntity<String> requestEmailChange(@RequestBody java.util.Map<String, String> body) {
+        String newEmail = body.get("email");
+        userService.requestEmailChange(newEmail);
+        return ResponseEntity.ok("Verification email sent");
+    }
+
+    @GetMapping("/me/confirm-email-change")
+    public ResponseEntity<String> confirmEmailChange(@RequestParam("token") String token) {
+        userService.confirmEmailChange(token);
+        return ResponseEntity.ok("Email updated successfully!");
+    }
+
+    @PostMapping("/me/request-email-otp")
+    public ResponseEntity<String> requestEmailOtp(@RequestBody java.util.Map<String, String> body) {
+        String newEmail = body.get("email");
+        userService.requestEmailChangeOtp(newEmail);
+        return ResponseEntity.ok("Verification code sent");
+    }
+
+    @PostMapping("/me/verify-email-otp")
+    public ResponseEntity<String> verifyEmailOtp(@RequestBody java.util.Map<String, String> body) {
+        String code = body.get("code");
+        userService.verifyEmailChangeOtp(code);
+        return ResponseEntity.ok("Email updated successfully!");
+    }
+
 }

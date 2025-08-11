@@ -83,7 +83,8 @@ public class SecurityConfig {
                                 "/api/auth/logout",
                                 "/api/games/join",
                                 "/api/games/{gameId}/answer",
-                                "/api/quizzes/published"
+                                "/api/quizzes/published",
+                                "/api/users/me/confirm-email-change"
                         ).permitAll()
                         .requestMatchers("/api/quizzes/**", "/api/questions/**", "/api/files/upload/**")
                         .hasAnyAuthority(UserRole.USER.name(), UserRole.ADMIN.name())

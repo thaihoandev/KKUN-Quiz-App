@@ -1,23 +1,26 @@
 package com.kkunquizapp.QuizAppBackend.service.impl;
 
 import com.cloudinary.Cloudinary;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kkunquizapp.QuizAppBackend.dto.UserRequestDTO;
 import com.kkunquizapp.QuizAppBackend.dto.UserResponseDTO;
 import com.kkunquizapp.QuizAppBackend.dto.AuthResponseDTO;
 import com.kkunquizapp.QuizAppBackend.exception.DuplicateEntityException;
 import com.kkunquizapp.QuizAppBackend.exception.InvalidRequestException;
 import com.kkunquizapp.QuizAppBackend.exception.UserNotFoundException;
+import com.kkunquizapp.QuizAppBackend.model.EmailChangeOtpPayload;
+import com.kkunquizapp.QuizAppBackend.model.EmailChangeToken;
 import com.kkunquizapp.QuizAppBackend.model.User;
 import com.kkunquizapp.QuizAppBackend.model.UserPrincipal;
 import com.kkunquizapp.QuizAppBackend.model.enums.UserRole;
+import com.kkunquizapp.QuizAppBackend.repo.EmailChangeTokenRepo;
 import com.kkunquizapp.QuizAppBackend.repo.UserRepo;
-import com.kkunquizapp.QuizAppBackend.service.CloudinaryService;
-import com.kkunquizapp.QuizAppBackend.service.CustomUserDetailsService;
-import com.kkunquizapp.QuizAppBackend.service.JwtService;
-import com.kkunquizapp.QuizAppBackend.service.UserService;
+import com.kkunquizapp.QuizAppBackend.service.*;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.modelmapper.ModelMapper;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -44,8 +47,10 @@ import org.springframework.data.domain.Sort;
 import java.io.IOException;
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.Year;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import static com.kkunquizapp.QuizAppBackend.helper.validateHelper.isEmailFormat;
@@ -62,7 +67,31 @@ public class UserServiceImpl implements UserService {
     private final JwtService jwtService;
     private final Cloudinary cloudinary;
     private final CloudinaryService cloudinaryService;
+
+    private final EmailChangeTokenRepo emailChangeTokenRepo;
+    private final MailService mailService;
+
     private final BCryptPasswordEncoder passwordEncoder;
+
+    private final StringRedisTemplate redis;
+    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final BCryptPasswordEncoder bCrypt = new BCryptPasswordEncoder();
+
+    @Value("${app.emailChange.otpTTLMinutes:10}")
+    private int otpTTLMinutes;
+
+    @Value("${app.emailChange.otpMaxAttempts:5}")
+    private int otpMaxAttempts;
+
+    @org.springframework.beans.factory.annotation.Value("${app.emailChange.confirmBaseUrl:https://your-domain.com/api/users/me/confirm-email-change}")
+    private String confirmBaseUrl;
+
+    @org.springframework.beans.factory.annotation.Value("${app.emailChange.ttlMinutes:30}")
+    private int ttlMinutes;
+
+    private String otpKeyForUser(UUID userId) {
+        return "email:change:OTP:" + userId;
+    }
     @Override
     @Transactional
     public AuthResponseDTO createOrUpdateOAuth2User(String email, String name) {
@@ -442,6 +471,265 @@ public class UserServiceImpl implements UserService {
         userRepo.save(me);
         // (không bắt buộc) lưu target để chắc chắn đồng bộ (thường không cần)
         userRepo.save(target);
+    }
+
+    @Override
+    @Transactional
+    public void requestEmailChange(String newEmail) {
+        UUID me = UUID.fromString(getCurrentUserId());
+
+        if (newEmail == null || newEmail.isBlank()) {
+            throw new InvalidRequestException("Email must not be blank");
+        }
+        if (!isEmailFormat(newEmail)) {
+            throw new InvalidRequestException("Invalid email format");
+        }
+
+        userRepo.findByEmail(newEmail).ifPresent(u -> {
+            throw new DuplicateEntityException("Email already in use");
+        });
+
+        User current = userRepo.findById(me)
+                .orElseThrow(() -> new UserNotFoundException("User not found: " + me));
+
+        if (newEmail.equalsIgnoreCase(current.getEmail())) {
+            return; // idempotent: trùng email hiện tại -> bỏ qua
+        }
+
+        // Chỉ giữ 1 token cho 1 user
+        emailChangeTokenRepo.deleteByUserId(me);
+
+        String token = java.util.UUID.randomUUID().toString();
+        EmailChangeToken ect = EmailChangeToken.builder()
+                .userId(me)
+                .newEmail(newEmail.trim())
+                .token(token)
+                .expiresAt(LocalDateTime.now().plusMinutes(ttlMinutes))
+                .used(false)
+                .build();
+        emailChangeTokenRepo.save(ect);
+
+        // FE-first confirm
+        String verifyLink = confirmBaseUrl + "?token=" + token;
+        String subject = "Xác nhận đổi địa chỉ email";
+        String html = """
+        <p>Xin chào,</p>
+        <p>Bạn vừa yêu cầu đổi email đăng nhập. Nhấn vào nút bên dưới để xác nhận:</p>
+        <p><a href="%s" style="display:inline-block;padding:10px 16px;border-radius:6px;background:#4f46e5;color:#fff;text-decoration:none;">Xác nhận đổi email</a></p>
+        <p>Nếu nút không hoạt động, hãy copy link: <br/>%s</p>
+        <p>Liên kết sẽ hết hạn sau %d phút. Nếu bạn không yêu cầu, hãy bỏ qua email này.</p>
+    """.formatted(verifyLink, verifyLink, ttlMinutes);
+
+        mailService.sendEmail(newEmail, subject, html);
+    }
+
+    @Override
+    @Transactional
+    public void confirmEmailChange(String token) {
+        if (token == null || token.isBlank()) {
+            throw new InvalidRequestException("Token is required");
+        }
+        EmailChangeToken ect = emailChangeTokenRepo.findByToken(token)
+                .orElseThrow(() -> new InvalidRequestException("Invalid or expired token"));
+
+        if (ect.isUsed() || ect.isExpired()) {
+            emailChangeTokenRepo.delete(ect);
+            throw new InvalidRequestException("Invalid or expired token");
+        }
+
+        userRepo.findByEmail(ect.getNewEmail()).ifPresent(u -> {
+            throw new DuplicateEntityException("Email already in use");
+        });
+
+        User user = userRepo.findById(ect.getUserId())
+                .orElseThrow(() -> new UserNotFoundException("User not found: " + ect.getUserId()));
+
+        user.setEmail(ect.getNewEmail());
+        user.setUpdatedAt(LocalDateTime.now());
+        userRepo.save(user);
+
+        ect.setUsed(true);
+        emailChangeTokenRepo.save(ect);
+        emailChangeTokenRepo.deleteByUserId(user.getUserId());
+    }
+
+
+    @Value("${app.name:KKUN Quiz}")
+    private String appName;
+
+    @Value("${app.supportEmail:no-reply@kkun-quiz.local}")
+    private String supportEmail;
+
+    @Override
+    @Transactional
+    public void requestEmailChangeOtp(String newEmail) {
+        UUID me = UUID.fromString(getCurrentUserId());
+
+        // Validate cơ bản
+        if (newEmail == null || newEmail.isBlank()) {
+            throw new InvalidRequestException("Email must not be blank");
+        }
+        if (!isEmailFormat(newEmail)) {
+            throw new InvalidRequestException("Invalid email format");
+        }
+        userRepo.findByEmail(newEmail).ifPresent(u -> {
+            throw new DuplicateEntityException("Email already in use");
+        });
+
+        User current = userRepo.findById(me)
+                .orElseThrow(() -> new UserNotFoundException("User not found: " + me));
+        if (newEmail.equalsIgnoreCase(current.getEmail())) {
+            return; // idempotent
+        }
+
+        // Tạo mã 6 số
+        String code = String.format("%06d", new java.util.Random().nextInt(1_000_000));
+        String codeHash = bCrypt.encode(code);
+
+        // Lưu Redis (ghi đè bên cũ)
+        EmailChangeOtpPayload payload = EmailChangeOtpPayload.builder()
+                .newEmail(newEmail.trim())
+                .codeHash(codeHash)
+                .attempts(0)
+                .build();
+        try {
+            String json = objectMapper.writeValueAsString(payload);
+            redis.opsForValue().set(otpKeyForUser(me), json, otpTTLMinutes, java.util.concurrent.TimeUnit.MINUTES);
+        } catch (Exception e) {
+            throw new RuntimeException("Cannot store OTP payload: " + e.getMessage(), e);
+        }
+
+        // ===== GỬI EMAIL OTP (HTML đẹp, tương thích email client) =====
+        String subject = "Mã xác minh đổi email — " + appName;
+
+        String html = """
+    <!doctype html>
+    <html lang="vi">
+    <head>
+      <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+      <title>%1$s - Xác minh email</title>
+    </head>
+    <body style="margin:0;padding:0;background:#f4f5f7;">
+      <table role="presentation" width="100%%" cellspacing="0" cellpadding="0" style="background:#f4f5f7;">
+        <tr>
+          <td align="center" style="padding:24px;">
+            <table role="presentation" width="600" cellspacing="0" cellpadding="0"
+                   style="background:#ffffff;border-radius:12px;overflow:hidden;">
+              <tr>
+                <td style="padding:20px 24px;background:#111827;color:#ffffff;">
+                  <div style="font-size:18px;font-weight:700;line-height:1.4;">%1$s</div>
+                  <div style="font-size:13px;opacity:.8;margin-top:4px;">Mã xác minh đổi email</div>
+                </td>
+              </tr>
+
+              <tr>
+                <td style="padding:24px;">
+                  <p style="margin:0 0 12px 0;font-size:16px;color:#111827;">Xin chào,</p>
+                  <p style="margin:0 0 16px 0;font-size:14px;color:#374151;">
+                    Đây là mã xác thực để đổi email đăng nhập. Vui lòng nhập mã trong vòng
+                    <strong>%2$d phút</strong>.
+                  </p>
+
+                  <div style="text-align:center;margin:24px 0;">
+                    <span style="
+                      display:inline-block;
+                      padding:12px 16px;
+                      font-size:28px;
+                      font-weight:700;
+                      letter-spacing:6px;
+                      color:#111827;
+                      background:#f9fafb;
+                      border:1px solid #e5e7eb;
+                      border-radius:10px;">
+                      %3$s
+                    </span>
+                  </div>
+
+                  <p style="margin:0 0 16px 0;font-size:13px;color:#6b7280;">
+                    Nếu bạn không yêu cầu thao tác này, bạn có thể bỏ qua email.
+                  </p>
+
+                  <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0;" />
+
+                  <p style="margin:0;font-size:12px;color:#9ca3af;">
+                    %1$s • %4$s
+                  </p>
+                </td>
+              </tr>
+            </table>
+
+            <p style="margin:16px 0 0 0;font-size:12px;color:#9ca3af;">
+              © %5$d %1$s. All rights reserved.
+            </p>
+          </td>
+        </tr>
+      </table>
+    </body>
+    </html>
+    """.formatted(
+                appName,                           // %1$s
+                otpTTLMinutes,                     // %2$d
+                code,                              // %3$s
+                supportEmail,                      // %4$s
+                Year.now().getValue()              // %5$d
+        );
+
+        mailService.sendEmail(newEmail, subject, html);
+    }
+
+    @Override
+    @Transactional
+    public void verifyEmailChangeOtp(String code) {
+        UUID me = UUID.fromString(getCurrentUserId());
+        if (code == null || code.isBlank()) {
+            throw new InvalidRequestException("Code is required");
+        }
+
+        String key = otpKeyForUser(me);
+        String json = redis.opsForValue().get(key);
+        if (json == null) {
+            throw new InvalidRequestException("OTP not found or expired");
+        }
+
+        try {
+            EmailChangeOtpPayload payload = objectMapper.readValue(json, EmailChangeOtpPayload.class);
+
+            if (payload.getAttempts() >= otpMaxAttempts) {
+                redis.delete(key);
+                throw new InvalidRequestException("Too many attempts. Please request a new code.");
+            }
+
+            boolean ok = bCrypt.matches(code, payload.getCodeHash());
+            if (!ok) {
+                payload.setAttempts(payload.getAttempts() + 1);
+                redis.opsForValue().set(key, objectMapper.writeValueAsString(payload),
+                        redis.getExpire(key), TimeUnit.SECONDS); // giữ nguyên TTL còn lại
+                throw new InvalidRequestException("Invalid code");
+            }
+
+            // Code hợp lệ -> cập nhật email
+            userRepo.findByEmail(payload.getNewEmail()).ifPresent(u -> {
+                // race condition: email vừa bị ai đó chiếm
+                redis.delete(key);
+                throw new DuplicateEntityException("Email already in use");
+            });
+
+            User user = userRepo.findById(me)
+                    .orElseThrow(() -> new UserNotFoundException("User not found: " + me));
+
+            user.setEmail(payload.getNewEmail());
+            user.setUpdatedAt(LocalDateTime.now());
+            userRepo.save(user);
+
+            // Cleanup
+            redis.delete(key);
+
+        } catch (InvalidRequestException | DuplicateEntityException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new RuntimeException("OTP verification failed: " + e.getMessage(), e);
+        }
     }
 
 }
