@@ -81,4 +81,10 @@ public class User {
     public void setPassword(String password) {
         this.password = passwordEncoder.encode(password);
     }
+
+    @PrePersist
+    public void prePersist() { this.createdAt = this.updatedAt = LocalDateTime.now(); }
+
+    @PreUpdate
+    public void preUpdate()  { this.updatedAt = LocalDateTime.now(); }
 }

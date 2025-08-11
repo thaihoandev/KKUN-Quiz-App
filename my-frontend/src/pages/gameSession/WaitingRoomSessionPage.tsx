@@ -230,7 +230,7 @@ const WaitingRoomSessionPage: React.FC = () => {
             if (!isHost) {
               toast.info("The game has been canceled by the host.");
             }
-            navigate("/quizzes", { replace: true });
+            navigate("/", { replace: true });
           }
         } catch (error) {
           console.error("Error parsing status message:", error);
@@ -271,7 +271,7 @@ const WaitingRoomSessionPage: React.FC = () => {
           if (!isHost) {
             toast.info("The game has been canceled by the host.");
           }
-          navigate("/quizzes", { replace: true });
+          navigate("/", { replace: true });
         } else if (data.game.status === "IN_PROGRESS") {
           navigate(`/game-play/${gameId}`, { replace: true });
         }

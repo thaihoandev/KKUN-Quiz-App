@@ -1,50 +1,68 @@
+import boy from "@/assets/img/illustrations/boy-app-academy.png";
+import girl from "@/assets/img/illustrations/girl-app-academy.png";
+
 const PromotionCards = () => {
   return (
     <div className="row gy-6 mb-6">
+      {/* Card 1 */}
       <div className="col-lg-6">
-        <div className="card shadow-none bg-label-primary h-100">
-          <div className="card-body d-flex justify-content-between flex-wrap-reverse">
-            <div className="mb-0 w-100 app-academy-sm-60 d-flex flex-column justify-content-between text-center text-sm-start">
-              <div className="card-title">
-                <h5 className="text-primary mb-2">Earn a Certificate</h5>
-                <p className="text-body w-sm-80 app-academy-xl-100">
-                  Get the right professional certificate program for you.
-                </p>
+        <div className="card border-0 shadow-sm h-100 rounded-4 bg-label-primary">
+          <div className="card-body">
+            <div className="row align-items-center">
+              {/* Content: 8 cols on md+ */}
+              <div className="col-12 col-md-8 order-2 order-md-1 text-center text-md-start">
+                <div className="card-title">
+                  <h5 className="text-primary mb-2">Earn a Certificate</h5>
+                  <p className="text-body mb-3">
+                    Get the right professional certificate program for you.
+                  </p>
+                </div>
+                <button className="btn btn-sm btn-primary rounded-3">
+                  View Programs
+                </button>
               </div>
-              <div className="mb-0">
-                <button className="btn btn-sm btn-primary">View Programs</button>
+
+              {/* Image: 4 cols on md+ */}
+              <div className="col-12 col-md-4 order-1 order-md-2 text-center text-md-end mb-4 mb-md-0">
+                <img
+                  className="img-fluid"
+                  src={boy}
+                  alt="boy illustration"
+                  style={{ maxHeight: 150, objectFit: "contain" }}
+                />
               </div>
-            </div>
-            <div className="w-100 app-academy-sm-40 d-flex justify-content-center justify-content-sm-end h-px-150 mb-4 mb-sm-0">
-              <img
-                className="img-fluid scaleX-n1-rtl"
-                src="../../assets/img/illustrations/boy-app-academy.png"
-                alt="boy illustration"
-              />
             </div>
           </div>
         </div>
       </div>
+
+      {/* Card 2 */}
       <div className="col-lg-6">
-        <div className="card shadow-none bg-label-danger h-100">
-          <div className="card-body d-flex justify-content-between flex-wrap-reverse">
-            <div className="mb-0 w-100 app-academy-sm-60 d-flex flex-column justify-content-between text-center text-sm-start">
-              <div className="card-title">
-                <h5 className="text-danger mb-2">Best Rated Quizzes</h5>
-                <p className="text-body app-academy-sm-60 app-academy-xl-100">
-                  Enroll now in the most popular and best rated quizzes.
-                </p>
+        <div className="card border-0 shadow-sm h-100 rounded-4 bg-label-danger">
+          <div className="card-body">
+            <div className="row align-items-center">
+              {/* Content: 8 cols on md+ */}
+              <div className="col-12 col-md-8 order-2 order-md-1 text-center text-md-start">
+                <div className="card-title">
+                  <h5 className="text-danger mb-2">Best Rated Quizzes</h5>
+                  <p className="text-body mb-3">
+                    Enroll now in the most popular and best rated quizzes.
+                  </p>
+                </div>
+                <button className="btn btn-sm btn-danger rounded-3">
+                  View Quizzes
+                </button>
               </div>
-              <div className="mb-0">
-                <button className="btn btn-sm btn-danger">View Quizzes</button>
+
+              {/* Image: 4 cols on md+ */}
+              <div className="col-12 col-md-4 order-1 order-md-2 text-center text-md-end mb-4 mb-md-0">
+                <img
+                  className="img-fluid"
+                  src={girl}
+                  alt="girl illustration"
+                  style={{ maxHeight: 150, objectFit: "contain" }}
+                />
               </div>
-            </div>
-            <div className="w-100 app-academy-sm-40 d-flex justify-content-center justify-content-sm-end h-px-150 mb-4 mb-sm-0">
-              <img
-                className="img-fluid scaleX-n1-rtl"
-                src="../../assets/img/illustrations/girl-app-academy.png"
-                alt="girl illustration"
-              />
             </div>
           </div>
         </div>

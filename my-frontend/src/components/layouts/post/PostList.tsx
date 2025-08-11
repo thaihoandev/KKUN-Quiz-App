@@ -115,7 +115,6 @@ const PostList = ({ profile, onUpdate, userId, newPost }: PostListProps) => {
   useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
-        console.log('IntersectionObserver triggered:', entries[0].isIntersecting, 'hasMore:', hasMore, 'isLoading:', isLoading);
         if (entries[0].isIntersecting && hasMore && !isLoading) {
           loadMorePosts();
         }

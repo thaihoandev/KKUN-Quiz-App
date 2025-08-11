@@ -65,7 +65,7 @@ const PostCard: React.FC<PostCardProps> = ({ post, profile, onUpdate }) => {
           dtos.map((dto) => ({
             id: dto.commentId,
             content: dto.content,
-            createdAt: new Date(dto.createdAt),
+            createdAt: parseDate(dto.createdAt),
             user: dto.user || null,
             parentCommentId: dto.parentCommentId,
             replies: dto.replies
@@ -193,10 +193,12 @@ const PostCard: React.FC<PostCardProps> = ({ post, profile, onUpdate }) => {
 
       try {
         const newCommentDTO: CommentDTO = await createComment(post.postId, trimmed, parentCommentId);
+        const parsed = newCommentDTO.createdAt ? parseDate(newCommentDTO.createdAt) : null;
+        const finalCreatedAt = parsed && !isNaN(parsed.getTime()) ? parsed : tempComment.createdAt;
         const newComment: Comment = {
           id: newCommentDTO.commentId,
           content: newCommentDTO.content,
-          createdAt: parseDate(newCommentDTO.createdAt),
+          createdAt: finalCreatedAt,
           user: newCommentDTO.user || null,
           parentCommentId: newCommentDTO.parentCommentId,
           replies: [],

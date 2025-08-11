@@ -9,7 +9,7 @@ import EditProfileModal from "@/components/modals/EditProfileModal";
 import { UserResponseDTO } from "@/interfaces";
 import CoursesTab from "@/components/tabs/CourseTab";
 import NavigationMenu from "@/components/NavigationMenuProfile";
-import EditAvatarModal from "@/components/modals/EditAvtarModal";
+import EditAvatarModal from "@/components/modals/EditAvatarModal";
 
 const UserDashboardPage = () => {
   const profileMenuItems = [

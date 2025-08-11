@@ -11,7 +11,9 @@ interface EditAvatarModalProps {
 
 const getCroppedImg = async (imageSrc: string, croppedAreaPixels: Area): Promise<File> => {
   const image = new Image();
+  image.crossOrigin = "anonymous"; // tránh CORS nếu cần
   image.src = imageSrc;
+
   return new Promise((resolve, reject) => {
     image.onload = () => {
       const canvas = document.createElement("canvas");
@@ -21,12 +23,11 @@ const getCroppedImg = async (imageSrc: string, croppedAreaPixels: Area): Promise
         return;
       }
 
-      // Use the cropped area dimensions to maintain original resolution
+      // Dùng kích thước crop để giữ độ phân giải gốc cho phần được cắt
       const { width, height } = croppedAreaPixels;
       canvas.width = width;
       canvas.height = height;
 
-      // Draw the cropped portion of the image onto the canvas
       ctx.drawImage(
         image,
         croppedAreaPixels.x,
@@ -48,7 +49,7 @@ const getCroppedImg = async (imageSrc: string, croppedAreaPixels: Area): Promise
           }
         },
         "image/jpeg",
-        0.95 // High quality to preserve details
+        0.95
       );
     };
     image.onerror = () => reject(new Error("Failed to load image"));
@@ -63,14 +64,14 @@ const EditAvatarModal = ({ profile, onClose, onUpdate }: EditAvatarModalProps) =
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
 
-  const onCropComplete = useCallback((_: Area, croppedAreaPixels: Area) => {
-    setCroppedAreaPixels(croppedAreaPixels);
+  const onCropComplete = useCallback((_: Area, areaPixels: Area) => {
+    setCroppedAreaPixels(areaPixels);
   }, []);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const file = e.target.files[0];
-      // Validate file size (max 5MB) and type
+      // Validate file size (max 5MB) và type
       if (file.size > 5 * 1024 * 1024) {
         setError("Image size must be less than 5MB");
         return;
@@ -96,7 +97,7 @@ const EditAvatarModal = ({ profile, onClose, onUpdate }: EditAvatarModalProps) =
 
     try {
       const croppedImage = await getCroppedImg(imageSrc, croppedAreaPixels);
-      const updatedProfile = await updateUserAvatar(profile.userId, croppedImage);
+      const updatedProfile = await updateUserAvatar(String(profile.userId), croppedImage);
       onUpdate(updatedProfile);
       onClose();
     } catch (err: any) {
@@ -129,6 +130,7 @@ const EditAvatarModal = ({ profile, onClose, onUpdate }: EditAvatarModalProps) =
               className="form-control mb-3"
               disabled={loading}
             />
+
             {imageSrc && (
               <div
                 className="border rounded"
@@ -145,8 +147,8 @@ const EditAvatarModal = ({ profile, onClose, onUpdate }: EditAvatarModalProps) =
                   image={imageSrc}
                   crop={crop}
                   zoom={zoom}
-                  aspect={1} // Square aspect for avatar
-                  cropShape="round" // Circular crop preview to match HeaderProfile
+                  aspect={1}
+                  cropShape="round"
                   showGrid={false}
                   onCropChange={setCrop}
                   onZoomChange={setZoom}

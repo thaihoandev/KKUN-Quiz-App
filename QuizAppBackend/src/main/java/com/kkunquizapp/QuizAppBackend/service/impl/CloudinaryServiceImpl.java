@@ -18,18 +18,19 @@ public class CloudinaryServiceImpl implements CloudinaryService {
     /**
      * Upload file to Cloudinary under specified folder.
      */
-    public Map upload(MultipartFile file, String folder) throws IOException {
-        Map<String, Object> params = ObjectUtils.asMap(
-                "folder", folder,
-                "resource_type", "auto"
+    public Map upload(MultipartFile file, String publicId) throws IOException {
+        Map options = ObjectUtils.asMap(
+                "public_id", publicId,        // ví dụ: "user_avatars/<uuid>"
+                "overwrite", true,            // ghi đè
+                "invalidate", true,           // bắt CDN xóa cache
+                "unique_filename", false,
+                "resource_type", "image"
         );
-        return cloudinary.uploader().upload(file.getBytes(), params);
+        return cloudinary.uploader().upload(file.getBytes(), options);
     }
 
-    /**
-     * Destroy (delete) an uploaded asset by public_id.
-     */
     public Map destroy(String publicId) throws IOException {
-        return cloudinary.uploader().destroy(publicId, ObjectUtils.emptyMap());
+        return cloudinary.uploader().destroy(publicId,
+                ObjectUtils.asMap("invalidate", true, "resource_type", "image"));
     }
 }

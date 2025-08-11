@@ -203,6 +203,13 @@
 			<artifactId>cloudinary-http44</artifactId>
 			<version>1.39.0</version>
 		</dependency>
+
+		<!-- https://mvnrepository.com/artifact/com.bucket4j/bucket4j_jdk8-core -->
+		<dependency>
+			<groupId>com.bucket4j</groupId>
+			<artifactId>bucket4j_jdk8-core</artifactId>
+			<version>8.10.1</version>
+		</dependency>
 	</dependencies>
 
 	<build>

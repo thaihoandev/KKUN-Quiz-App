@@ -1,8 +1,10 @@
 import { formatDateOnly } from "@/utils/dateUtils";
 import { UserResponseDTO } from "@/interfaces";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import PostList from "../layouts/post/PostList";
-import { createPost, PostDTO, PostRequestDTO } from "@/services/postService";
+import { PostDTO } from "@/services/postService";
+import PostComposer from "../layouts/post/PostComposer";
+import unknownAvatar from "@/assets/img/avatars/unknown.jpg";
 
 interface ProfileTabProps {
   profile: UserResponseDTO | null;
@@ -10,109 +12,16 @@ interface ProfileTabProps {
 }
 
 const ProfileTab = ({ profile, onEditProfile }: ProfileTabProps) => {
-  const [newPostContent, setNewPostContent] = useState("");
-  const [selectedImages, setSelectedImages] = useState<File[]>([]);
-  const [postPrivacy, setPostPrivacy] = useState<'PUBLIC' | 'FRIENDS' | 'PRIVATE'>('PUBLIC');
-  const [isPosting, setIsPosting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [newPost, setNewPost] = useState<PostDTO | null>(null); // Track new post for PostList
-
-
-
-  const handleAddPost = async () => {
-    if (!newPostContent.trim() && selectedImages.length === 0) {
-      setError("Please add content or images to post");
-      return;
-    }
-    if (!profile?.userId) {
-      setError("User ID is required to create a post");
-      return;
-    }
-
-    setIsPosting(true);
-    setError(null);
-
-    try {
-      const mediaWithDimensions = await Promise.all(
-        selectedImages.map(async (file, index) => {
-          const dimensions = await getImageDimensions(file);
-          return {
-            mimeType: file.type,
-            sizeBytes: file.size,
-            width: dimensions.width,
-            height: dimensions.height,
-            caption: "",
-            isCover: index === 0,
-          };
-        })
-      );
-
-      const postData: PostRequestDTO = {
-        content: newPostContent,
-        privacy: postPrivacy,
-        media: mediaWithDimensions,
-      };
-
-      const formData = new FormData();
-      formData.append('post', new Blob([JSON.stringify(postData)], { type: "application/json" }));
-      if (selectedImages.length > 0) {
-        selectedImages.forEach((file) => {
-          formData.append('mediaFiles', file);
-        });
-      }
-
-      const createdPost: PostDTO = await createPost(profile.userId, formData);
-      console.log('New post created:', createdPost);
-      setNewPost(createdPost); // Set new post
-      setNewPostContent("");
-      setSelectedImages([]);
-      setPostPrivacy('PUBLIC');
-    } catch (err) {
-      setError("Failed to create post. Please try again.");
-      console.error('Error creating post:', err);
-    } finally {
-      setIsPosting(false);
-    }
-  };
-
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) {
-      const files = Array.from(e.target.files).slice(0, 5);
-      setSelectedImages([...selectedImages, ...files]);
-    }
-  };
-
-  const removeImage = (index: number) => {
-    setSelectedImages(selectedImages.filter((_, i) => i !== index));
-  };
+  const [newPost, setNewPost] = useState<PostDTO | null>(null); // chuyển qua nhận từ PostComposer
 
   const handlePostUpdate = useCallback((updatedPost: PostDTO) => {
     // Update PostList via callback if needed
   }, []);
 
-  const getImageDimensions = (file: File): Promise<{ width: number; height: number }> => {
-    return new Promise((resolve) => {
-      const img = new Image();
-      img.src = URL.createObjectURL(file);
-      img.onload = () => {
-        resolve({ width: img.width, height: img.height });
-        URL.revokeObjectURL(img.src);
-      };
-      img.onerror = () => {
-        resolve({ width: 0, height: 0 });
-      };
-    });
-  };
-
-  const privacyOptions = [
-    { value: 'PUBLIC', label: 'Public', icon: 'bx bx-globe' },
-    { value: 'FRIENDS', label: 'Friends', icon: 'bx bx-group' },
-    { value: 'PRIVATE', label: 'Private', icon: 'bx bx-lock' },
-  ];
-
   return (
     <div className="container-fluid py-4">
       <div className="row g-3">
+        {/* Left: About + Overview */}
         <div className="col-lg-4">
           <div className="card border-0 shadow-sm mb-3">
             <div className="card-body p-4">
@@ -151,6 +60,7 @@ const ProfileTab = ({ profile, onEditProfile }: ProfileTabProps) => {
               </ul>
             </div>
           </div>
+
           <div className="card border-0 shadow-sm">
             <div className="card-body p-4">
               <h6 className="fw-bold text-uppercase text-muted small mb-3">Overview</h6>
@@ -175,96 +85,25 @@ const ProfileTab = ({ profile, onEditProfile }: ProfileTabProps) => {
             </div>
           </div>
         </div>
+
+        {/* Right: Composer + Posts */}
         <div className="col-lg-8">
-          <div className="card border-0 shadow-sm mb-3">
-            <div className="card-body p-4">
-              {error && (
-                <div className="alert alert-danger alert-dismissible fade show mb-3" role="alert">
-                  {error}
-                  <button type="button" className="btn-close" onClick={() => setError(null)}></button>
-                </div>
-              )}
-              <textarea
-                className="form-control border-0 shadow-sm mb-3"
-                placeholder="What's on your mind?"
-                value={newPostContent}
-                onChange={(e) => setNewPostContent(e.target.value)}
-                rows={2}
-                disabled={isPosting}
-                style={{ resize: 'none', background: '#f8f9fa' }}
-              />
-              <div className="d-flex flex-wrap gap-2 mb-3">
-                {selectedImages.map((image, index) => (
-                  <div key={index} className="position-relative">
-                    <img
-                      src={URL.createObjectURL(image)}
-                      alt="Preview"
-                      style={{ width: "80px", height: "80px", objectFit: "cover", borderRadius: "8px" }}
-                    />
-                    <button
-                      className="btn btn-danger btn-sm position-absolute top-0 end-0 p-0"
-                      style={{ width: "20px", height: "20px", lineHeight: "20px", transform: "translate(50%, -50%)" }}
-                      onClick={() => removeImage(index)}
-                      disabled={isPosting}
-                    >
-                      <i className="bx bx-x m-0"></i>
-                    </button>
-                  </div>
-                ))}
-              </div>
-              <div className="d-flex justify-content-between align-items-center">
-                <div className="dropdown">
-                  <button
-                    className="btn btn-outline-secondary btn-sm d-flex align-items-center"
-                    type="button"
-                    data-bs-toggle="dropdown"
-                    aria-expanded="false"
-                    disabled={isPosting}
-                  >
-                    <i className={privacyOptions.find(opt => opt.value === postPrivacy)?.icon + " me-1"}></i>
-                    {privacyOptions.find(opt => opt.value === postPrivacy)?.label}
-                  </button>
-                  <ul className="dropdown-menu">
-                    {privacyOptions.map((option) => (
-                      <li key={option.value}>
-                        <button
-                          className="dropdown-item"
-                          onClick={() => setPostPrivacy(option.value as 'PUBLIC' | 'FRIENDS' | 'PRIVATE')}
-                        >
-                          <i className={`${option.icon} me-2`}></i>
-                          {option.label}
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-                <div>
-                  <label className="btn btn-outline-secondary btn-sm me-2">
-                    <i className="bx bx-image-add me-1"></i>
-                    Image
-                    <input
-                      type="file"
-                      accept="image/*"
-                      multiple
-                      hidden
-                      onChange={handleImageChange}
-                      disabled={isPosting}
-                    />
-                  </label>
-                  <button
-                    className="btn btn-primary btn-sm"
-                    onClick={handleAddPost}
-                    disabled={isPosting || (!newPostContent.trim() && selectedImages.length === 0)}
-                  >
-                    {isPosting ? (
-                      <span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
-                    ) : null}
-                    Post
-                  </button>
-                </div>
+          {/* Post Composer (đã tách riêng) */}
+          {profile?.userId ? (
+            <PostComposer
+              userId={profile.userId}
+              avatarUrl={profile.avatar || unknownAvatar}
+              onCreated={(post) => setNewPost(post)}
+            />
+          ) : (
+            <div className="card border-0 shadow-sm mb-3 rounded-4">
+              <div className="card-body p-4 text-center text-muted">
+                Please log in to create a post.
               </div>
             </div>
-          </div>
+          )}
+
+          {/* Post List */}
           {profile?.userId ? (
             <PostList
               profile={profile}

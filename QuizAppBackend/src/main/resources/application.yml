@@ -6,6 +6,7 @@ spring:
       enabled: true
       max-file-size: 10MB
       max-request-size: 20MB
+
   security:
     oauth2:
       resourceServer:
@@ -24,21 +25,25 @@ spring:
         provider:
           google:
             issuer-uri: https://accounts.google.com
+
   jwt:
     secret: ${JWT_SECRET_KEY}
+
   datasource:
     url: ${SPRING_DATASOURCE_URL}
     username: ${SPRING_DATASOURCE_USERNAME}
     password: ${SPRING_DATASOURCE_PASSWORD}
     driver-class-name: org.postgresql.Driver
+
   jpa:
     database-platform: org.hibernate.dialect.PostgreSQLDialect
     show-sql: true
     hibernate:
       ddl-auto: update
+
   data:
     redis:
-      host: ${REDIS_HOST_PATH}
+      host: ${REDIS_HOST}
       port: 6379
       timeout: 6000ms
       lettuce:
@@ -46,8 +51,19 @@ spring:
           max-active: 10
           max-idle: 5
           min-idle: 2
+
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: ${MAIL_USERNAME}         # ví dụ: your@gmail.com
+    password: ${MAIL_APP_PASSWORD}     # App Password của Gmail hoặc SMTP khác
+    properties:
+      mail.smtp.auth: true
+      mail.smtp.starttls.enable: true
+
 server:
   port: 8080
+
 logging:
   level:
     org:
@@ -63,10 +79,24 @@ logging:
         security: DEBUG
         web:
           socket: DEBUG
+
 jwt:
   public-key-path: ${JWT_PUBLIC_KEY_PATH}
   private-key-path: ${JWT_PRIVATE_KEY_PATH}
+
 cloudinary:
   cloud-name: ${CLOUDINARY_NAME}
   api-key: ${CLOUDINARY_API_KEY}
   api-secret: ${CLOUDINARY_API_SECRET}
+
+app:
+  name: KKUN Quiz
+  supportEmail: no-reply@kkun-quiz.local
+  emailChange:
+    # Luồng confirm-link (nếu dùng)
+    confirmBaseUrl: http://localhost:3000/api/users/me/confirm-email-change
+    ttlMinutes: 30
+
+    # Luồng OTP
+    otpTTLMinutes: 10
+    otpMaxAttempts: 5

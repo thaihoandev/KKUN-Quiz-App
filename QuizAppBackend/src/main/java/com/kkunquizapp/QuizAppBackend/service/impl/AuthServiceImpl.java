@@ -116,56 +116,80 @@ public class AuthServiceImpl implements AuthService {
     public Map<String, Object> authenticateWithGoogleAndGenerateTokens(String accessToken) {
         try {
             RestTemplate restTemplate = new RestTemplate();
-            String googleUserInfoUrl = "https://www.googleapis.com/oauth2/v1/userinfo?access_token=" + accessToken;
+            String googleUserInfoUrl =
+                    "https://www.googleapis.com/oauth2/v1/userinfo?access_token=" + accessToken;
             ResponseEntity<Map> response = restTemplate.getForEntity(googleUserInfoUrl, Map.class);
 
-            if (!response.getStatusCode().is2xxSuccessful()) {
+            if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null) {
                 throw new IllegalArgumentException("Invalid Google Access Token");
             }
 
             Map<String, Object> userInfo = response.getBody();
-            String email = (String) userInfo.get("email");
-            String name = (String) userInfo.get("name");
-            String avatar = (String) userInfo.get("picture");
+            String email   = (String) userInfo.get("email");
+            String name    = (String) userInfo.get("name");
+            String picture = (String) userInfo.get("picture");
+            // String sub  = (String) userInfo.get("id"); // nếu muốn lưu Google ID
 
-            Optional<User> existingUser = userRepo.findByEmail(email);
-            User user;
-
-            if (existingUser.isPresent()) {
-                user = existingUser.get();
-                if (avatar != null && !avatar.equals(user.getAvatar())) {
-                    user.setAvatar(avatar);
-                    userRepo.save(user);
-                }
-            } else {
-                user = new User();
-                user.setEmail(email);
-                user.setUsername(email);
-                user.setRole(UserRole.USER);
-                user.setName(name);
-                user.setAvatar(avatar);
-                user.setActive(true);
-
-                String randomPassword = RandomStringUtils.randomAlphanumeric(10);
-                user.setPassword(randomPassword); // Password will be encoded in User entity
-
-                userRepo.save(user);
+            if (email == null || email.isBlank()) {
+                throw new IllegalArgumentException("Google account has no email");
             }
 
-            UserResponseDTO userResponse = modelMapper.map(user, UserResponseDTO.class);
-            UserPrincipal userPrincipal = new UserPrincipal(user);
-            Map<String, String> tokens = jwtService.generateTokens(userPrincipal);
+            User user = userRepo.findByEmail(email).orElse(null);
 
-            // Return tokens and user data
+            if (user == null) {
+                // Chưa có → tạo mới từ Google (seed dữ liệu ban đầu)
+                user = new User();
+                user.setEmail(email);
+
+                // Tạo username duy nhất từ local-part của email
+                String uniqueUsername = generateUniqueUsernameFromEmail(email);
+                user.setUsername(uniqueUsername);
+
+                user.setRole(UserRole.USER);
+                user.setName(name);
+                user.setAvatar(picture);
+                user.setActive(true);
+
+                // Đặt mật khẩu ngẫu nhiên (đã encode trong setter của entity)
+                String randomPassword = org.apache.commons.lang3.RandomStringUtils.randomAlphanumeric(12);
+                user.setPassword(randomPassword);
+
+                user = userRepo.save(user);
+            } else {
+                // ĐÃ CÓ user trong DB → KHÔNG override dữ liệu từ Google
+                // (tuỳ chọn) chỉ set avatar nếu đang trống
+                if ((user.getAvatar() == null || user.getAvatar().isBlank()) && picture != null && !picture.isBlank()) {
+                    user.setAvatar(picture);
+                    userRepo.save(user);
+                }
+            }
+
+            // Map từ DB → DTO, sinh token từ DB user
+            UserResponseDTO userResponse = modelMapper.map(user, UserResponseDTO.class);
+            UserPrincipal principal = new UserPrincipal(user);
+            Map<String, String> tokens = jwtService.generateTokens(principal);
+
             Map<String, Object> result = new HashMap<>();
             result.put("accessToken", tokens.get("accessToken"));
             result.put("refreshToken", tokens.get("refreshToken"));
-            result.put("userData", userResponse);
-
+            result.put("userData", userResponse); // <<< LUÔN là dữ liệu từ DB
             return result;
+
         } catch (Exception e) {
             throw new IllegalArgumentException("Google authentication failed");
         }
+    }
+
+    /** Tạo username duy nhất từ email, tránh dạng email đầy đủ */
+    private String generateUniqueUsernameFromEmail(String email) {
+        String base = email.substring(0, email.indexOf('@')).replaceAll("[^a-zA-Z0-9._-]", "");
+        if (base.isBlank()) base = "user";
+        String candidate = base;
+        int i = 1;
+        while (userRepo.findByUsername(candidate).isPresent()) {
+            candidate = base + i++;
+        }
+        return candidate;
     }
 
     @Override

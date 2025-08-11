@@ -14,14 +14,23 @@ const EditProfileModal = ({ profile, onClose, onUpdate }: EditProfileModalProps)
     name: profile?.name || "",
     school: profile?.school || "",
   });
-  const [schoolSearch, setSchoolSearch] = useState(formData.school || "");
+  const [schoolSearch, setSchoolSearch] = useState(profile?.school || "");
   const [showDropdown, setShowDropdown] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const schoolInputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Static list of schools (replace with API call if available)
+  // ✅ Sync lại form khi profile thay đổi
+  useEffect(() => {
+    setFormData({
+      email: profile?.email || "",
+      name: profile?.name || "",
+      school: profile?.school || "",
+    });
+    setSchoolSearch(profile?.school || "");
+  }, [profile?.email, profile?.name, profile?.school]);
+
   const schoolOptions = [
     "Harvard University",
     "Stanford University",
@@ -35,11 +44,10 @@ const EditProfileModal = ({ profile, onClose, onUpdate }: EditProfileModalProps)
     "Princeton University",
   ];
 
-  // Filter schools based on search input
   const filteredSchools = useMemo(() => {
     if (!schoolSearch) return schoolOptions;
-    return schoolOptions.filter((school) =>
-      school.toLowerCase().includes(schoolSearch.toLowerCase())
+    return schoolOptions.filter((s) =>
+      s.toLowerCase().includes(schoolSearch.toLowerCase())
     );
   }, [schoolSearch]);
 
@@ -58,16 +66,6 @@ const EditProfileModal = ({ profile, onClose, onUpdate }: EditProfileModalProps)
     setShowDropdown(false);
   };
 
-  const handleInputFocus = () => {
-    setShowDropdown(true);
-  };
-
-  const handleInputBlur = () => {
-    // Delay hiding dropdown to allow clicking an option
-    setTimeout(() => setShowDropdown(false), 200);
-  };
-
-  // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (
@@ -90,19 +88,24 @@ const EditProfileModal = ({ profile, onClose, onUpdate }: EditProfileModalProps)
 
     try {
       const updatedProfile = await updateUser(profile.userId, {
-        ...formData,
-        username: profile.username, // Keep existing username
-        avatar: profile.avatar, // Keep existing avatar
-        role: profile.roles[0] || "player", // Keep existing role
+        name: formData.name.trim(),
+        school: formData.school.trim(),
+        // KHÔNG gửi email/role nếu BE không cho phép đổi
+        // email: formData.email,
+        // role: profile.roles?.[0],
+        // username: profile.username,
+        // avatar: profile.avatar,
       });
       onUpdate(updatedProfile);
       onClose();
-    } catch (err: any) {
+    } catch (err) {
       setError("Failed to update profile. Please try again.");
     } finally {
       setLoading(false);
     }
   };
+
+  const isSaveDisabled = loading 
 
   return (
     <div
@@ -110,7 +113,7 @@ const EditProfileModal = ({ profile, onClose, onUpdate }: EditProfileModalProps)
       tabIndex={-1}
       style={{ backgroundColor: "rgba(0,0,0,0.5)" }}
       aria-labelledby="editProfileModalLabel"
-      aria-hidden={!loading}
+      aria-hidden={false}
     >
       <div className="modal-dialog modal-dialog-centered modal-md">
         <div className="modal-content border-0 shadow-lg rounded-3">
@@ -126,6 +129,7 @@ const EditProfileModal = ({ profile, onClose, onUpdate }: EditProfileModalProps)
               aria-label="Close"
             ></button>
           </div>
+
           <form onSubmit={handleSubmit}>
             <div className="modal-body pt-3">
               {error && (
@@ -139,6 +143,7 @@ const EditProfileModal = ({ profile, onClose, onUpdate }: EditProfileModalProps)
                   ></button>
                 </div>
               )}
+
               <div className="mb-4">
                 <label htmlFor="email" className="form-label fw-medium text-dark">
                   Email <span className="text-danger">*</span>
@@ -150,16 +155,15 @@ const EditProfileModal = ({ profile, onClose, onUpdate }: EditProfileModalProps)
                   name="email"
                   value={formData.email}
                   onChange={handleChange}
-                  required
                   readOnly
-                  disabled={true}
-                  placeholder="Enter your email"
-                  aria-describedby="emailHelp"
+                  // ❌ không cần disabled; để user thấy rõ vẫn có value
+                  placeholder="Your email"
                 />
                 <div id="emailHelp" className="form-text text-muted">
                   Email cannot be changed.
                 </div>
               </div>
+
               <div className="mb-4">
                 <label htmlFor="name" className="form-label fw-medium text-dark">
                   Full Name <span className="text-danger">*</span>
@@ -171,15 +175,11 @@ const EditProfileModal = ({ profile, onClose, onUpdate }: EditProfileModalProps)
                   name="name"
                   value={formData.name}
                   onChange={handleChange}
-                  required
                   disabled={loading}
                   placeholder="Enter your full name"
-                  aria-describedby="nameHelp"
                 />
-                <div id="nameHelp" className="form-text text-muted">
-                  Your name will be displayed on your profile.
-                </div>
               </div>
+
               <div className="mb-4 position-relative">
                 <label htmlFor="school" className="form-label fw-medium text-dark">
                   School
@@ -191,52 +191,40 @@ const EditProfileModal = ({ profile, onClose, onUpdate }: EditProfileModalProps)
                   name="school"
                   value={schoolSearch}
                   onChange={handleChange}
-                  onFocus={handleInputFocus}
-                  onBlur={handleInputBlur}
+                  onFocus={() => setShowDropdown(true)}
+                  onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
                   disabled={loading}
                   placeholder="Search or type school name..."
                   autoComplete="off"
                   ref={schoolInputRef}
-                  aria-describedby="schoolHelp"
-                  aria-autocomplete="list"
                   aria-controls="schoolDropdown"
                 />
-                {showDropdown && filteredSchools.length > 0 && (
+                {showDropdown && (
                   <div
                     className="dropdown-menu show w-100 border-0 shadow-sm rounded-3 mt-1"
                     ref={dropdownRef}
                     style={{ maxHeight: "200px", overflowY: "auto" }}
                     id="schoolDropdown"
-                    role="listbox"
                   >
-                    {filteredSchools.map((school) => (
-                      <button
-                        key={school}
-                        type="button"
-                        className="dropdown-item"
-                        onClick={() => handleSchoolSelect(school)}
-                        role="option"
-                        aria-selected={formData.school === school}
-                      >
-                        {school}
-                      </button>
-                    ))}
+                    {filteredSchools.length > 0 ? (
+                      filteredSchools.map((school) => (
+                        <button
+                          key={school}
+                          type="button"
+                          className="dropdown-item"
+                          onClick={() => handleSchoolSelect(school)}
+                        >
+                          {school}
+                        </button>
+                      ))
+                    ) : (
+                      <div className="dropdown-item text-muted">No schools found</div>
+                    )}
                   </div>
                 )}
-                {showDropdown && filteredSchools.length === 0 && (
-                  <div
-                    className="dropdown-menu show w-100 border-0 shadow-sm rounded-3 mt-1"
-                    ref={dropdownRef}
-                    style={{ maxHeight: "200px", overflowY: "auto" }}
-                  >
-                    <div className="dropdown-item text-muted">No schools found</div>
-                  </div>
-                )}
-                <div id="schoolHelp" className="form-text text-muted">
-                  Optional: Select or type your school or institution.
-                </div>
               </div>
             </div>
+
             <div className="modal-footer border-0 pt-0">
               <button
                 type="button"
@@ -249,15 +237,11 @@ const EditProfileModal = ({ profile, onClose, onUpdate }: EditProfileModalProps)
               <button
                 type="submit"
                 className="btn btn-primary btn-sm px-4"
-                disabled={loading || !formData.name || !formData.email}
+                disabled={isSaveDisabled}
               >
                 {loading ? (
                   <>
-                    <span
-                      className="spinner-border spinner-border-sm me-2"
-                      role="status"
-                      aria-hidden="true"
-                    ></span>
+                    <span className="spinner-border spinner-border-sm me-2" role="status" />
                     Saving...
                   </>
                 ) : (
