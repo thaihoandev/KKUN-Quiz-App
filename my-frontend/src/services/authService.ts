@@ -47,3 +47,11 @@ export const loginGoogleApi = async (access_token: string) => {
         handleApiError(error, "Google login failed");
     }
 };
+
+export const changePassword = async (payload: {
+  currentPassword: string;
+  newPassword: string;
+}): Promise<void> => {
+  // Backend gợi ý: POST /auth/change-password
+  await axiosInstance.post(`${API_URL}/change-password`, payload);
+};

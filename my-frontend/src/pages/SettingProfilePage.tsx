@@ -1,52 +1,129 @@
 import EditableField from "@/components/formFields/EditableField";
-import NavigationMenu from "@/components/NavigationMenuProfile";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuthStore } from "@/store/authStore";
+import {
+  getCurrentUser,
+  updateUser,
+  deleteSoftUser,
+} from "@/services/userService";
+import EditAvatarModal from "@/components/modals/EditAvatarModal";
+
+type PartialUser = {
+  username?: string;
+  email?: string;
+  phone?: string;
+  school?: string;
+  avatar?: string;
+};
+
+type Notice = { type: "success" | "error"; message: string };
 
 const SettingProfilePage = () => {
+  const navigate = useNavigate();
+  const { user, logout } = useAuthStore(); // giả định store có logout()
+  const [me, setMe] = useState<any | null>(null);
+
   const [selectedAvatar, setSelectedAvatar] = useState(1);
-  const [activeTab, setActiveTab] = useState("/settings"); // Manage active tab
   const [password, setPassword] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [showEditAvatar, setShowEditAvatar] = useState(false);
 
-  const menuItems = [
-    { path: "/settings", icon: "bx-cog", label: "Settings" },
-    { path: "/change-password", icon: "bx-cog", label: "Change password" },
-  ];
+  const [notice, setNotice] = useState<Notice | null>(null);
 
-  const handleFieldChange = (fieldName: string, newValue: string) => {
-    console.log(`Field ${fieldName} updated to: ${newValue}`);
-    // Add API call or state update here
+  const showMessage = (msg: Notice) => {
+    setNotice(msg);
+    // Tự ẩn sau 4s (tuỳ chọn)
+    setTimeout(() => setNotice(null), 4000);
   };
 
-  const handleDeleteAccount = () => {
-    if (password && confirmDelete) {
-      console.log("Initiating account deletion...");
-      // Add API call to delete account
+  useEffect(() => {
+    (async () => {
+      try {
+        const current = await getCurrentUser();
+        if (current) {
+          setMe(current);
+        } else {
+          showMessage({ type: "error", message: "Không thể tải thông tin người dùng." });
+        }
+      } catch (err: any) {
+        const message =
+          err?.response?.data?.message ||
+          err?.response?.data?.error ||
+          "Không thể tải thông tin người dùng.";
+        showMessage({ type: "error", message });
+      }
+    })();
+  }, []);
+
+  const safeUserId = me?.userId || user?.userId;
+
+  const handleFieldChange = async (fieldName: string, newValue: string) => {
+    if (!safeUserId) return;
+    setSaving(true);
+    try {
+      const payload: PartialUser = { [fieldName]: newValue } as PartialUser;
+      const updated = await updateUser(String(safeUserId), payload as any);
+      setMe(updated);
+      showMessage({ type: "success", message: "Cập nhật thông tin thành công." });
+    } catch (err: any) {
+      const message =
+        err?.response?.data?.message ||
+        err?.response?.data?.error ||
+        "Cập nhật thất bại. Vui lòng thử lại.";
+      showMessage({ type: "error", message });
+    } finally {
+      setSaving(false);
     }
   };
 
-  const handleAvatarUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      console.log("Uploading new avatar:", file);
-      // Handle file upload (e.g., to a server or display preview)
+  const handleDeleteAccount = async () => {
+    if (!safeUserId) return;
+    if (!password || !confirmDelete) return;
+    
+    setDeleting(true);
+    try {
+      // YÊU CẦU: deleteSoftUser phải nhận password (xem ghi chú bên dưới)
+      await deleteSoftUser(String(safeUserId), String(password));
+      showMessage({ type: "success", message: "Tài khoản đã được vô hiệu hóa." });
+      if (logout) logout();
+      navigate("/");
+    } catch (err: any) {
+      const message =
+        err?.response?.data?.message ||
+        err?.response?.data?.error ||
+        "Xóa tài khoản thất bại. Vui lòng kiểm tra mật khẩu.";
+      showMessage({ type: "error", message });
+    } finally {
+      setDeleting(false);
     }
   };
+
+  const displayAvatar =
+    me?.avatar || `/assets/img/avatars/${selectedAvatar}.png`;
 
   return (
     <div
       className="container-xxl flex-grow-1 container-p-y text-white"
       style={{ minHeight: "100vh" }}
     >
-      <div className="row">
-        <div className="col-12">
-          <NavigationMenu
-            menuItems={menuItems}
-            activeTab={activeTab}
-            onTabChange={setActiveTab}
+      {/* Notification */}
+      {notice && (
+        <div
+          className={`alert alert-${notice.type === "success" ? "success" : "danger"} alert-dismissible fade show`}
+          role="alert"
+        >
+          {notice.message}
+          <button
+            type="button"
+            className="btn-close"
+            aria-label="Close"
+            onClick={() => setNotice(null)}
           />
         </div>
-      </div>
+      )}
 
       {/* Profile Information */}
       <div className="row mb-4">
@@ -60,99 +137,75 @@ const SettingProfilePage = () => {
               <div className="d-flex flex-column flex-md-row align-items-center gap-3 mb-4">
                 <div className="position-relative">
                   <img
-                    src={`/assets/img/avatars/${selectedAvatar}.png`} // Standardized path
-                    alt={`User avatar ${selectedAvatar}`}
+                    src={displayAvatar}
+                    alt="User avatar"
                     className="rounded-circle border border-2 border-primary"
                     style={{ width: "100px", height: "100px", objectFit: "cover" }}
                   />
-                  <label
+
+                  {/* Nút mở modal cắt ảnh */}
+                  <button
+                    type="button"
                     className="btn btn-sm btn-primary position-absolute bottom-0 end-0 rounded-circle"
-                    style={{ width: "32px", height: "32px", padding: "0" }}
+                    style={{ width: "32px", height: "32px", padding: 0 }}
+                    title="Đổi ảnh đại diện"
+                    onClick={() => setShowEditAvatar(true)}
                   >
                     <i className="bx bx-camera fs-5"></i>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      hidden
-                      onChange={handleAvatarUpload}
-                    />
-                  </label>
+                  </button>
                 </div>
 
                 <div className="mt-3 mt-md-0">
-                  <h5 className="mb-1">quizlettel5936986</h5>
+                  <h5 className="mb-1">{me?.username ?? "Tài khoản"}</h5>
                   <p className="text-muted mb-3">Chọn ảnh đại diện</p>
-
-                  <div className="avatar-gallery d-flex flex-wrap gap-2 mb-2" style={{ maxWidth: "500px" }}>
-                    {[...Array(8)].map((_, index) => (
-                      <img
-                        key={index}
-                        src={`/assets/img/avatars/avatar-${index + 1}.png`} // Standardized path
-                        alt={`Avatar option ${index + 1}`}
-                        className={`rounded-circle ${selectedAvatar === index + 1 ? "border-2 border-primary" : "border-1 border-secondary"}`}
-                        style={{
-                          width: "48px",
-                          height: "48px",
-                          cursor: "pointer",
-                          transition: "transform 0.2s",
-                        }}
-                        onClick={() => setSelectedAvatar(index + 1)}
-                      />
-                    ))}
-                    <label
-                      className="btn btn-outline-secondary rounded-circle d-flex align-items-center justify-content-center"
-                      style={{ width: "48px", height: "48px", padding: "0" }}
-                    >
-                      <i className="bx bx-plus fs-5"></i>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        hidden
-                        onChange={handleAvatarUpload}
-                      />
-                    </label>
-                  </div>
+                  <small className="text-muted d-block">
+                    Tip: Chọn ảnh trong gallery chỉ thay đổi hiển thị tạm thời. Ảnh đại diện chính thức sẽ cập nhật sau khi bạn tải/cắt và lưu.
+                  </small>
                 </div>
               </div>
 
               <div className="row g-4">
                 <EditableField
                   label="Tên người dùng"
-                  initialValue="quizlettel5936986"
+                  initialValue={me?.username ?? ""}
                   fieldName="username"
                   fieldType="text"
                   onValueChange={handleFieldChange}
+                  disabled={saving}
                 />
                 <EditableField
                   label="Email"
-                  initialValue="hoanthail103@gmail.com"
+                  initialValue={me?.email ?? ""}
                   fieldName="email"
                   fieldType="email"
                   onValueChange={handleFieldChange}
+                  disabled={true}
                 />
                 <EditableField
                   label="Số điện thoại"
-                  initialValue="+84 123 456 789"
+                  initialValue={me?.phone ?? ""}
                   fieldName="phone"
                   fieldType="phoneNumber"
                   onValueChange={handleFieldChange}
+                  disabled={saving}
                 />
                 <EditableField
                   label="Trường"
-                  initialValue="HUTECH"
+                  initialValue={me?.school ?? ""}
                   fieldName="school"
                   onValueChange={handleFieldChange}
+                  disabled={saving}
                 />
                 <div className="col-md-6">
                   <div className="form-group">
                     <label className="form-label text-muted">Loại tài khoản</label>
-                    <select className="form-select rounded-3 border-0 bg-light">
-                      <option>Teacher</option>
-                      <option>Student</option>
+                    <select className="form-select rounded-3 border-0 bg-light" disabled>
+                      <option>{me?.roles?.includes("ADMIN") ? "Admin" : "User"}</option>
                     </select>
                   </div>
                 </div>
               </div>
+
             </div>
           </div>
         </div>
@@ -210,13 +263,8 @@ const SettingProfilePage = () => {
                   <div>
                     <p className="mb-1 fw-semibold">Cảnh báo: Hành động không thể hoàn tác</p>
                     <p className="mb-0">
-                      Bạn có chắc chắn muốn xóa tài khoản của mình không? Hành động này không thể hoàn tác và tất cả dữ liệu của bạn sẽ bị xóa vĩnh viễn, bao gồm:
+                      Tài khoản sẽ bị vô hiệu hóa (soft delete). Quản trị viên có thể khôi phục nếu cần.
                     </p>
-                    <ul className="mt-2 mb-0">
-                      <li>Tất cả dữ liệu cá nhân</li>
-                      <li>Lịch sử hoạt động</li>
-                      <li>Các tài liệu đã lưu</li>
-                    </ul>
                   </div>
                 </div>
               </div>
@@ -244,17 +292,30 @@ const SettingProfilePage = () => {
               </div>
               <button
                 className="btn btn-danger px-4 py-2"
-                disabled={!password || !confirmDelete}
+                disabled={!password || !confirmDelete || deleting}
                 onClick={handleDeleteAccount}
-                aria-disabled={!password || !confirmDelete}
+                aria-disabled={!password || !confirmDelete || deleting}
               >
-                <i className="bx bx-trash-alt me-1"></i>
-                Xóa tài khoản
+                <i className={`bx ${deleting ? "bx-loader-alt bx-spin" : "bx-trash-alt"} me-1`}></i>
+                {deleting ? "Đang xóa..." : "Xóa tài khoản"}
               </button>
             </div>
           </div>
         </div>
       </div>
+
+      {/* Modal cắt & cập nhật avatar */}
+      {showEditAvatar && me && (
+        <EditAvatarModal
+          profile={me}
+          onClose={() => setShowEditAvatar(false)}
+          onUpdate={(updated) => {
+            setMe(updated);
+            setShowEditAvatar(false);
+            showMessage({ type: "success", message: "Cập nhật ảnh đại diện thành công." });
+          }}
+        />
+      )}
     </div>
   );
 };

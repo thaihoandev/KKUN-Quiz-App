@@ -4,7 +4,7 @@ import { Button } from "react-bootstrap";
 import PasswordField from "@/components/formFields/PasswordField";
 import { changePasswordschema } from "@/schemas/authSchema";
 import { useState } from "react";
-import NavigationMenu from "@/components/NavigationMenuProfile";
+import { changePassword } from "@/services/authService";
 
 interface ChangePasswordForm {
   currentPassword: string;
@@ -13,14 +13,8 @@ interface ChangePasswordForm {
 }
 
 const ChangePasswordPage = () => {
-  const [activeTab, setActiveTab] = useState("/change-password"); // Manage active tab
   const [isLoading, setIsLoading] = useState(false);
   const [submitMessage, setSubmitMessage] = useState<{ type: "success" | "error"; message: string } | null>(null);
-
-  const menuItems = [
-    { path: "/settings", icon: "bx-cog", label: "Settings" },
-    { path: "/change-password", icon: "bx-lock", label: "Change Password" },
-  ];
 
   const {
     register,
@@ -33,24 +27,18 @@ const ChangePasswordPage = () => {
     setIsLoading(true);
     setSubmitMessage(null);
     try {
-      // Replace with actual API call
-      const response = await fetch("/api/user/change-password", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          currentPassword: data.currentPassword,
-          newPassword: data.newPassword,
-        }),
+      await changePassword({
+        currentPassword: data.currentPassword,
+        newPassword: data.newPassword,
       });
-      if (response.ok) {
-        setSubmitMessage({ type: "success", message: "Password updated successfully!" });
-        reset(); // Clear form after success
-      } else {
-        const errorData = await response.json();
-        setSubmitMessage({ type: "error", message: errorData.message || "Failed to update password" });
-      }
-    } catch (error) {
-      setSubmitMessage({ type: "error", message: "An error occurred. Please try again." });
+      setSubmitMessage({ type: "success", message: "Password updated successfully!" });
+      reset(); // Clear form after success
+    } catch (err: any) {
+      const message =
+        err?.response?.data?.message ||
+        err?.response?.data?.error ||
+        "Failed to update password";
+      setSubmitMessage({ type: "error", message });
     } finally {
       setIsLoading(false);
     }
@@ -61,16 +49,6 @@ const ChangePasswordPage = () => {
       className="container-xxl flex-grow-1 container-p-y text-white"
       style={{ minHeight: "100vh" }}
     >
-      <div className="row">
-        <div className="col-12">
-          <NavigationMenu
-            menuItems={menuItems}
-            activeTab={activeTab}
-            onTabChange={setActiveTab}
-          />
-        </div>
-      </div>
-
       {/* Change Password Section */}
       <div className="row mb-4">
         <div className="col-12">

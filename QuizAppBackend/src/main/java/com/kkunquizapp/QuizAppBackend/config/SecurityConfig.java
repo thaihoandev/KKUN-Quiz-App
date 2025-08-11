@@ -96,7 +96,8 @@ public class SecurityConfig {
                                 "/api/users/me",
                                 "/api/games/create",
                                 "/api/games/{gameId}/start",
-                                "/api/games/{gameId}/end"
+                                "/api/games/{gameId}/end",
+                                "/api/auth/change-password"
                         ).authenticated()
                         .anyRequest().permitAll()
                 )

@@ -33,13 +33,19 @@ import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 import org.springframework.web.multipart.MultipartFile;
 
+// imports cần thêm
+import com.kkunquizapp.QuizAppBackend.dto.FriendSuggestionDTO;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+
+
 import java.io.IOException;
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 import java.util.stream.Collectors;
 
 import static com.kkunquizapp.QuizAppBackend.helper.validateHelper.isEmailFormat;
@@ -56,7 +62,7 @@ public class UserServiceImpl implements UserService {
     private final JwtService jwtService;
     private final Cloudinary cloudinary;
     private final CloudinaryService cloudinaryService;
-
+    private final BCryptPasswordEncoder passwordEncoder;
     @Override
     @Transactional
     public AuthResponseDTO createOrUpdateOAuth2User(String email, String name) {
@@ -135,6 +141,36 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional
+    public void restoreUser(UUID id) {
+        // Lấy user cần restore
+        User user = userRepo.findById(id)
+                .orElseThrow(() -> new UserNotFoundException("User not found with ID: " + id));
+
+        // Chỉ admin mới được restore
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (!(authentication != null && authentication.getPrincipal() instanceof Jwt jwt)) {
+            throw new SecurityException("Invalid Access Token");
+        }
+
+        @SuppressWarnings("unchecked")
+        List<String> roles = jwt.getClaim("roles");
+        boolean isAdmin = roles != null && roles.contains(UserRole.ADMIN.name());
+        if (!isAdmin) {
+            throw new SecurityException("You do not have permission to restore this user");
+        }
+
+        // Nếu đã active rồi thì idempotent
+        if (user.isActive()) {
+            return;
+        }
+
+        user.setActive(true);
+        user.setUpdatedAt(LocalDateTime.now());
+        userRepo.save(user);
+    }
+
+    @Override
+    @Transactional
     public UserResponseDTO updateUser(UUID id, UserRequestDTO userRequestDTO) {
         User existingUser = userRepo.findById(id)
                 .orElseThrow(() -> new UserNotFoundException("User not found with ID: " + id));
@@ -189,51 +225,114 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional
-    public UserResponseDTO updateUserAvatar(UUID id, MultipartFile file, String token) {
-        // Validate access token and user permissions
+    public void deleteSoftUser(UUID id, String password) {
+        // Lấy user cần xóa
+        User user = userRepo.findById(id)
+                .orElseThrow(() -> new UserNotFoundException("User not found with ID: " + id));
+
+        // Kiểm tra quyền: admin hoặc chính chủ
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (!(authentication.getPrincipal() instanceof Jwt jwt)) {
+        if (!(authentication != null && authentication.getPrincipal() instanceof Jwt jwt)) {
             throw new SecurityException("Invalid Access Token");
         }
 
         String userIdFromToken = jwt.getClaim("userId");
+        @SuppressWarnings("unchecked")
+        List<String> roles = jwt.getClaim("roles");
+        boolean isAdmin = roles != null && roles.contains(UserRole.ADMIN.name());
+
+        if (!isAdmin && !id.toString().equals(userIdFromToken)) {
+            throw new SecurityException("You do not have permission to delete this user");
+        }
+
+        // ✅ Kiểm tra mật khẩu (bắt buộc nếu không phải admin)
+        if (!isAdmin) {
+            if (password == null || password.isBlank()) {
+                throw new IllegalArgumentException("Password is required to delete account");
+            }
+            if (!passwordEncoder.matches(password, user.getPassword())) {
+                throw new SecurityException("Invalid password");
+            }
+        }
+
+        // Đã soft-delete trước đó thì thôi (idempotent)
+        if (!user.isActive()) {
+            return;
+        }
+
+        // Thực hiện soft delete
+        user.setActive(false);
+        user.setUpdatedAt(LocalDateTime.now());
+        userRepo.save(user);
+    }
+
+
+    @Override
+    @Transactional
+    public UserResponseDTO updateUserAvatar(UUID id, MultipartFile file, String token) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (!(authentication.getPrincipal() instanceof Jwt jwt)) {
+            throw new SecurityException("Invalid Access Token");
+        }
+        String userIdFromToken = jwt.getClaim("userId");
         List<String> roles = jwt.getClaim("roles");
         boolean isAdmin = roles.contains(UserRole.ADMIN.name());
-
-        // Check if user is admin or updating their own avatar
         if (!isAdmin && !userIdFromToken.equals(id.toString())) {
             throw new SecurityException("You do not have permission to update this user's avatar");
         }
 
-        // Find user
         User user = userRepo.findById(id)
                 .orElseThrow(() -> new UserNotFoundException("User not found with ID: " + id));
 
         try {
-            // Validate file
             if (file == null || file.isEmpty()) {
                 throw new IllegalArgumentException("Avatar file cannot be empty");
             }
 
-            // Delete existing avatar if it exists
-            if (user.getAvatar() != null && !user.getAvatar().isEmpty()) {
-                String existingPublicId = "user_avatars/" + id.toString();
-                cloudinaryService.destroy(existingPublicId);
-            }
+            // public_id cố định để luôn overwrite
+            String publicId = "user_avatars/" + id;
+            Map uploadResult = cloudinaryService.upload(file, publicId);
 
-            // Upload new avatar to Cloudinary
-            Map uploadResult = cloudinaryService.upload(file, "user_avatars/" + id.toString());
-            String avatarUrl = (String) uploadResult.get("secure_url");
-
-            // Update user avatar
+            String avatarUrl = (String) uploadResult.get("secure_url"); // sẽ có /v1234567890/ trong URL
             user.setAvatar(avatarUrl);
-            User updatedUser = userRepo.save(user);
+            user.setUpdatedAt(LocalDateTime.now());
 
-            // Map to DTO and return
+            User updatedUser = userRepo.save(user);
             return modelMapper.map(updatedUser, UserResponseDTO.class);
         } catch (IOException e) {
             throw new RuntimeException("Failed to upload avatar to Cloudinary: " + e.getMessage(), e);
         }
+    }
+
+    // ==================== NEW: changePassword ====================
+    @Override
+    @Transactional
+    public void changePassword(UUID userId, String currentPassword, String newPassword) {
+        if (currentPassword == null || currentPassword.isBlank()
+                || newPassword == null || newPassword.isBlank()) {
+            throw new InvalidRequestException("Password must not be blank");
+        }
+
+        // (tuỳ chọn) chính sách độ mạnh
+        if (newPassword.length() < 8) {
+            throw new InvalidRequestException("New password must be at least 8 characters");
+        }
+
+        User user = userRepo.findById(userId)
+                .orElseThrow(() -> new UserNotFoundException("User not found with ID: " + userId));
+
+        // Kiểm tra mật khẩu hiện tại đúng không
+        if (!encoder.matches(currentPassword, user.getPassword())) {
+            throw new InvalidRequestException("Current password is incorrect");
+        }
+
+        // Đặt mật khẩu mới (setter đã tự encode)
+        user.setPassword(newPassword);
+        user.setUpdatedAt(LocalDateTime.now());
+        userRepo.save(user);
+
+        // (tuỳ chọn) Invalidate refresh tokens nếu bạn có cơ chế lưu token
+        // jwtService.revokeTokensForUser(userId); // ví dụ
     }
 
     @Override
@@ -253,4 +352,96 @@ public class UserServiceImpl implements UserService {
 
         throw new IllegalStateException("Cannot get userId from Access Token or request");
     }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<FriendSuggestionDTO> getFriendSuggestions(UUID currentUserId, int page, int size) {
+        User me = userRepo.findById(currentUserId)
+                .orElseThrow(() -> new UserNotFoundException("User not found with ID: " + currentUserId));
+
+        // Tập bạn bè hiện tại để loại khỏi gợi ý
+        Set<UUID> myFriendIds = me.getFriends().stream()
+                .map(User::getUserId)
+                .collect(Collectors.toSet());
+
+        // có thể loại thêm: chính mình
+        Set<UUID> excluded = new java.util.HashSet<>(myFriendIds);
+        // (không cần add currentUserId vì query đã <> currentId, nhưng add cũng không sao)
+        excluded.add(currentUserId);
+
+        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
+
+        Page<User> candidates = userRepo.findSuggestions(
+                currentUserId,
+                excluded,
+                excluded.isEmpty(), // nếu true -> bỏ điều kiện NOT IN
+                pageable
+        );
+
+        // Tính mutual friends (đếm giao giữa friends của candidate và friends của mình)
+        // Lưu ý: có thể xảy ra N+1, nhưng page nhỏ (10/20) thì OK. Cần tối ưu có thể dùng query phức tạp hơn.
+        return candidates.getContent().stream().map(u -> {
+                    int mutual = (int) u.getFriends().stream()
+                            .map(User::getUserId)
+                            .filter(myFriendIds::contains)
+                            .count();
+
+                    return new FriendSuggestionDTO(
+                            u.getUserId(),
+                            u.getName(),
+                            u.getUsername(),
+                            u.getAvatar(),
+                            mutual
+                    );
+                })
+                // Sắp xếp giảm dần theo mutual, cùng mutual thì theo createdAt desc (đã sort sẵn từ pageable)
+                .sorted((a, b) -> Integer.compare(b.getMutualFriends(), a.getMutualFriends()))
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional
+    public void addFriend(UUID requesterId, UUID targetUserId) {
+        if (requesterId.equals(targetUserId)) {
+            throw new InvalidRequestException("You cannot add yourself as a friend");
+        }
+
+        // Kiểm tra quyền: requesterId phải trùng userId trong token hoặc admin
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (!(authentication != null && authentication.getPrincipal() instanceof Jwt jwt)) {
+            throw new SecurityException("Invalid Access Token");
+        }
+
+        String userIdFromToken = jwt.getClaim("userId");
+        @SuppressWarnings("unchecked")
+        List<String> roles = jwt.getClaim("roles");
+        boolean isAdmin = roles != null && roles.contains(UserRole.ADMIN.name());
+
+        if (!isAdmin && !requesterId.toString().equals(userIdFromToken)) {
+            throw new SecurityException("You do not have permission to add friends for this user");
+        }
+
+        User me = userRepo.findById(requesterId)
+                .orElseThrow(() -> new UserNotFoundException("Requester not found: " + requesterId));
+        User target = userRepo.findById(targetUserId)
+                .orElseThrow(() -> new UserNotFoundException("User to add not found: " + targetUserId));
+
+        if (!me.isActive() || !target.isActive()) {
+            throw new InvalidRequestException("Inactive accounts cannot make friend connections");
+        }
+
+        // Nếu đã là bạn rồi -> idempotent
+        if (me.getFriends().stream().anyMatch(f -> f.getUserId().equals(targetUserId))) {
+            return;
+        }
+
+        // Thêm bạn 2 chiều (hàm addFriend của entity đã đảm bảo 2 chiều)
+        me.addFriend(target);
+
+        // Lưu chủ sở hữu quan hệ (User là owning side của @ManyToMany vì không có mappedBy)
+        userRepo.save(me);
+        // (không bắt buộc) lưu target để chắc chắn đồng bộ (thường không cần)
+        userRepo.save(target);
+    }
+
 }

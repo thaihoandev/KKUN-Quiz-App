@@ -29,7 +29,6 @@ export class WebSocketService {
 
   private connect() {
     const WS_ENDPOINT = import.meta.env.VITE_WS_URL || 'http://localhost:8080/ws';
-    console.log('Connecting to WebSocket endpoint:', WS_ENDPOINT);
     const socket = new SockJS(WS_ENDPOINT);
     this.client = new StompJs.Client({
       webSocketFactory: () => socket,
@@ -39,10 +38,8 @@ export class WebSocketService {
     });
 
     this.client.onConnect = () => {
-      console.log('WebSocket connected successfully');
       this.isConnected = true;
       this.postUpdateCallbacks.forEach((_, postId) => {
-        console.log('Re-subscribing to post topic:', postId);
       });
       if (this.currentUserId) {
         this.subscribeToNotificationTopic(this.currentUserId);
@@ -64,11 +61,9 @@ export class WebSocketService {
 
   private subscribeToNotificationTopic(userId: string) {
     if (this.client && this.isConnected) {
-      console.log(`Subscribing to notification topic: /topic/notifications/user/${userId}`);
       this.notificationSubscription = this.client.subscribe(`/topic/notifications/user/${userId}`, (message) => {
         try {
           const notification: NotificationDTO = JSON.parse(message.body);
-          console.log('Received notification for userId:', userId, notification);
           const mappedNotification: Notification = {
             id: parseInt(notification.notificationId.split('-')[1], 10) || Date.now(),
             title: `<strong>${notification.actor?.name || 'Someone'}</strong> ${notification.verb} your ${notification.targetType} ${notification.content ? `: "<strong>${notification.content}</strong>"` : ''}.`,
@@ -76,10 +71,8 @@ export class WebSocketService {
             time: new Date(notification.createdAt).toLocaleTimeString(),
             avatar: notification.actor?.avatar || unknownAvatar,
           };
-          console.log('Mapped notification:', notification);
           this.notificationCallbacks.forEach((callback) => callback(mappedNotification));
           if (Notification.permission === 'granted') {
-            console.log('Showing browser notification:', mappedNotification.message);
             new Notification(mappedNotification.message, {
               body: `Post ID: ${notification.targetId}`,
               icon: mappedNotification.avatar,
@@ -87,7 +80,6 @@ export class WebSocketService {
           } else if (Notification.permission !== 'denied') {
             Notification.requestPermission().then((permission) => {
               if (permission === 'granted') {
-                console.log('Showing browser notification after permission granted:', mappedNotification.message);
                 new Notification(mappedNotification.message, {
                   body: `Post ID: ${notification.targetId}`,
                   icon: mappedNotification.avatar,
@@ -105,23 +97,19 @@ export class WebSocketService {
   }
 
   public registerNotificationCallback(callback: NotificationCallback) {
-    console.log('Registering notification callback');
     if (!this.notificationCallbacks.includes(callback)) {
       this.notificationCallbacks.push(callback);
     }
   }
 
   public unregisterNotificationCallback(callback: NotificationCallback) {
-    console.log('Unregistering notification callback');
     this.notificationCallbacks = this.notificationCallbacks.filter((cb) => cb !== callback);
   }
 
   public setUserId(userId: string | null) {
-    console.log('Setting WebSocket userId:', userId);
     this.currentUserId = userId;
     if (this.isConnected && this.client) {
       if (this.notificationSubscription) {
-        console.log('Unsubscribing from previous notification topic');
         this.notificationSubscription.unsubscribe();
         this.notificationSubscription = null;
       }
@@ -135,7 +123,6 @@ export class WebSocketService {
     if (this.client) {
       this.client.deactivate();
       this.isConnected = false;
-      console.log('WebSocket service disconnected');
     }
   }
 
@@ -147,6 +134,5 @@ export class WebSocketService {
 export const webSocketService = new WebSocketService(null);
 
 export const setWebSocketUserId = (userId: string | null) => {
-  console.log('setWebSocketUserId called with userId:', userId);
   webSocketService.setUserId(userId);
 };

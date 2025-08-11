@@ -16,5 +16,6 @@ public class UserResponseDTO {
     private String avatar;
     private List<String> roles;
     private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
     private boolean isActive;
 }

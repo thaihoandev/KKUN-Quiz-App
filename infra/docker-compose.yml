@@ -20,15 +20,15 @@ services:
     networks:
       - appnet
 
-  mcq:
-    image: ghcr.io/thaihoandev/kkun-quiz-app-mcq:latest
-    # Nếu mcq cần biến môi trường thì bật dòng dưới:
-    # env_file:
-    #   - ./mcq.env
-    depends_on:
-      - backend
-    networks:
-      - appnet
+  # mcq:
+  #   image: ghcr.io/thaihoandev/kkun-quiz-app-mcq:latest
+  #   # Nếu mcq cần biến môi trường thì bật dòng dưới:
+  #   # env_file:
+  #   #   - ./mcq.env
+  #   depends_on:
+  #     - backend
+  #   networks:
+  #     - appnet
 
   db:
     image: postgres:16-alpine

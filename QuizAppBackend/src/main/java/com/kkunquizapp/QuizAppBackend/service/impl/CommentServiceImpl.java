@@ -1,5 +1,4 @@
-package com.kkunquizapp.QuizAppBackend.service;
-
+package com.kkunquizapp.QuizAppBackend.service.impl;
 import com.kkunquizapp.QuizAppBackend.dto.CommentDTO;
 import com.kkunquizapp.QuizAppBackend.dto.UserDTO;
 import com.kkunquizapp.QuizAppBackend.dto.CommentRequestDTO;
@@ -9,6 +8,8 @@ import com.kkunquizapp.QuizAppBackend.model.User;
 import com.kkunquizapp.QuizAppBackend.repo.CommentRepo;
 import com.kkunquizapp.QuizAppBackend.repo.PostRepo;
 import com.kkunquizapp.QuizAppBackend.repo.UserRepo;
+import com.kkunquizapp.QuizAppBackend.service.CommentService;
+import com.kkunquizapp.QuizAppBackend.service.NotificationService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
