@@ -1,9 +1,6 @@
 package com.kkunquizapp.QuizAppBackend.service;
 
-import com.kkunquizapp.QuizAppBackend.dto.AuthResponseDTO;
-import com.kkunquizapp.QuizAppBackend.dto.FriendSuggestionDTO;
-import com.kkunquizapp.QuizAppBackend.dto.UserRequestDTO;
-import com.kkunquizapp.QuizAppBackend.dto.UserResponseDTO;
+import com.kkunquizapp.QuizAppBackend.dto.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
@@ -28,4 +25,12 @@ public interface UserService {
     void confirmEmailChange(String token);
     void requestEmailChangeOtp(String newEmail);
     void verifyEmailChangeOtp(String code);
+
+    void sendFriendRequest(UUID requesterId, UUID targetUserId);
+    void acceptFriendRequest(UUID receiverId, UUID requestId);
+    void declineFriendRequest(UUID receiverId, UUID requestId);
+    void cancelFriendRequest(UUID requesterId, UUID requestId);
+    PageResponse<FriendRequestDTO> getIncomingRequestsPaged(UUID userId, int page, int size);
+    PageResponse<FriendRequestDTO> getOutgoingRequestsPaged(UUID userId, int page, int size);
+
 }

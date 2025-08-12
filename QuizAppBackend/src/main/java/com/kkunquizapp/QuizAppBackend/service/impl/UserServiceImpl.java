@@ -2,18 +2,14 @@ package com.kkunquizapp.QuizAppBackend.service.impl;
 
 import com.cloudinary.Cloudinary;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.kkunquizapp.QuizAppBackend.dto.UserRequestDTO;
-import com.kkunquizapp.QuizAppBackend.dto.UserResponseDTO;
-import com.kkunquizapp.QuizAppBackend.dto.AuthResponseDTO;
+import com.kkunquizapp.QuizAppBackend.dto.*;
 import com.kkunquizapp.QuizAppBackend.exception.DuplicateEntityException;
 import com.kkunquizapp.QuizAppBackend.exception.InvalidRequestException;
 import com.kkunquizapp.QuizAppBackend.exception.UserNotFoundException;
-import com.kkunquizapp.QuizAppBackend.model.EmailChangeOtpPayload;
-import com.kkunquizapp.QuizAppBackend.model.EmailChangeToken;
-import com.kkunquizapp.QuizAppBackend.model.User;
-import com.kkunquizapp.QuizAppBackend.model.UserPrincipal;
+import com.kkunquizapp.QuizAppBackend.model.*;
 import com.kkunquizapp.QuizAppBackend.model.enums.UserRole;
 import com.kkunquizapp.QuizAppBackend.repo.EmailChangeTokenRepo;
+import com.kkunquizapp.QuizAppBackend.repo.FriendRequestRepo;
 import com.kkunquizapp.QuizAppBackend.repo.UserRepo;
 import com.kkunquizapp.QuizAppBackend.service.*;
 import jakarta.servlet.http.HttpServletRequest;
@@ -37,7 +33,6 @@ import org.springframework.web.context.request.ServletRequestAttributes;
 import org.springframework.web.multipart.MultipartFile;
 
 // imports cần thêm
-import com.kkunquizapp.QuizAppBackend.dto.FriendSuggestionDTO;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -72,6 +67,8 @@ public class UserServiceImpl implements UserService {
     private final MailService mailService;
 
     private final BCryptPasswordEncoder passwordEncoder;
+
+    private final FriendRequestRepo friendRequestRepo;
 
     private final StringRedisTemplate redis;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -388,28 +385,38 @@ public class UserServiceImpl implements UserService {
         User me = userRepo.findById(currentUserId)
                 .orElseThrow(() -> new UserNotFoundException("User not found with ID: " + currentUserId));
 
-        // Tập bạn bè hiện tại để loại khỏi gợi ý
+        // Loại bạn bè hiện tại
         Set<UUID> myFriendIds = me.getFriends().stream()
                 .map(User::getUserId)
                 .collect(Collectors.toSet());
 
-        // có thể loại thêm: chính mình
-        Set<UUID> excluded = new java.util.HashSet<>(myFriendIds);
-        // (không cần add currentUserId vì query đã <> currentId, nhưng add cũng không sao)
+        // Loại chính mình
+        Set<UUID> excluded = new HashSet<>(myFriendIds);
         excluded.add(currentUserId);
+
+        // ===== Loại các user đang có PENDING (incoming + outgoing) =====
+        // Outgoing: mình đã gửi yêu cầu cho họ
+        friendRequestRepo.findAllByRequesterAndStatus(me, FriendRequest.Status.PENDING)
+                .forEach(fr -> excluded.add(fr.getReceiver().getUserId()));
+
+        // Incoming: họ đã gửi yêu cầu cho mình
+        friendRequestRepo.findAllByReceiverAndStatus(me, FriendRequest.Status.PENDING)
+                .forEach(fr -> excluded.add(fr.getRequester().getUserId()));
+        // ===============================================================
 
         Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
 
+        // Giữ nguyên query custom của bạn (đã nhận excluded + cờ skip nếu rỗng)
         Page<User> candidates = userRepo.findSuggestions(
                 currentUserId,
                 excluded,
-                excluded.isEmpty(), // nếu true -> bỏ điều kiện NOT IN
+                excluded.isEmpty(),   // nếu true -> bỏ điều kiện NOT IN
                 pageable
         );
 
-        // Tính mutual friends (đếm giao giữa friends của candidate và friends của mình)
-        // Lưu ý: có thể xảy ra N+1, nhưng page nhỏ (10/20) thì OK. Cần tối ưu có thể dùng query phức tạp hơn.
-        return candidates.getContent().stream().map(u -> {
+        // Tính mutual friends rồi sort theo mutual desc (giữ nguyên logic cũ)
+        return candidates.getContent().stream()
+                .map(u -> {
                     int mutual = (int) u.getFriends().stream()
                             .map(User::getUserId)
                             .filter(myFriendIds::contains)
@@ -423,10 +430,10 @@ public class UserServiceImpl implements UserService {
                             mutual
                     );
                 })
-                // Sắp xếp giảm dần theo mutual, cùng mutual thì theo createdAt desc (đã sort sẵn từ pageable)
                 .sorted((a, b) -> Integer.compare(b.getMutualFriends(), a.getMutualFriends()))
                 .collect(Collectors.toList());
     }
+
 
     @Override
     @Transactional
@@ -730,6 +737,218 @@ public class UserServiceImpl implements UserService {
         } catch (Exception e) {
             throw new RuntimeException("OTP verification failed: " + e.getMessage(), e);
         }
+    }
+
+    @Override
+    @Transactional
+    public void sendFriendRequest(UUID requesterId, UUID targetUserId) {
+        if (requesterId.equals(targetUserId)) {
+            throw new InvalidRequestException("You cannot add yourself as a friend");
+        }
+
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (!(authentication != null && authentication.getPrincipal() instanceof Jwt jwt)) {
+            throw new SecurityException("Invalid Access Token");
+        }
+        String userIdFromToken = jwt.getClaim("userId");
+        List<String> roles = jwt.getClaim("roles");
+        boolean isAdmin = roles != null && roles.contains(UserRole.ADMIN.name());
+        if (!isAdmin && !requesterId.toString().equals(userIdFromToken)) {
+            throw new SecurityException("You do not have permission to send requests for this user");
+        }
+
+        User requester = userRepo.findById(requesterId)
+                .orElseThrow(() -> new UserNotFoundException("Requester not found"));
+        User target = userRepo.findById(targetUserId)
+                .orElseThrow(() -> new UserNotFoundException("Target not found"));
+
+        if (!requester.isActive() || !target.isActive()) {
+            throw new InvalidRequestException("Inactive accounts cannot make friend connections");
+        }
+
+        // Đã là bạn rồi → idempotent
+        if (requester.getFriends().stream().anyMatch(f -> f.getUserId().equals(targetUserId))) return;
+
+        // Nếu có PENDING ngược chiều => auto-accept
+        Optional<FriendRequest> reversePending = friendRequestRepo
+                .findByRequesterAndReceiverAndStatus(target, requester, FriendRequest.Status.PENDING);
+        if (reversePending.isPresent()) {
+            FriendRequest req = reversePending.get();
+            req.setStatus(FriendRequest.Status.ACCEPTED);
+            req.setUpdatedAt(LocalDateTime.now());
+            friendRequestRepo.save(req);
+
+            requester.addFriend(target);
+            userRepo.save(requester);
+            userRepo.save(target);
+            return;
+        }
+
+        // Tồn tại bản ghi giữa 2 bên? -> chỉ UPDATE về PENDING
+        FriendRequest fr = friendRequestRepo.findByRequesterAndReceiver(requester, target)
+                .orElseGet(() -> FriendRequest.builder()
+                        .requester(requester)
+                        .receiver(target)
+                        .status(FriendRequest.Status.PENDING)
+                        .createdAt(LocalDateTime.now())
+                        .build());
+
+        // Nếu đã PENDING rồi -> idempotent
+        if (fr.getId() != null && fr.getStatus() == FriendRequest.Status.PENDING) return;
+
+        fr.setStatus(FriendRequest.Status.PENDING);
+        fr.setUpdatedAt(LocalDateTime.now());
+        friendRequestRepo.save(fr);
+    }
+
+
+    @Override
+    @Transactional
+    public void acceptFriendRequest(UUID receiverId, UUID requestId) {
+        // quyền: receiverId == user trong JWT hoặc admin
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (!(auth != null && auth.getPrincipal() instanceof Jwt jwt)) {
+            throw new SecurityException("Invalid Access Token");
+        }
+        String userIdFromToken = jwt.getClaim("userId");
+        List<String> roles = jwt.getClaim("roles");
+        boolean isAdmin = roles != null && roles.contains(UserRole.ADMIN.name());
+        if (!isAdmin && !receiverId.toString().equals(userIdFromToken)) {
+            throw new SecurityException("You do not have permission to accept this request");
+        }
+
+        FriendRequest fr = friendRequestRepo.findById(requestId)
+                .orElseThrow(() -> new InvalidRequestException("Friend request not found"));
+
+        if (!fr.getReceiver().getUserId().equals(receiverId)) {
+            throw new SecurityException("This request does not belong to you");
+        }
+        if (fr.getStatus() != FriendRequest.Status.PENDING) {
+            return; // idempotent
+        }
+
+        fr.setStatus(FriendRequest.Status.ACCEPTED);
+        fr.setUpdatedAt(LocalDateTime.now());
+        friendRequestRepo.save(fr);
+
+        User requester = fr.getRequester();
+        User receiver  = fr.getReceiver();
+
+        // Nếu đã là bạn rồi thì bỏ qua (idempotent)
+        boolean alreadyFriends = requester.getFriends().stream()
+                .anyMatch(u -> u.getUserId().equals(receiver.getUserId()));
+        if (!alreadyFriends) {
+            requester.addFriend(receiver);   // ➜ add 2 chiều (method entity của bạn làm 2 chiều)
+            userRepo.save(requester);
+            userRepo.save(receiver);
+        }
+
+        // (khuyến nghị) Dọn dẹp mọi request khác giữa 2 bên còn PENDING —
+        // ví dụ có request ngược chiều tồn tại
+        friendRequestRepo.findByRequesterAndReceiver(requester, receiver)
+                .filter(r -> r.getStatus() == FriendRequest.Status.PENDING)
+                .ifPresent(r -> { r.setStatus(FriendRequest.Status.ACCEPTED); r.setUpdatedAt(LocalDateTime.now()); friendRequestRepo.save(r); });
+
+        friendRequestRepo.findByRequesterAndReceiver(receiver, requester)
+                .filter(r -> r.getStatus() == FriendRequest.Status.PENDING)
+                .ifPresent(r -> { r.setStatus(FriendRequest.Status.ACCEPTED); r.setUpdatedAt(LocalDateTime.now()); friendRequestRepo.save(r); });
+    }
+
+
+    @Override
+    @Transactional
+    public void declineFriendRequest(UUID receiverId, UUID requestId) {
+        FriendRequest fr = friendRequestRepo.findById(requestId)
+                .orElseThrow(() -> new InvalidRequestException("Friend request not found"));
+        if (!fr.getReceiver().getUserId().equals(receiverId)) {
+            throw new SecurityException("This request does not belong to you");
+        }
+        if (fr.getStatus() != FriendRequest.Status.PENDING) return; // idempotent
+        fr.setStatus(FriendRequest.Status.DECLINED);
+        fr.setUpdatedAt(LocalDateTime.now());
+        friendRequestRepo.save(fr);
+    }
+
+    @Override
+    @Transactional
+    public void cancelFriendRequest(UUID requesterId, UUID requestId) {
+        FriendRequest fr = friendRequestRepo.findById(requestId)
+                .orElseThrow(() -> new InvalidRequestException("Friend request not found"));
+        if (!fr.getRequester().getUserId().equals(requesterId)) {
+            throw new SecurityException("You cannot cancel this request");
+        }
+        if (fr.getStatus() != FriendRequest.Status.PENDING) return;
+
+        // Chỉ đổi trạng thái (không xóa) → để lần sau gửi lại chỉ cần UPDATE về PENDING
+        fr.setStatus(FriendRequest.Status.CANCELED);
+        fr.setUpdatedAt(LocalDateTime.now());
+        friendRequestRepo.save(fr);
+    }
+
+
+    @Override
+    @Transactional(readOnly = true)
+    public PageResponse<FriendRequestDTO> getIncomingRequestsPaged(UUID userId, int page, int size) {
+        User me = userRepo.findById(userId)
+                .orElseThrow(() -> new UserNotFoundException("User not found: " + userId));
+
+        Pageable pageable = PageRequest.of(Math.max(0, page), Math.min(Math.max(1, size), 50),
+                Sort.by(Sort.Direction.DESC, "createdAt"));
+
+        Page<FriendRequestDTO> dtoPage = friendRequestRepo
+                .findAllByReceiverAndStatus(me, FriendRequest.Status.PENDING, pageable)
+                .map(this::toDto);
+
+        return toPageResponse(dtoPage);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PageResponse<FriendRequestDTO> getOutgoingRequestsPaged(UUID userId, int page, int size) {
+        User me = userRepo.findById(userId)
+                .orElseThrow(() -> new UserNotFoundException("User not found: " + userId));
+
+        Pageable pageable = PageRequest.of(Math.max(0, page), Math.min(Math.max(1, size), 50),
+                Sort.by(Sort.Direction.DESC, "createdAt"));
+
+        Page<FriendRequestDTO> dtoPage = friendRequestRepo
+                .findAllByRequesterAndStatus(me, FriendRequest.Status.PENDING, pageable)
+                .map(this::toDto);
+
+        return toPageResponse(dtoPage);
+    }
+
+
+
+
+    private FriendRequestDTO toDto(FriendRequest fr) {
+        return FriendRequestDTO.builder()
+                .id(fr.getId())
+                .status(fr.getStatus().name())
+                .createdAt(fr.getCreatedAt())
+
+                .requesterId(fr.getRequester().getUserId())
+                .requesterName(fr.getRequester().getName())
+                .requesterUsername(fr.getRequester().getUsername())
+                .requesterAvatar(fr.getRequester().getAvatar())
+
+                .receiverId(fr.getReceiver().getUserId())
+                .receiverName(fr.getReceiver().getName())
+                .receiverUsername(fr.getReceiver().getUsername())
+                .receiverAvatar(fr.getReceiver().getAvatar())
+                .build();
+    }
+
+    private <T> PageResponse<T> toPageResponse(Page<T> page) {
+        return PageResponse.<T>builder()
+                .content(page.getContent())
+                .page(page.getNumber())
+                .size(page.getSize())
+                .totalElements(page.getTotalElements())
+                .totalPages(page.getTotalPages())
+                .hasNext(page.hasNext())
+                .hasPrev(page.hasPrevious())
+                .build();
     }
 
 }

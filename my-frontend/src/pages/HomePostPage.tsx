@@ -2,18 +2,17 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { UserDto } from "@/interfaces";
 import { PostDTO } from "@/services/postService";
 import axiosInstance from "@/services/axiosInstance";
-import { useAuth } from "@/hooks/useAuth";
-import PostCard from "@/components/layouts/post/PostCard";
 import { Tabs, Button, Spin, Alert } from "antd";
 import { ReloadOutlined } from "@ant-design/icons";
 import unknownAvatar from "@/assets/img/avatars/unknown.jpg";
 import PostComposer from "@/components/layouts/post/PostComposer";
-import {
-  getFriendSuggestions,
-  addFriend,
-  FriendSuggestion,
-} from "@/services/userService";
+import PostCard from "@/components/layouts/post/PostCard";
 import { useAuthStore } from "@/store/authStore";
+
+// NEW widgets
+import SuggestionsWidget from "@/components/widgets/SuggestionsWidget";
+import TrendsWidget from "@/components/widgets/TrendsWidget";
+import OnlineWidget from "@/components/widgets/OnlineWidget";
 
 const HomePostPage = () => {
   const [posts, setPosts] = useState<PostDTO[]>([]);
@@ -25,51 +24,9 @@ const HomePostPage = () => {
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<string>("all");
   const loaderRef = useRef<HTMLDivElement>(null);
-  const user = useAuthStore(s => s.user);
-  const profile: UserDto | null = user;;
 
-  // ---------- Suggestions (real API) ----------
-  const [suggestions, setSuggestions] = useState<FriendSuggestion[]>([]);
-  const [suggestionsLoading, setSuggestionsLoading] = useState<boolean>(false);
-  const [suggestionsError, setSuggestionsError] = useState<string | null>(null);
-  const [addingSet, setAddingSet] = useState<Set<string>>(new Set()); // track đang add
-  const [addedSet, setAddedSet] = useState<Set<string>>(new Set()); // track đã add thành công
-  
-  const fetchSuggestions = useCallback(async () => {
-    if (!profile?.userId) {
-      setSuggestions([]);
-      return;
-    }
-    setSuggestionsLoading(true);
-    setSuggestionsError(null);
-    try {
-      const list = await getFriendSuggestions(0, 6);
-      setSuggestions(list);
-    } catch (e: any) {
-      setSuggestionsError(e?.message || "Failed to load suggestions");
-    } finally {
-      setSuggestionsLoading(false);
-    }
-  }, [profile?.userId]);
-
-  const handleAddFriend = async (targetUserId: string) => {
-    if (!profile?.userId) return;
-    if (addingSet.has(targetUserId) || addedSet.has(targetUserId)) return;
-    setAddingSet((prev) => new Set(prev).add(targetUserId));
-    try {
-      await addFriend(targetUserId); // dùng /users/me/friends/{friendId}
-      setAddedSet((prev) => new Set(prev).add(targetUserId));
-    } catch (e) {
-      // có thể hiển thị toast/alert nếu muốn
-    } finally {
-      setAddingSet((prev) => {
-        const n = new Set(prev);
-        n.delete(targetUserId);
-        return n;
-      });
-    }
-  };
-  // -------------------------------------------
+  const user = useAuthStore((s) => s.user);
+  const profile: UserDto | null = user;
 
   // Fetch public posts
   const fetchPublicPosts = async (page: number = 0, size: number = 10) => {
@@ -149,59 +106,52 @@ const HomePostPage = () => {
   }, [profile]);
 
   // Load more (infinite)
-  const loadMorePosts = useCallback(
-    async () => {
-      if (isLoading || (!hasMorePublic && !hasMoreFriends)) return;
-      setIsLoading(true);
-      setError(null);
-      try {
-        const promises: Promise<PostDTO[]>[] = [];
-        if (hasMorePublic) promises.push(fetchPublicPosts(publicPage, 5));
-        if (hasMoreFriends && profile) promises.push(fetchFriendsPosts(friendsPage, 5));
+  const loadMorePosts = useCallback(async () => {
+    if (isLoading || (!hasMorePublic && !hasMoreFriends)) return;
+    setIsLoading(true);
+    setError(null);
+    try {
+      const promises: Promise<PostDTO[]>[] = [];
+      if (hasMorePublic) promises.push(fetchPublicPosts(publicPage, 5));
+      if (hasMoreFriends && profile) promises.push(fetchFriendsPosts(friendsPage, 5));
 
-        const results = await Promise.allSettled(promises);
-        let newPublicPosts: PostDTO[] = [];
-        let newFriendsPosts: PostDTO[] = [];
-        let resultIndex = 0;
+      const results = await Promise.allSettled(promises);
+      let newPublicPosts: PostDTO[] = [];
+      let newFriendsPosts: PostDTO[] = [];
+      let resultIndex = 0;
 
-        if (hasMorePublic && results[resultIndex]) {
-          const result = results[resultIndex];
-          newPublicPosts = result.status === "fulfilled" ? result.value : [];
-          resultIndex++;
-        }
-        if (hasMoreFriends && profile && results[resultIndex]) {
-          const result = results[resultIndex];
-          newFriendsPosts = result.status === "fulfilled" ? result.value : [];
-        }
-
-        const combinedNew = combineAndSortPosts(newPublicPosts, newFriendsPosts);
-        setPosts((prev) => {
-          const all = [...prev, ...combinedNew];
-          const unique = all.filter(
-            (p, i, self) => self.findIndex((x) => x.postId === p.postId) === i
-          );
-          return unique.sort(
-            (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-          );
-        });
-
-        if (hasMorePublic) {
-          setPublicPage((prev) => prev + 1);
-          setHasMorePublic(newPublicPosts.length >= 5);
-        }
-        if (hasMoreFriends && profile) {
-          setFriendsPage((prev) => prev + 1);
-          setHasMoreFriends(newFriendsPosts.length >= 5);
-        }
-      } catch (error: any) {
-        console.error("Error loading more posts:", error);
-        setError(error.message || "Failed to load more posts");
-      } finally {
-        setIsLoading(false);
+      if (hasMorePublic && results[resultIndex]) {
+        const result = results[resultIndex];
+        newPublicPosts = result.status === "fulfilled" ? result.value : [];
+        resultIndex++;
       }
-    },
-    [isLoading, hasMorePublic, hasMoreFriends, publicPage, friendsPage, profile]
-  );
+      if (hasMoreFriends && profile && results[resultIndex]) {
+        const result = results[resultIndex];
+        newFriendsPosts = result.status === "fulfilled" ? result.value : [];
+      }
+
+      const combinedNew = combineAndSortPosts(newPublicPosts, newFriendsPosts);
+      setPosts((prev) => {
+        const all = [...prev, ...combinedNew];
+        const unique = all.filter((p, i, self) => self.findIndex((x) => x.postId === p.postId) === i);
+        return unique.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      });
+
+      if (hasMorePublic) {
+        setPublicPage((prev) => prev + 1);
+        setHasMorePublic(newPublicPosts.length >= 5);
+      }
+      if (hasMoreFriends && profile) {
+        setFriendsPage((prev) => prev + 1);
+        setHasMoreFriends(newFriendsPosts.length >= 5);
+      }
+    } catch (error: any) {
+      console.error("Error loading more posts:", error);
+      setError(error.message || "Failed to load more posts");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [isLoading, hasMorePublic, hasMoreFriends, publicPage, friendsPage, profile]);
 
   // Post update from children
   const handlePostUpdate = useCallback((updatedPost: PostDTO) => {
@@ -213,20 +163,20 @@ const HomePostPage = () => {
     loadInitialPosts();
   }, [loadInitialPosts]);
 
-  // Suggestions mount/update
+  // Refresh current user when window focuses (optional)
   useEffect(() => {
-    fetchSuggestions();
-  }, [fetchSuggestions]);
+    const refresh = async () => { try { await useAuthStore.getState().refreshMe(); } catch {} };
+    refresh();
+    const onFocus = () => refresh();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, []);
 
   // IntersectionObserver
   useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
-        if (
-          entries[0].isIntersecting &&
-          (hasMorePublic || hasMoreFriends) &&
-          !isLoading
-        ) {
+        if (entries[0].isIntersecting && (hasMorePublic || hasMoreFriends) && !isLoading) {
           loadMorePosts();
         }
       },
@@ -240,136 +190,7 @@ const HomePostPage = () => {
     };
   }, [hasMorePublic, hasMoreFriends, isLoading, loadMorePosts]);
 
-  useEffect(() => {
-    // gọi nếu bạn có refreshMeIfStale; nếu không thì gọi refreshMe
-    const refresh = async () => {
-      try { await useAuthStore.getState().refreshMe(); } catch {}
-    };
-    refresh();
-
-    const onFocus = () => refresh();
-    window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
-  }, []);
-    
   const filteredPosts = getFilteredPosts();
-
-  // ---------- Sidebar Widgets ----------
-  const SuggestionsWidget = () => {
-    if (!profile?.userId) return null;
-    return (
-      <div className="card shadow-sm border-0 rounded-4 mb-4">
-        <div className="card-body">
-          <h6 className="fw-bold mb-3">People you may know</h6>
-
-          {suggestionsError && (
-            <div className="alert alert-danger py-2">{suggestionsError}</div>
-          )}
-
-          {suggestionsLoading ? (
-            <div className="d-flex align-items-center gap-2">
-              <Spin size="small" />
-              <span className="text-muted">Loading suggestions…</span>
-            </div>
-          ) : suggestions.length === 0 ? (
-            <div className="text-muted">No suggestions right now</div>
-          ) : (
-            <div className="d-flex flex-column gap-3">
-              {suggestions.map((s) => {
-                const isAdding = addingSet.has(s.userId);
-                const isAdded = addedSet.has(s.userId);
-                return (
-                  <div key={s.userId} className="d-flex align-items-center">
-                    <img
-                      src={s.avatar || unknownAvatar}
-                      alt={s.name}
-                      className="rounded-circle me-3"
-                      width={40}
-                      height={40}
-                      style={{ objectFit: "cover" }}
-                    />
-                    <div className="flex-grow-1">
-                      <div className="fw-semibold">{s.name || s.username}</div>
-                      <small className="text-muted">
-                        {s.mutualFriends} mutual friends
-                      </small>
-                    </div>
-                    <button
-                      className={`btn btn-sm rounded-pill px-3 ${
-                        isAdded ? "btn-success" : "btn-primary"
-                      }`}
-                      onClick={() => handleAddFriend(s.userId)}
-                      disabled={isAdding || isAdded}
-                    >
-                      {isAdded ? "Added" : isAdding ? "Adding..." : "Add"}
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  };
-
-  const TrendsWidget = () => (
-    <div className="card shadow-sm border-0 rounded-4 mb-4">
-      <div className="card-body">
-        <h6 className="fw-bold mb-3">Trends for you</h6>
-        <ul className="list-unstyled mb-0">
-          {[
-            { tag: "#javascript", posts: 1240 },
-            { tag: "#webdev", posts: 980 },
-            { tag: "#datascience", posts: 720 },
-            { tag: "#uxui", posts: 610 },
-          ].map((t) => (
-            <li key={t.tag} className="mb-3">
-              <div className="fw-semibold">{t.tag}</div>
-              <small className="text-muted">{t.posts.toLocaleString()} posts</small>
-            </li>
-          ))}
-        </ul>
-      </div>
-    </div>
-  );
-
-  const OnlineWidget = () => (
-    <div className="card shadow-sm border-0 rounded-4">
-      <div className="card-body">
-        <h6 className="fw-bold mb-3">Online</h6>
-        <div className="d-flex flex-wrap gap-3">
-          {[
-            { id: "o1", name: "Trang", avatar: unknownAvatar },
-            { id: "o2", name: "Phúc", avatar: unknownAvatar },
-            { id: "o3", name: "Khoa", avatar: unknownAvatar },
-            { id: "o4", name: "Vy", avatar: unknownAvatar },
-          ].map((f) => (
-            <div key={f.id} className="text-center" title={f.name}>
-              <div className="position-relative mx-auto" style={{ width: 44, height: 44 }}>
-                <img
-                  src={f.avatar}
-                  alt={f.name}
-                  className="rounded-circle"
-                  width={44}
-                  height={44}
-                  style={{ objectFit: "cover" }}
-                />
-                <span
-                  className="position-absolute bottom-0 end-0 bg-success rounded-circle border border-2 border-white"
-                  style={{ width: 10, height: 10 }}
-                />
-              </div>
-              <small className="d-block mt-1 text-truncate" style={{ maxWidth: 64 }}>
-                {f.name}
-              </small>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-  // -------------------------------------
 
   return (
     <div className="container py-4">
@@ -391,12 +212,7 @@ const HomePostPage = () => {
                     { key: "all", label: `All (${posts.length})` },
                     { key: "public", label: `Public (${posts.filter((p) => p.privacy === "PUBLIC").length})` },
                     ...(profile
-                      ? [
-                          {
-                            key: "friends",
-                            label: `Friends (${posts.filter((p) => p.privacy === "FRIENDS").length})`,
-                          },
-                        ]
+                      ? [{ key: "friends", label: `Friends (${posts.filter((p) => p.privacy === "FRIENDS").length})` }]
                       : []),
                   ]}
                   className="custom-tabs"
@@ -424,9 +240,7 @@ const HomePostPage = () => {
             />
           ) : (
             <div className="card shadow-sm mb-4 border-0 rounded-4">
-              <div className="card-body text-center text-muted">
-                Please log in to create a post.
-              </div>
+              <div className="card-body text-center text-muted">Please log in to create a post.</div>
             </div>
           )}
 
@@ -472,12 +286,7 @@ const HomePostPage = () => {
               </div>
             ) : (
               filteredPosts.map((post) => (
-                <PostCard
-                  key={post.postId}
-                  post={post}
-                  profile={profile}
-                  onUpdate={handlePostUpdate}
-                />
+                <PostCard key={post.postId} post={post} profile={profile} onUpdate={handlePostUpdate} />
               ))
             )}
           </div>

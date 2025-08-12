@@ -1,9 +1,6 @@
 package com.kkunquizapp.QuizAppBackend.controller;
 
-import com.kkunquizapp.QuizAppBackend.dto.DeleteUserRequestDTO;
-import com.kkunquizapp.QuizAppBackend.dto.FriendSuggestionDTO;
-import com.kkunquizapp.QuizAppBackend.dto.UserRequestDTO;
-import com.kkunquizapp.QuizAppBackend.dto.UserResponseDTO;
+import com.kkunquizapp.QuizAppBackend.dto.*;
 import com.kkunquizapp.QuizAppBackend.service.UserService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -171,19 +168,62 @@ public class UserController {
         return ResponseEntity.ok(suggestions);
     }
 
-    // -------- Add friend: current user giống PostController --------
+    // Gửi yêu cầu kết bạn (current user)
     @PostMapping("/me/friends/{friendId}")
-    public ResponseEntity<String> addFriendForMe(@PathVariable UUID friendId) {
+    public ResponseEntity<String> sendFriendRequestForMe(@PathVariable UUID friendId) {
         UUID me = UUID.fromString(userService.getCurrentUserId());
-        userService.addFriend(me, friendId);
-        return ResponseEntity.ok("Friend added successfully!");
+        userService.sendFriendRequest(me, friendId);
+        return ResponseEntity.ok("Friend request sent (or auto-accepted if they already requested you).");
     }
 
-    // (giữ endpoint cũ nếu FE đang gọi) — service vẫn kiểm quyền
+    // (nếu vẫn cần endpoint admin thay mặt user)
     @PostMapping("/{id}/friends/{friendId}")
-    public ResponseEntity<String> addFriend(@PathVariable UUID id, @PathVariable UUID friendId) {
-        userService.addFriend(id, friendId);
-        return ResponseEntity.ok("Friend added successfully!");
+    public ResponseEntity<String> sendFriendRequest(@PathVariable UUID id, @PathVariable UUID friendId) {
+        userService.sendFriendRequest(id, friendId);
+        return ResponseEntity.ok("Friend request sent.");
+    }
+
+    // Accept/Decline/Cancel
+    @PostMapping("/me/friend-requests/{requestId}/accept")
+    public ResponseEntity<String> acceptRequest(@PathVariable UUID requestId) {
+        UUID me = UUID.fromString(userService.getCurrentUserId());
+        userService.acceptFriendRequest(me, requestId);
+        return ResponseEntity.ok("Friend request accepted!");
+    }
+
+    @PostMapping("/me/friend-requests/{requestId}/decline")
+    public ResponseEntity<String> declineRequest(@PathVariable UUID requestId) {
+        UUID me = UUID.fromString(userService.getCurrentUserId());
+        userService.declineFriendRequest(me, requestId);
+        return ResponseEntity.ok("Friend request declined!");
+    }
+
+    @PostMapping("/me/friend-requests/{requestId}/cancel")
+    public ResponseEntity<String> cancelRequest(@PathVariable UUID requestId) {
+        UUID me = UUID.fromString(userService.getCurrentUserId());
+        userService.cancelFriendRequest(me, requestId);
+        return ResponseEntity.ok("Friend request canceled!");
+    }
+
+    @GetMapping("/me/friend-requests/incoming")
+    public ResponseEntity<PageResponse<FriendRequestDTO>> incomingPaged(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size
+    ) {
+        UUID me = UUID.fromString(userService.getCurrentUserId());
+        PageResponse<FriendRequestDTO> result = userService.getIncomingRequestsPaged(me, page, size);
+        return ResponseEntity.ok(result);
+    }
+
+    // Outgoing (phân trang)
+    @GetMapping("/me/friend-requests/outgoing")
+    public ResponseEntity<PageResponse<FriendRequestDTO>> outgoingPaged(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size
+    ) {
+        UUID me = UUID.fromString(userService.getCurrentUserId());
+        PageResponse<FriendRequestDTO> result = userService.getOutgoingRequestsPaged(me, page, size);
+        return ResponseEntity.ok(result);
     }
 
     @PostMapping("/me/request-email-change")
