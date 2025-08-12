@@ -17,12 +17,9 @@ import lombok.RequiredArgsConstructor;
 import org.modelmapper.ModelMapper;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
-import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
@@ -40,10 +37,8 @@ import org.springframework.data.domain.Sort;
 
 
 import java.io.IOException;
-import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.Year;
-import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -62,6 +57,7 @@ public class UserServiceImpl implements UserService {
     private final JwtService jwtService;
     private final Cloudinary cloudinary;
     private final CloudinaryService cloudinaryService;
+    private final NotificationService notificationService;
 
     private final EmailChangeTokenRepo emailChangeTokenRepo;
     private final MailService mailService;
@@ -799,6 +795,14 @@ public class UserServiceImpl implements UserService {
         fr.setStatus(FriendRequest.Status.PENDING);
         fr.setUpdatedAt(LocalDateTime.now());
         friendRequestRepo.save(fr);
+        notificationService.createNotification(
+                target.getUserId(),                // người nhận noti
+                requester.getUserId(),             // tác nhân
+                "FRIEND_REQUEST_SENT",             // verb
+                "FRIEND_REQUEST",                  // targetType
+                fr.getId(),                        // targetId
+                requester.getName() + " sent you a friend request"
+        );
     }
 
 
@@ -843,15 +847,55 @@ public class UserServiceImpl implements UserService {
             userRepo.save(receiver);
         }
 
-        // (khuyến nghị) Dọn dẹp mọi request khác giữa 2 bên còn PENDING —
-        // ví dụ có request ngược chiều tồn tại
+        // Dọn các request giữa 2 bên còn PENDING (cùng chiều / ngược chiều) -> set ACCEPTED
         friendRequestRepo.findByRequesterAndReceiver(requester, receiver)
                 .filter(r -> r.getStatus() == FriendRequest.Status.PENDING)
-                .ifPresent(r -> { r.setStatus(FriendRequest.Status.ACCEPTED); r.setUpdatedAt(LocalDateTime.now()); friendRequestRepo.save(r); });
+                .ifPresent(r -> {
+                    r.setStatus(FriendRequest.Status.ACCEPTED);
+                    r.setUpdatedAt(LocalDateTime.now());
+                    friendRequestRepo.save(r);
+                });
 
         friendRequestRepo.findByRequesterAndReceiver(receiver, requester)
                 .filter(r -> r.getStatus() == FriendRequest.Status.PENDING)
-                .ifPresent(r -> { r.setStatus(FriendRequest.Status.ACCEPTED); r.setUpdatedAt(LocalDateTime.now()); friendRequestRepo.save(r); });
+                .ifPresent(r -> {
+                    r.setStatus(FriendRequest.Status.ACCEPTED);
+                    r.setUpdatedAt(LocalDateTime.now());
+                    friendRequestRepo.save(r);
+                });
+
+        // ===== Notifications (per-user) =====
+        // 1) Báo cho người gửi: lời mời đã được chấp nhận
+        notificationService.createNotification(
+                requester.getUserId(),                 // người nhận noti (người đã gửi)
+                receiver.getUserId(),                  // tác nhân (người chấp nhận)
+                "FRIEND_REQUEST_ACCEPTED",             // verb
+                "FRIEND_REQUEST",                      // targetType
+                fr.getId(),                            // targetId
+                (receiver.getName() != null ? receiver.getName() : receiver.getUsername())
+                        + " đã chấp nhận lời mời kết bạn của bạn"
+        );
+
+        // 2) (khuyến nghị) Báo “đã trở thành bạn bè” cho CẢ 2 phía để FE cập nhật danh sách bạn
+        notificationService.createNotification(
+                receiver.getUserId(),                  // người nhận
+                requester.getUserId(),                 // tác nhân
+                "FRIEND_ADDED",
+                "FRIEND",
+                requester.getUserId(),
+                "Bạn và " + (requester.getName() != null ? requester.getName() : requester.getUsername())
+                        + " đã trở thành bạn bè"
+        );
+
+        notificationService.createNotification(
+                requester.getUserId(),                 // người nhận
+                receiver.getUserId(),                  // tác nhân
+                "FRIEND_ADDED",
+                "FRIEND",
+                receiver.getUserId(),
+                "Bạn và " + (receiver.getName() != null ? receiver.getName() : receiver.getUsername())
+                        + " đã trở thành bạn bè"
+        );
     }
 
 
@@ -867,6 +911,14 @@ public class UserServiceImpl implements UserService {
         fr.setStatus(FriendRequest.Status.DECLINED);
         fr.setUpdatedAt(LocalDateTime.now());
         friendRequestRepo.save(fr);
+        notificationService.createNotification(
+                fr.getRequester().getUserId(), // người nhận noti (người đã gửi)
+                fr.getReceiver().getUserId(),  // tác nhân (người từ chối)
+                "FRIEND_REQUEST_DECLINED",
+                "FRIEND_REQUEST",
+                fr.getId(),
+                fr.getReceiver().getName() + " đã từ chối lời mời kết bạn của bạn"
+        );
     }
 
     @Override
@@ -883,6 +935,14 @@ public class UserServiceImpl implements UserService {
         fr.setStatus(FriendRequest.Status.CANCELED);
         fr.setUpdatedAt(LocalDateTime.now());
         friendRequestRepo.save(fr);
+        notificationService.createNotification(
+                fr.getReceiver().getUserId(),  // người nhận noti (người bị mời trước đó)
+                fr.getRequester().getUserId(), // tác nhân (người hủy)
+                "FRIEND_REQUEST_CANCELED",
+                "FRIEND_REQUEST",
+                fr.getId(),
+                fr.getRequester().getName() + " đã hủy lời mời kết bạn"
+        );
     }
 
 

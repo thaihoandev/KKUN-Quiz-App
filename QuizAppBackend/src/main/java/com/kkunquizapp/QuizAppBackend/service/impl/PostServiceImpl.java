@@ -135,10 +135,10 @@ public class PostServiceImpl implements PostService {
             notificationService.createNotification(
                     post.getUser().getUserId(),
                     userId,
-                    "unliked",
-                    "post",
+                    "UNLIKED",                // ✅ verb chuẩn
+                    "POST",                   // ✅ target chuẩn
                     postId,
-                    com.kkunquizapp.QuizAppBackend.utils.StringUtils.abbreviate(post.getContent(),10)
+                    com.kkunquizapp.QuizAppBackend.utils.StringUtils.abbreviate(post.getContent(), 60)
             );
 
             log.info("User {} unliked post {}", userId, postId);
@@ -160,10 +160,10 @@ public class PostServiceImpl implements PostService {
             notificationService.createNotification(
                     post.getUser().getUserId(),
                     userId,
-                    "liked",
-                    "post",
+                    "LIKED",                  // ✅
+                    "POST",                   // ✅
                     postId,
-                    com.kkunquizapp.QuizAppBackend.utils.StringUtils.abbreviate(post.getContent(),10)
+                    com.kkunquizapp.QuizAppBackend.utils.StringUtils.abbreviate(post.getContent(), 60)
             );
 
             log.info("User {} liked post {} with reaction type {}", userId, postId, type);
@@ -214,11 +214,12 @@ public class PostServiceImpl implements PostService {
             notificationService.createNotification(
                     post.getUser().getUserId(),
                     userId,
-                    "unliked",
-                    "post",
+                    "UNLIKED",                // ✅
+                    "POST",                   // ✅
                     postId,
-                    com.kkunquizapp.QuizAppBackend.utils.StringUtils.abbreviate(post.getContent(),10)
+                    com.kkunquizapp.QuizAppBackend.utils.StringUtils.abbreviate(post.getContent(), 60)
             );
+
 
             log.info("User {} unliked post {}", userId, postId);
 
@@ -537,10 +538,10 @@ public class PostServiceImpl implements PostService {
             notificationService.createNotification(
                     replyTo.getUser().getUserId(),
                     post.getUser().getUserId(),
-                    "commented",
-                    "post",
+                    "COMMENTED",              // ✅
+                    "POST",                   // ✅
                     post.getPostId(),
-                    com.kkunquizapp.QuizAppBackend.utils.StringUtils.abbreviate(post.getContent(),10)
+                    com.kkunquizapp.QuizAppBackend.utils.StringUtils.abbreviate(post.getContent(), 60)
             );
         } else {
             log.info("No reply notification created, replyToPost is null");

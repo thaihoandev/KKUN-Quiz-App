@@ -1,16 +1,10 @@
 "use client";
 
 import { joinGame } from "@/services/gameService";
+import { getCookie } from "@/utils/handleCookie";
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-// Helper to read cookie value by name
-function getCookie(name: string): string | null {
-  const match = document.cookie
-    .split('; ')
-    .find(row => row.startsWith(name + '='));
-  return match ? decodeURIComponent(match.split('=')[1]) : null;
-}
 
 const JoinGamePage: React.FC = () => {
   const [pinCode, setPinCode] = useState<string>("");
