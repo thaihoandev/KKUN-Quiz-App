@@ -5,6 +5,9 @@ import com.kkunquizapp.QuizAppBackend.service.UserService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -12,7 +15,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -23,25 +25,29 @@ public class UserController {
     @Autowired
     private UserService userService;
 
-    // -------- Admin: Get all users --------
+    // -------- Admin: Get all users (Pageable) --------
     @GetMapping("/")
-    public ResponseEntity<?> getAllUsers(@RequestHeader("Authorization") String token) {
+    public ResponseEntity<?> getAllUsers(
+            @RequestHeader("Authorization") String token,
+            @PageableDefault(size = 10) Pageable pageable
+    ) {
         try {
-            List<UserResponseDTO> users = userService.getAllUsers(token);
+            Page<UserResponseDTO> users = userService.getAllUsers(token, pageable);
             return ResponseEntity.ok(users);
         } catch (SecurityException e) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(e.getMessage());
         }
     }
 
-    // -------- Current user: get profile (giống cách lấy userId ở PostController) --------
+    // -------- Current user: get profile --------
     @GetMapping("/me")
-    public ResponseEntity<UserResponseDTO> getCurrentUser(HttpServletRequest req, @RequestHeader("Authorization") String token) {
+    public ResponseEntity<UserResponseDTO> getCurrentUser(
+            HttpServletRequest req,
+            @RequestHeader("Authorization") String token
+    ) {
         String currentUserId = userService.getCurrentUserId();
-        // lấy cả updatedAt (nếu DTO chưa có, bổ sung trường hoặc trả riêng)
         UserResponseDTO dto = userService.getUserById(currentUserId, token);
 
-        // Ví dụ etag dựa trên updatedAt + userId để ổn định
         String etag = "\"" + dto.getUserId() + "-" + dto.getUpdatedAt().toString() + "\"";
         String ifNoneMatch = req.getHeader(HttpHeaders.IF_NONE_MATCH);
 
@@ -58,16 +64,15 @@ public class UserController {
                 .body(dto);
     }
 
-    // -------- Get user by id (giữ nguyên cho các màn admin/khách xem người khác) --------
+    // -------- Get user by id --------
     @GetMapping("/{id}")
     public ResponseEntity<UserResponseDTO> getUserById(
             @PathVariable String id,
-            HttpServletRequest request, @RequestHeader("Authorization") String token
+            HttpServletRequest request,
+            @RequestHeader("Authorization") String token
     ) {
-        // Lấy dữ liệu (service đã tự ẩn field nhạy cảm nếu không phải owner/admin)
         UserResponseDTO dto = userService.getUserById(id, token);
 
-        // Tạo ETag từ userId + updatedAt (đảm bảo thay đổi khi hồ sơ đổi)
         String updatedAtStr = dto.getUpdatedAt() != null ? dto.getUpdatedAt().toString() : "0";
         String etag = "\"" + dto.getUserId() + "-" + updatedAtStr + "\"";
 
@@ -85,14 +90,14 @@ public class UserController {
                 .body(dto);
     }
 
-    // -------- Update user by id (giữ nguyên; có thể thêm /me nếu muốn) --------
+    // -------- Update user by id --------
     @PutMapping("/{id}")
     public ResponseEntity<UserResponseDTO> updateUser(@PathVariable UUID id, @RequestBody UserRequestDTO user) {
         UserResponseDTO updatedUser = userService.updateUser(id, user);
         return ResponseEntity.ok(updatedUser);
     }
 
-    // (tuỳ chọn) Update chính mình - semantic hơn
+    // -------- Update chính mình --------
     @PutMapping("/me")
     public ResponseEntity<UserResponseDTO> updateMe(@RequestBody UserRequestDTO user) {
         UUID me = UUID.fromString(userService.getCurrentUserId());
@@ -107,7 +112,7 @@ public class UserController {
         return ResponseEntity.ok("User deleted successfully!");
     }
 
-    // -------- Soft delete: dùng current user giống PostController --------
+    // -------- Soft delete: current user --------
     @PostMapping("/me/delete")
     public ResponseEntity<String> deleteSoftMe(@Valid @RequestBody DeleteUserRequestDTO req) {
         UUID me = UUID.fromString(userService.getCurrentUserId());
@@ -115,7 +120,7 @@ public class UserController {
         return ResponseEntity.ok("User soft-deleted successfully!");
     }
 
-    // (giữ endpoint cũ nếu FE đang dùng) — sẽ vẫn kiểm tra quyền & password ở service
+    // -------- Soft delete: by id (giữ để tương thích FE cũ) --------
     @PostMapping("/{id}/delete")
     public ResponseEntity<String> deleteSoftUser(@PathVariable UUID id, @Valid @RequestBody DeleteUserRequestDTO req) {
         userService.deleteSoftUser(id, req.getPassword());
@@ -137,38 +142,37 @@ public class UserController {
         return ResponseEntity.ok(updatedUser);
     }
 
-    // (giữ endpoint cũ nếu cần cho admin thay avatar người khác)
+    // -------- Update avatar (admin thay cho user khác - nếu cần) --------
     @PostMapping("/{id}/avatar")
-    public ResponseEntity<UserResponseDTO> updateUserAvatar(@PathVariable UUID id,
-                                                            @RequestPart("file") MultipartFile file) {
+    public ResponseEntity<UserResponseDTO> updateUserAvatar(
+            @PathVariable UUID id,
+            @RequestPart("file") MultipartFile file
+    ) {
         UserResponseDTO updatedUser = userService.updateUserAvatar(id, file, null);
         return ResponseEntity.ok(updatedUser);
     }
 
-    // -------- Friend suggestions (current user) --------
+    // -------- Friend suggestions (current user) => Page --------
     @GetMapping("/suggestions")
-    public ResponseEntity<List<FriendSuggestionDTO>> getFriendSuggestionsForCurrent(
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "10") int size
+    public ResponseEntity<Page<FriendSuggestionDTO>> getFriendSuggestionsForCurrent(
+            @PageableDefault(size = 10) Pageable pageable
     ) {
         UUID currentUserId = UUID.fromString(userService.getCurrentUserId());
-        List<FriendSuggestionDTO> suggestions = userService.getFriendSuggestions(currentUserId, page, size);
+        Page<FriendSuggestionDTO> suggestions = userService.getFriendSuggestions(currentUserId, pageable);
         return ResponseEntity.ok(suggestions);
     }
 
-    // (tuỳ chọn) Friend suggestions cho user cụ thể (admin hoặc owner)
+    // -------- Friend suggestions cho user cụ thể => Page --------
     @GetMapping("/{id}/suggestions")
-    public ResponseEntity<List<FriendSuggestionDTO>> getFriendSuggestionsForUser(
+    public ResponseEntity<Page<FriendSuggestionDTO>> getFriendSuggestionsForUser(
             @PathVariable UUID id,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "10") int size
+            @PageableDefault(size = 10) Pageable pageable
     ) {
-        // Quyền owner/admin được kiểm ở service (hoặc có thể check sớm ở đây)
-        List<FriendSuggestionDTO> suggestions = userService.getFriendSuggestions(id, page, size);
+        Page<FriendSuggestionDTO> suggestions = userService.getFriendSuggestions(id, pageable);
         return ResponseEntity.ok(suggestions);
     }
 
-    // Gửi yêu cầu kết bạn (current user)
+    // -------- Gửi yêu cầu kết bạn (current user) --------
     @PostMapping("/me/friends/{friendId}")
     public ResponseEntity<String> sendFriendRequestForMe(@PathVariable UUID friendId) {
         UUID me = UUID.fromString(userService.getCurrentUserId());
@@ -176,14 +180,14 @@ public class UserController {
         return ResponseEntity.ok("Friend request sent (or auto-accepted if they already requested you).");
     }
 
-    // (nếu vẫn cần endpoint admin thay mặt user)
+    // -------- Gửi yêu cầu kết bạn thay user khác (admin) --------
     @PostMapping("/{id}/friends/{friendId}")
     public ResponseEntity<String> sendFriendRequest(@PathVariable UUID id, @PathVariable UUID friendId) {
         userService.sendFriendRequest(id, friendId);
         return ResponseEntity.ok("Friend request sent.");
     }
 
-    // Accept/Decline/Cancel
+    // -------- Accept/Decline/Cancel --------
     @PostMapping("/me/friend-requests/{requestId}/accept")
     public ResponseEntity<String> acceptRequest(@PathVariable UUID requestId) {
         UUID me = UUID.fromString(userService.getCurrentUserId());
@@ -205,24 +209,23 @@ public class UserController {
         return ResponseEntity.ok("Friend request canceled!");
     }
 
+    // -------- Incoming friend requests (Page) --------
     @GetMapping("/me/friend-requests/incoming")
-    public ResponseEntity<PageResponse<FriendRequestDTO>> incomingPaged(
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "10") int size
+    public ResponseEntity<Page<FriendRequestDTO>> incomingPaged(
+            @PageableDefault(size = 10) Pageable pageable
     ) {
         UUID me = UUID.fromString(userService.getCurrentUserId());
-        PageResponse<FriendRequestDTO> result = userService.getIncomingRequestsPaged(me, page, size);
+        Page<FriendRequestDTO> result = userService.getIncomingRequestsPaged(me, pageable);
         return ResponseEntity.ok(result);
     }
 
-    // Outgoing (phân trang)
+    // -------- Outgoing friend requests (Page) --------
     @GetMapping("/me/friend-requests/outgoing")
-    public ResponseEntity<PageResponse<FriendRequestDTO>> outgoingPaged(
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "10") int size
+    public ResponseEntity<Page<FriendRequestDTO>> outgoingPaged(
+            @PageableDefault(size = 10) Pageable pageable
     ) {
         UUID me = UUID.fromString(userService.getCurrentUserId());
-        PageResponse<FriendRequestDTO> result = userService.getOutgoingRequestsPaged(me, page, size);
+        Page<FriendRequestDTO> result = userService.getOutgoingRequestsPaged(me, pageable);
         return ResponseEntity.ok(result);
     }
 
@@ -233,16 +236,19 @@ public class UserController {
         return ResponseEntity.ok(res);
     }
 
-    // Danh sách bạn bè của current user
+    // -------- Danh sách bạn bè của current user (Page) --------
     @GetMapping("/me/friends")
-    public ResponseEntity<List<UserResponseDTO>> getMyFriends() {
+    public ResponseEntity<Page<UserResponseDTO>> getMyFriends(
+            @PageableDefault(size = 10) Pageable pageable
+    ) {
         UUID me = UUID.fromString(userService.getCurrentUserId());
-        List<UserResponseDTO> friends = userService.getFriendsOf(me);
+        Page<UserResponseDTO> friends = userService.getFriendsOf(me, pageable);
         return ResponseEntity.ok(friends);
     }
 
+    // -------- Email change (link) --------
     @PostMapping("/me/request-email-change")
-    public ResponseEntity<String> requestEmailChange(@RequestBody java.util.Map<String, String> body) {
+    public ResponseEntity<String> requestEmailChange(@RequestBody Map<String, String> body) {
         String newEmail = body.get("email");
         userService.requestEmailChange(newEmail);
         return ResponseEntity.ok("Verification email sent");
@@ -254,18 +260,18 @@ public class UserController {
         return ResponseEntity.ok("Email updated successfully!");
     }
 
+    // -------- Email change (OTP) --------
     @PostMapping("/me/request-email-otp")
-    public ResponseEntity<String> requestEmailOtp(@RequestBody java.util.Map<String, String> body) {
+    public ResponseEntity<String> requestEmailOtp(@RequestBody Map<String, String> body) {
         String newEmail = body.get("email");
         userService.requestEmailChangeOtp(newEmail);
         return ResponseEntity.ok("Verification code sent");
     }
 
     @PostMapping("/me/verify-email-otp")
-    public ResponseEntity<String> verifyEmailOtp(@RequestBody java.util.Map<String, String> body) {
+    public ResponseEntity<String> verifyEmailOtp(@RequestBody Map<String, String> body) {
         String code = body.get("code");
         userService.verifyEmailChangeOtp(code);
         return ResponseEntity.ok("Email updated successfully!");
     }
-
 }

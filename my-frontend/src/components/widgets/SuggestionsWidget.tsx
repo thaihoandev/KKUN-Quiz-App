@@ -31,11 +31,11 @@ export default function SuggestionsWidget({ page = 0, size = 6, className = "" }
     setLoading(true);
     setErr(null);
     try {
-      const list = await getFriendSuggestions(page, size);
-      setSuggestions(list || []);
+      const res = await getFriendSuggestions({ page, size });
+      setSuggestions(res?.content ?? []);
     } catch (e: any) {
       setErr(e?.message || "Failed to load suggestions");
-      setSuggestions([]); // 👈 lỗi thì coi như không có thông tin
+      setSuggestions([]);
     } finally {
       setLoading(false);
     }
@@ -49,7 +49,7 @@ export default function SuggestionsWidget({ page = 0, size = 6, className = "" }
       await sendFriendRequest(targetUserId);
       setAddedSet((prev) => new Set(prev).add(targetUserId));
     } catch {
-      /* optional toast */
+      // optional toast
     } finally {
       setAddingSet((prev) => {
         const n = new Set(prev);
@@ -75,7 +75,6 @@ export default function SuggestionsWidget({ page = 0, size = 6, className = "" }
           </Link>
         </div>
 
-        {/* Nếu muốn ẩn alert thì có thể bỏ block dưới, còn giữ lại để dev dễ debug */}
         {err && <div className="alert alert-danger py-2">{err}</div>}
 
         {loading ? (
@@ -132,9 +131,7 @@ export default function SuggestionsWidget({ page = 0, size = 6, className = "" }
                   </ItemWrapper>
 
                   <button
-                    className={`btn btn-sm rounded-pill px-3 ${
-                      isAdded ? "btn-success" : "btn-primary"
-                    }`}
+                    className={`btn btn-sm rounded-pill px-3 ${isAdded ? "btn-success" : "btn-primary"}`}
                     onClick={() => hasProfile && handleSendRequest(s.userId)}
                     disabled={isAdding || isAdded || !hasProfile}
                     aria-disabled={isAdding || isAdded || !hasProfile}
