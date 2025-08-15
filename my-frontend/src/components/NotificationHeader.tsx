@@ -1,7 +1,7 @@
 // src/components/layout/NotificationHeader.tsx
 import React, { useEffect, useState, useRef, UIEvent } from "react";
 import { webSocketService, setWebSocketToken } from "@/services/webSocketService";
-import { getNotifications, NotificationDTO, PaginatedResponse } from "@/services/notificationService";
+import { getNotifications, NotificationDTO } from "@/services/notificationService";
 import unknownAvatar from "@/assets/img/avatars/unknown.jpg";
 import { getCookie } from "@/utils/handleCookie";
 import { formatDateOnly, parseDate } from "@/utils/dateUtils";
@@ -9,9 +9,9 @@ import { buildNotificationText } from "@/utils/notificationText";
 
 interface Notification {
   id: string;
-  message: string; // HTML-safe string from formatter
-  time: string;    // "x minutes ago"
-  timeMs: number;  // epoch ms — for sorting
+  message: string; // HTML-safe string từ formatter
+  time: string;    // dạng "x phút trước"
+  timeMs: number;  // epoch ms — để sort
   avatar?: string;
 }
 
@@ -19,7 +19,7 @@ interface NotificationHeaderProps {
   profile: { userId: string } | null;
 }
 
-// Map DTO → UI model (dùng formatter + date utils)
+// Map DTO → UI model
 const mapToNotification = (dto: NotificationDTO): Notification => {
   const createdDate = dto.createdAt ? parseDate(dto.createdAt) : new Date();
   return {
@@ -34,11 +34,9 @@ const mapToNotification = (dto: NotificationDTO): Notification => {
 // Chuẩn hoá dữ liệu từ WS hoặc nơi khác về Notification
 const normalizeNotification = (n: any): Notification => {
   if (n && typeof n === "object" && "notificationId" in n) {
-    // Trường hợp nhận thẳng DTO từ BE
     return mapToNotification(n as NotificationDTO);
   }
   if (n && typeof n === "object" && typeof n.id === "string") {
-    // Đã là AppNotification -> làm mới time hiển thị
     const timeMs =
       typeof n.timeMs === "number"
         ? n.timeMs
@@ -51,7 +49,6 @@ const normalizeNotification = (n: any): Notification => {
       time: formatDateOnly(timeMs),
     };
   }
-  // Fallback
   const now = Date.now();
   return {
     id: String(now),
@@ -63,12 +60,13 @@ const normalizeNotification = (n: any): Notification => {
 };
 
 const NotificationHeader: React.FC<NotificationHeaderProps> = ({ profile }) => {
-  const accessToken = getCookie("accessToken"); // có thể null nếu cookie HttpOnly
+  const accessToken = getCookie("accessToken");
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [page, setPage] = useState(0);
   const [pageSize] = useState(10);
   const [hasMore, setHasMore] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
+  const [totalCount, setTotalCount] = useState(0);
   const scrollRef = useRef<HTMLUListElement>(null);
 
   // Reset khi đổi user
@@ -76,29 +74,36 @@ const NotificationHeader: React.FC<NotificationHeaderProps> = ({ profile }) => {
     setNotifications([]);
     setPage(0);
     setHasMore(true);
+    setTotalCount(0);
   }, [profile?.userId]);
 
-  // Cấp token cho WS (per-user). Nếu cookie HttpOnly -> null, backend sẽ đọc từ cookie ở handshake.
+  // Cấp token cho WS
   useEffect(() => {
     setWebSocketToken(accessToken ?? null);
   }, [accessToken]);
 
-  // Load danh sách có phân trang
+  // Load danh sách có phân trang + lấy tổng số thông báo
   useEffect(() => {
     let cancelled = false;
     const fetchPage = async () => {
       if (!profile?.userId || !hasMore) return;
       setIsLoading(true);
       try {
-        const resp: PaginatedResponse<NotificationDTO> = await getNotifications({
+        const resp = await getNotifications({
           page,
           size: pageSize,
           sort: "createdAt,desc",
         });
 
         const dtos = Array.isArray(resp?.content) ? resp.content : [];
-        const beHasNext = (resp as any)?.hasNext;
-        const next = typeof beHasNext === "boolean" ? beHasNext : dtos.length === pageSize;
+        setTotalCount(
+          typeof resp?.totalElements === "number" ? resp.totalElements : dtos.length
+        );
+
+        const next =
+          typeof resp?.last === "boolean"
+            ? !resp.last
+            : dtos.length === pageSize;
 
         const incoming = dtos.map(mapToNotification);
 
@@ -131,11 +136,12 @@ const NotificationHeader: React.FC<NotificationHeaderProps> = ({ profile }) => {
     }
   };
 
-  // WebSocket realtime: thêm item mới lên đầu, khử trùng theo id
+  // WebSocket realtime
   useEffect(() => {
     const cb = (payload: any) => {
       const n = normalizeNotification(payload);
       setNotifications((prev) => [n, ...prev.filter((x) => x.id !== n.id)]);
+      setTotalCount((c) => c + 1); // tăng count khi có thông báo mới
     };
     webSocketService.registerNotificationCallback(cb);
     return () => {
@@ -143,7 +149,7 @@ const NotificationHeader: React.FC<NotificationHeaderProps> = ({ profile }) => {
     };
   }, [profile?.userId]);
 
-  // (Optional) Auto-update "x phút trước" mỗi 60s cho đẹp
+  // Auto-update "x phút trước" mỗi 60s
   useEffect(() => {
     const t = window.setInterval(() => {
       setNotifications((prev) =>
@@ -158,8 +164,10 @@ const NotificationHeader: React.FC<NotificationHeaderProps> = ({ profile }) => {
       <a className="nav-link dropdown-toggle hide-arrow" href="#" data-bs-toggle="dropdown">
         <span className="position-relative">
           <i className="icon-base bx bx-bell icon-md" />
-          {notifications.length > 0 && (
-            <span className="badge rounded-pill bg-danger">{notifications.length}</span>
+          {totalCount > 0 && (
+            <span className="badge rounded-pill bg-danger">
+              {totalCount > 10 ? "10+" : totalCount}
+            </span>
           )}
         </span>
       </a>
@@ -168,7 +176,9 @@ const NotificationHeader: React.FC<NotificationHeaderProps> = ({ profile }) => {
         <li className="dropdown-menu-header border-bottom">
           <div className="dropdown-header d-flex align-items-center py-3">
             <h6 className="mb-0 me-auto">Notifications</h6>
-            <span className="badge bg-label-primary me-2">{notifications.length} New</span>
+            <span className="badge bg-label-primary me-2">
+              {totalCount > 10 ? "10+" : totalCount} New
+            </span>
           </div>
         </li>
 

@@ -1,7 +1,6 @@
 import { handleApiError } from "@/utils/apiErrorHandler";
 import axiosInstance from "./axiosInstance";
-import { Option, Question, Quiz, QuizStatus } from "@/interfaces";
-import { PageResponse } from "./notificationService";
+import { Option, PageResponse, Question, Quiz, QuizStatus } from "@/interfaces";
 
 interface QuizCreatePayload {
   title: string;
