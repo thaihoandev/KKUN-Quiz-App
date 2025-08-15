@@ -226,6 +226,21 @@ public class UserController {
         return ResponseEntity.ok(result);
     }
 
+    @GetMapping("/me/friendships/{targetId}/status")
+    public ResponseEntity<FriendshipStatusResponseDTO> getFriendshipStatus(@PathVariable UUID targetId) {
+        UUID me = UUID.fromString(userService.getCurrentUserId());
+        FriendshipStatusResponseDTO res = userService.getFriendshipStatus(me, targetId);
+        return ResponseEntity.ok(res);
+    }
+
+    // Danh sách bạn bè của current user
+    @GetMapping("/me/friends")
+    public ResponseEntity<List<UserResponseDTO>> getMyFriends() {
+        UUID me = UUID.fromString(userService.getCurrentUserId());
+        List<UserResponseDTO> friends = userService.getFriendsOf(me);
+        return ResponseEntity.ok(friends);
+    }
+
     @PostMapping("/me/request-email-change")
     public ResponseEntity<String> requestEmailChange(@RequestBody java.util.Map<String, String> body) {
         String newEmail = body.get("email");

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { UserResponseDTO } from "@/interfaces";
 import { getUserPosts, PostDTO } from "@/services/postService";
 import PostCard from "./PostCard";
@@ -10,18 +10,29 @@ interface PostListProps {
   newPost?: PostDTO | null;
 }
 
+const PAGE_SIZE = 10;
+
 const PostList = ({ profile, onUpdate, userId, newPost }: PostListProps) => {
   const [currentPosts, setCurrentPosts] = useState<PostDTO[]>([]);
   const [page, setPage] = useState<number>(0);
+  const pageRef = useRef(0); // tránh race-condition khi loadMore
   const [hasMore, setHasMore] = useState<boolean>(true);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const loaderRef = useRef<HTMLDivElement>(null);
 
-  // Check if current user is the profile owner
   const isOwner = profile?.userId === userId;
 
-  // Fetch initial posts on mount or userId change
+  // ✅ Reset mọi state khi userId đổi
+  useEffect(() => {
+    setCurrentPosts([]);
+    setPage(0);
+    pageRef.current = 0;
+    setHasMore(true);
+    setError(null);
+  }, [userId]);
+
+  // ✅ Luôn fetch initial posts khi userId đổi (KHÔNG early return vì newPost)
   useEffect(() => {
     const fetchInitialPosts = async () => {
       if (!userId) {
@@ -30,29 +41,19 @@ const PostList = ({ profile, onUpdate, userId, newPost }: PostListProps) => {
         setError("No user ID provided.");
         return;
       }
-
-      if (newPost) {
-        console.log('Skipping initial fetch due to new post');
-        return;
-      }
-
       setIsLoading(true);
       setError(null);
       try {
-        const initialPosts = await getUserPosts(userId, 0, 10);
-        setCurrentPosts((prevPosts) => {
-          const newPostIds = prevPosts.map((p) => p.postId);
-          const filteredFetchedPosts = initialPosts.filter((post) => !newPostIds.includes(post.postId));
-          const updatedPosts = [...prevPosts, ...filteredFetchedPosts].sort(
-            (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-          );
-          return updatedPosts;
-        });
+        const initialPosts = await getUserPosts(userId, 0, PAGE_SIZE);
+        setCurrentPosts(initialPosts.sort(
+          (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        ));
         setPage(1);
-        setHasMore(initialPosts.length >= 10);
-      } catch (error: any) {
-        console.error('Error fetching initial posts:', error);
-        setError(error.message || 'Failed to load posts.');
+        pageRef.current = 1;
+        setHasMore(initialPosts.length >= PAGE_SIZE);
+      } catch (e: any) {
+        console.error("Error fetching initial posts:", e);
+        setError(e?.message || "Failed to load posts.");
         setHasMore(false);
       } finally {
         setIsLoading(false);
@@ -62,56 +63,55 @@ const PostList = ({ profile, onUpdate, userId, newPost }: PostListProps) => {
     fetchInitialPosts();
   }, [userId]);
 
-  // Handle new post notifications
+  // ✅ Chỉ thêm newPost nếu đúng chủ profile hiện tại
   useEffect(() => {
-    if (newPost) {
-      console.log('Received new post:', newPost);
-      setCurrentPosts((prevPosts) => {
-        if (prevPosts.some((p) => p.postId === newPost.postId)) {
-          return prevPosts;
-        }
-        const updatedPosts = [newPost, ...prevPosts].sort(
-          (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-        );
-        return updatedPosts;
-      });
-    }
-  }, [newPost]);
+    if (!newPost) return;
+    const ownerId = (newPost as any)?.user?.userId; // tuỳ DTO của bạn
+    if (ownerId !== userId) return;
 
-  const loadMorePosts = async () => {
-    if (isLoading || !hasMore || !userId) {
-      console.log('Skipping loadMorePosts:', { isLoading, hasMore, userId });
-      return;
-    }
+    setCurrentPosts((prev) => {
+      if (prev.some((p) => p.postId === newPost.postId)) return prev;
+      return [newPost, ...prev].sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+    });
+  }, [newPost, userId]);
+
+  const loadMorePosts = useCallback(async () => {
+    if (isLoading || !hasMore || !userId) return;
 
     setIsLoading(true);
     setError(null);
     try {
-      const newPosts = await getUserPosts(userId, page, 10);
+      const nextPage = pageRef.current; // dùng ref để luôn là giá trị mới nhất
+      const newPosts = await getUserPosts(userId, nextPage, PAGE_SIZE);
+
       if (newPosts.length === 0) {
         setHasMore(false);
       } else {
-        setCurrentPosts((prevPosts) => {
-          const uniquePosts = [...prevPosts, ...newPosts].filter(
-            (post, index, self) => self.findIndex((p) => p.postId === post.postId) === index
+        setCurrentPosts((prev) => {
+          const merged = [...prev, ...newPosts];
+          const unique = merged.filter(
+            (post, idx, self) => self.findIndex((p) => p.postId === post.postId) === idx
           );
-          return uniquePosts.sort(
+          return unique.sort(
             (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
           );
         });
-        setPage((prevPage) => prevPage + 1);
-        setHasMore(newPosts.length >= 10);
+        setPage((prev) => prev + 1);
+        pageRef.current = nextPage + 1;
+        setHasMore(newPosts.length >= PAGE_SIZE);
       }
-    } catch (error: any) {
-      console.error("Error loading more posts:", error);
-      setError(error.message || 'Failed to load more posts.');
+    } catch (e: any) {
+      console.error("Error loading more posts:", e);
+      setError(e?.message || "Failed to load more posts.");
       setHasMore(false);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [hasMore, isLoading, userId]);
 
-  // Set up IntersectionObserver for lazy loading
+  // IntersectionObserver cho lazy load
   useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
@@ -119,19 +119,17 @@ const PostList = ({ profile, onUpdate, userId, newPost }: PostListProps) => {
           loadMorePosts();
         }
       },
-      { threshold: 0.1, rootMargin: '100px' }
+      { threshold: 0.1, rootMargin: "100px" }
     );
 
-    if (loaderRef.current && hasMore) {
-      observer.observe(loaderRef.current);
-    }
+    const el = loaderRef.current;
+    if (el && hasMore) observer.observe(el);
 
     return () => {
-      if (loaderRef.current) {
-        observer.unobserve(loaderRef.current);
-      }
+      if (el) observer.unobserve(el);
+      observer.disconnect();
     };
-  }, [hasMore, isLoading, userId]);
+  }, [hasMore, isLoading, userId, loadMorePosts]);
 
   return (
     <>
@@ -142,15 +140,17 @@ const PostList = ({ profile, onUpdate, userId, newPost }: PostListProps) => {
           </small>
         </div>
       </div>
-      <div className="post-list" style={{ minHeight: '200px' }}>
-        {error && (
-          <div className="text-center text-danger py-3">
-            {error}
-          </div>
-        )}
+
+      <div className="post-list" style={{ minHeight: "200px" }}>
+        {error && <div className="text-center text-danger py-3">{error}</div>}
+
         {currentPosts.length === 0 && !error ? (
           <div className="text-center text-muted py-3">
-            {isLoading ? 'Loading posts...' : isOwner ? 'No posts yet. Share something!' : 'No visible posts.'}
+            {isLoading
+              ? "Loading posts..."
+              : isOwner
+              ? "No posts yet. Share something!"
+              : "No visible posts."}
           </div>
         ) : (
           <div className="d-flex flex-column gap-3">
@@ -164,8 +164,13 @@ const PostList = ({ profile, onUpdate, userId, newPost }: PostListProps) => {
             ))}
           </div>
         )}
+
         {hasMore ? (
-          <div ref={loaderRef} className="text-center py-3" style={{ minHeight: '50px' }}>
+          <div
+            ref={loaderRef}
+            className="text-center py-3"
+            style={{ minHeight: "50px" }}
+          >
             {isLoading ? (
               <div className="spinner-border" role="status">
                 <span className="visually-hidden">Loading...</span>
@@ -175,10 +180,9 @@ const PostList = ({ profile, onUpdate, userId, newPost }: PostListProps) => {
             )}
           </div>
         ) : (
-          currentPosts.length > 0 && !error && (
-            <div className="text-center py-3 text-muted">
-              No more posts to load.
-            </div>
+          currentPosts.length > 0 &&
+          !error && (
+            <div className="text-center py-3 text-muted">No more posts to load.</div>
           )
         )}
       </div>

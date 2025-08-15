@@ -7,6 +7,7 @@ import com.kkunquizapp.QuizAppBackend.exception.DuplicateEntityException;
 import com.kkunquizapp.QuizAppBackend.exception.InvalidRequestException;
 import com.kkunquizapp.QuizAppBackend.exception.UserNotFoundException;
 import com.kkunquizapp.QuizAppBackend.model.*;
+import com.kkunquizapp.QuizAppBackend.model.enums.FriendshipStatus;
 import com.kkunquizapp.QuizAppBackend.model.enums.UserRole;
 import com.kkunquizapp.QuizAppBackend.repo.EmailChangeTokenRepo;
 import com.kkunquizapp.QuizAppBackend.repo.FriendRequestRepo;
@@ -978,7 +979,67 @@ public class UserServiceImpl implements UserService {
         return toPageResponse(dtoPage);
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public FriendshipStatusResponseDTO getFriendshipStatus(UUID me, UUID targetId) {
+        if (me.equals(targetId)) {
+            // chính mình -> coi như không cần nút friend
+            return FriendshipStatusResponseDTO.builder()
+                    .status(FriendshipStatus.NONE)
+                    .requestId(null)
+                    .build();
+        }
 
+        User meUser = userRepo.findById(me)
+                .orElseThrow(() -> new UserNotFoundException("User not found: " + me));
+        User target = userRepo.findById(targetId)
+                .orElseThrow(() -> new UserNotFoundException("User not found: " + targetId));
+
+        // 1) Đã là bạn?
+        if (meUser.isFriendsWith(targetId)) {
+            return FriendshipStatusResponseDTO.builder()
+                    .status(FriendshipStatus.FRIEND)
+                    .requestId(null)
+                    .build();
+        }
+
+        // 2) Có pending ngược chiều (họ mời mình)?
+        Optional<FriendRequest> incoming = friendRequestRepo
+                .findByRequesterAndReceiverAndStatus(target, meUser, FriendRequest.Status.PENDING);
+        if (incoming.isPresent()) {
+            return FriendshipStatusResponseDTO.builder()
+                    .status(FriendshipStatus.INCOMING)
+                    .requestId(incoming.get().getId())
+                    .build();
+        }
+
+        // 3) Có pending cùng chiều (mình đã mời họ)?
+        Optional<FriendRequest> outgoing = friendRequestRepo
+                .findByRequesterAndReceiverAndStatus(meUser, target, FriendRequest.Status.PENDING);
+        if (outgoing.isPresent()) {
+            return FriendshipStatusResponseDTO.builder()
+                    .status(FriendshipStatus.REQUESTED)
+                    .requestId(outgoing.get().getId())
+                    .build();
+        }
+
+        // 4) Không có gì
+        return FriendshipStatusResponseDTO.builder()
+                .status(FriendshipStatus.NONE)
+                .requestId(null)
+                .build();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<UserResponseDTO> getFriendsOf(UUID userId) {
+        User u = userRepo.findById(userId)
+                .orElseThrow(() -> new UserNotFoundException("User not found: " + userId));
+
+        return u.getFriends().stream()
+                .map(friend -> modelMapper.map(friend, UserResponseDTO.class))
+                .collect(Collectors.toList());
+    }
 
 
     private FriendRequestDTO toDto(FriendRequest fr) {

@@ -48,7 +48,7 @@ const AppRoutes: React.FC = () => (
 
           {/* 4) User profile and dashboard */}
           {/* nested paths */}
-          <Route path="dashboard" element={<UserDashboardPage />} />
+          <Route path="dashboard" element={<UserProfilePage />} />
           <Route path="profile/:userId"   element={<UserProfilePage />} />
           <Route path="quizzes/:quizId"   element={<QuizManagementPage />} />
           <Route path="achievements"      element={<AchievementPage />} />

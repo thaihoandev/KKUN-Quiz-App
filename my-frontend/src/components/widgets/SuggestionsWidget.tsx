@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { Spin } from "antd";
-import { Link } from "react-router-dom"; // 👈 thêm
+import { Link } from "react-router-dom";
 import unknownAvatar from "@/assets/img/avatars/unknown.jpg";
 import { useAuthStore } from "@/store/authStore";
 import {
@@ -32,9 +32,10 @@ export default function SuggestionsWidget({ page = 0, size = 6, className = "" }
     setErr(null);
     try {
       const list = await getFriendSuggestions(page, size);
-      setSuggestions(list);
+      setSuggestions(list || []);
     } catch (e: any) {
       setErr(e?.message || "Failed to load suggestions");
+      setSuggestions([]); // 👈 lỗi thì coi như không có thông tin
     } finally {
       setLoading(false);
     }
@@ -69,13 +70,12 @@ export default function SuggestionsWidget({ page = 0, size = 6, className = "" }
       <div className="card-body">
         <div className="d-flex justify-content-between align-items-center mb-3">
           <h6 className="fw-bold mb-0">People you may know</h6>
-
-          {/* 👇 Nút See all dẫn đến trang quản lý */}
           <Link to="/friends" className="btn btn-link btn-sm text-decoration-none p-0">
             See all
           </Link>
         </div>
 
+        {/* Nếu muốn ẩn alert thì có thể bỏ block dưới, còn giữ lại để dev dễ debug */}
         {err && <div className="alert alert-danger py-2">{err}</div>}
 
         {loading ? (
@@ -84,32 +84,62 @@ export default function SuggestionsWidget({ page = 0, size = 6, className = "" }
             <span className="text-muted">Loading suggestions…</span>
           </div>
         ) : suggestions.length === 0 ? (
-          <div className="text-muted">No suggestions right now</div>
+          <div className="text-muted">Không có thông tin</div>
         ) : (
           <div className="d-flex flex-column gap-3">
             {suggestions.map((s) => {
               const isAdding = addingSet.has(s.userId);
               const isAdded = addedSet.has(s.userId);
+
+              const hasProfile = Boolean(s.userId);
+              const displayName = s.name || s.username || "Không có thông tin";
+              const mutualText =
+                typeof s.mutualFriends === "number"
+                  ? `${s.mutualFriends} mutual friends`
+                  : "Không có thông tin";
+
+              const ItemWrapper: React.FC<{ children: React.ReactNode }> = ({ children }) =>
+                hasProfile ? (
+                  <Link
+                    to={`/profile/${s.userId}`}
+                    className="d-flex align-items-center text-decoration-none text-dark flex-grow-1"
+                    aria-label={`Xem hồ sơ của ${displayName}`}
+                  >
+                    {children}
+                  </Link>
+                ) : (
+                  <div className="d-flex align-items-center flex-grow-1">{children}</div>
+                );
+
               return (
-                <div key={s.userId} className="d-flex align-items-center">
-                  <img
-                    src={s.avatar || unknownAvatar}
-                    alt={s.name}
-                    className="rounded-circle me-3"
-                    width={40}
-                    height={40}
-                    style={{ objectFit: "cover" }}
-                  />
-                  <div className="flex-grow-1">
-                    <div className="fw-semibold">{s.name || s.username}</div>
-                    <small className="text-muted">{s.mutualFriends} mutual friends</small>
-                  </div>
+                <div key={s.userId || `unknown-${displayName}`} className="d-flex align-items-center">
+                  <ItemWrapper>
+                    <img
+                      src={s.avatar || unknownAvatar}
+                      alt={displayName}
+                      className="rounded-circle me-3"
+                      width={40}
+                      height={40}
+                      style={{ objectFit: "cover" }}
+                      onError={(e) => {
+                        (e.currentTarget as HTMLImageElement).src = unknownAvatar;
+                      }}
+                    />
+                    <div className="flex-grow-1">
+                      <div className="fw-semibold">{displayName}</div>
+                      <small className="text-muted">{mutualText}</small>
+                    </div>
+                  </ItemWrapper>
+
                   <button
                     className={`btn btn-sm rounded-pill px-3 ${
                       isAdded ? "btn-success" : "btn-primary"
                     }`}
-                    onClick={() => handleSendRequest(s.userId)}
-                    disabled={isAdding || isAdded}
+                    onClick={() => hasProfile && handleSendRequest(s.userId)}
+                    disabled={isAdding || isAdded || !hasProfile}
+                    aria-disabled={isAdding || isAdded || !hasProfile}
+                    aria-label={isAdded ? "Đã gửi lời mời" : "Thêm bạn"}
+                    title={!hasProfile ? "Không thể gửi yêu cầu: thiếu thông tin" : undefined}
                   >
                     {isAdded ? "Requested" : isAdding ? "Requesting..." : "Add"}
                   </button>

@@ -33,4 +33,7 @@ public interface UserService {
     PageResponse<FriendRequestDTO> getIncomingRequestsPaged(UUID userId, int page, int size);
     PageResponse<FriendRequestDTO> getOutgoingRequestsPaged(UUID userId, int page, int size);
 
+    FriendshipStatusResponseDTO getFriendshipStatus(UUID me, UUID targetId);
+    List<UserResponseDTO> getFriendsOf(UUID userId);
+
 }

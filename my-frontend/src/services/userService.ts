@@ -185,6 +185,19 @@ export const declineFriendRequest = async (requestId: string) =>
 export const cancelFriendRequest = async (requestId: string) =>
   axiosInstance.post(`/users/me/friend-requests/${requestId}/cancel`);
 
+export type FriendshipStatus = "NONE" | "REQUESTED" | "INCOMING" | "FRIEND";
+export type FriendshipStatusResponse = { status: FriendshipStatus; requestId?: string | null };
+
+export const getFriendshipStatus = async (targetId: string) => {
+  const res = await axiosInstance.get<FriendshipStatusResponse>(`/users/me/friendships/${targetId}/status`);
+  return res.data;
+};
+
+export const getMyFriends = async () => {
+  const res = await axiosInstance.get<UserResponseDTO[]>(`/users/me/friends`);
+  return res.data;
+};
+
 // ===== Email change via OTP
 export const requestEmailOtp = async (newEmail: string) =>
   axiosInstance.post("/users/me/request-email-otp", { email: newEmail });
