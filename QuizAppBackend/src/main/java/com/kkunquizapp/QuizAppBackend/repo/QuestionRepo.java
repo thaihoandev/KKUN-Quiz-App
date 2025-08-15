@@ -2,6 +2,8 @@ package com.kkunquizapp.QuizAppBackend.repo;
 
 import com.kkunquizapp.QuizAppBackend.model.Question;
 import com.kkunquizapp.QuizAppBackend.model.Quiz;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -16,5 +18,6 @@ public interface QuestionRepo extends JpaRepository<Question, UUID> {
 
     @Query("SELECT q FROM Question q WHERE q.quiz = :quiz AND q.deleted = false")
     List<Question> findActiveQuestionsByQuiz(@Param("quiz") Quiz quiz);
+    Page<Question> findByQuizAndDeletedFalse(Quiz quiz, Pageable pageable);
 
 }

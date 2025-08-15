@@ -1,6 +1,7 @@
 import { handleApiError } from "@/utils/apiErrorHandler";
 import axiosInstance from "./axiosInstance";
 import { Option, Question, Quiz, QuizStatus } from "@/interfaces";
+import { PageResponse } from "./notificationService";
 
 interface QuizCreatePayload {
   title: string;
@@ -34,13 +35,17 @@ export const getQuizzById = async (quizId: string) => {
   }
 };
 
-export const getQuestionsByQuizId = async (quizId: string) => {
-  try {
-    const response = await axiosInstance.get(`/quizzes/${quizId}/questions`);
-    return response.data as Question[];
-  } catch (error) {
-    handleApiError(error, "Failed to fetch questions for quiz");
-  }
+export const getPagedQuestionsByQuizId = async (
+  quizId: string,
+  page = 0,
+  size = 10
+): Promise<PageResponse<Question>> => {
+  const res = await axiosInstance.get(`/quizzes/${quizId}/questions`, {
+    params: { page, size },
+  });
+  console.log("Fetched questions for quiz:", quizId, res.data);
+  
+  return res.data as PageResponse<Question>;
 };
 
 export const createQuiz = async (quiz: QuizCreatePayload) => {

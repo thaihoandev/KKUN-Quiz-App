@@ -79,9 +79,17 @@ public class QuizController {
     }
 
     @GetMapping("/{quizId}/questions")
-    public ResponseEntity<List<QuestionResponseDTO>> getQuestions(@PathVariable UUID quizId) {
+    public ResponseEntity<Page<QuestionResponseDTO>> getQuestions(
+            @PathVariable UUID quizId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size
+    ) {
         try {
-            List<QuestionResponseDTO> questions = questionService.getQuestionsByQuizId(quizId);
+            if (page < 0 || size <= 0) {
+                return ResponseEntity.badRequest().build();
+            }
+            Pageable pageable = PageRequest.of(page, size);
+            Page<QuestionResponseDTO> questions = questionService.getQuestionsByQuizId(quizId, pageable);
             return ResponseEntity.ok(questions);
         } catch (Exception e) {
             return ResponseEntity.notFound().build();
