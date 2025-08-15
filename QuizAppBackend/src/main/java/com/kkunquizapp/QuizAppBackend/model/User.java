@@ -71,9 +71,10 @@ public class User {
     private Set<User> friends = new HashSet<>();
 
     // ======= Quan hệ bạn bè =======
-    public void addFriend(User friend) {
-        friends.add(friend);
-        friend.friends.add(this); // đảm bảo 2 chiều
+    public void addFriend(User other) {
+        if (this.friends.contains(other)) return;
+        this.friends.add(other);
+        other.getFriends().add(this);
     }
 
     public void removeFriend(User friend) {

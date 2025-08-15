@@ -321,7 +321,7 @@ public class UserServiceImpl implements UserService {
             throw new InvalidRequestException("Current password is incorrect");
         }
 
-        user.setPassword(newPassword);
+        user.setPassword(encoder.encode(newPassword));
         user.setUpdatedAt(LocalDateTime.now());
         userRepo.save(user);
     }
@@ -396,45 +396,6 @@ public class UserServiceImpl implements UserService {
     }
 
     // ===================== ADD/REQUEST/ACCEPT/DECLINE/CANCEL (giữ nguyên) =====================
-    @Override
-    @Transactional
-    public void addFriend(UUID requesterId, UUID targetUserId) {
-        if (requesterId.equals(targetUserId)) {
-            throw new InvalidRequestException("You cannot add yourself as a friend");
-        }
-
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (!(authentication != null && authentication.getPrincipal() instanceof Jwt jwt)) {
-            throw new SecurityException("Invalid Access Token");
-        }
-
-        String userIdFromToken = jwt.getClaim("userId");
-        @SuppressWarnings("unchecked")
-        List<String> roles = jwt.getClaim("roles");
-        boolean isAdmin = roles != null && roles.contains(UserRole.ADMIN.name());
-
-        if (!isAdmin && !requesterId.toString().equals(userIdFromToken)) {
-            throw new SecurityException("You do not have permission to add friends for this user");
-        }
-
-        User me = userRepo.findById(requesterId)
-                .orElseThrow(() -> new UserNotFoundException("Requester not found: " + requesterId));
-        User target = userRepo.findById(targetUserId)
-                .orElseThrow(() -> new UserNotFoundException("User to add not found: " + targetUserId));
-
-        if (!me.isActive() || !target.isActive()) {
-            throw new InvalidRequestException("Inactive accounts cannot make friend connections");
-        }
-
-        if (me.getFriends().stream().anyMatch(f -> f.getUserId().equals(targetUserId))) {
-            return;
-        }
-
-        me.addFriend(target);
-
-        userRepo.save(me);
-        userRepo.save(target);
-    }
 
     @Override
     @Transactional

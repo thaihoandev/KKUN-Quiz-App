@@ -34,8 +34,6 @@ public interface UserService {
     // ĐỔI: từ List -> Page
     Page<FriendSuggestionDTO> getFriendSuggestions(UUID currentUserId, Pageable pageable);
 
-    void addFriend(UUID requesterId, UUID targetUserId);
-
     void requestEmailChange(String newEmail);
 
     void confirmEmailChange(String token);
