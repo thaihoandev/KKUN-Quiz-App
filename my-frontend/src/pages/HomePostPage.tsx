@@ -14,6 +14,49 @@ import SuggestionsWidget from "@/components/widgets/SuggestionsWidget";
 import TrendsWidget from "@/components/widgets/TrendsWidget";
 import OnlineWidget from "@/components/widgets/OnlineWidget";
 
+/** ===== Helpers to normalize any response shape to an array of PostDTO ===== */
+
+type PageResponseLike<T> = {
+  content?: T[];
+  last?: boolean;
+  number?: number;
+  totalElements?: number;
+  totalPages?: number;
+  size?: number;
+} | T[];
+
+/** Trả về { items, last? } từ mọi response (array hoặc PageResponse) */
+function normalizeList<T>(data: PageResponseLike<T>): { items: T[]; last: boolean | undefined } {
+  if (Array.isArray(data)) {
+    return { items: data, last: undefined };
+  }
+  if (data && Array.isArray((data as any).content)) {
+    const d = data as any;
+    return { items: d.content as T[], last: typeof d.last === "boolean" ? d.last : undefined };
+  }
+  return { items: [], last: undefined };
+}
+
+function uniqueByPostId<T extends { postId?: string | number }>(arr: T[]) {
+  return arr.filter((p, i, self) => self.findIndex((x) => x.postId === p.postId) === i);
+}
+
+function safeDateMs(v: any) {
+  const t = new Date(v as any).getTime();
+  return Number.isFinite(t) ? t : 0;
+}
+
+function combineAndSortPosts(a: PostDTO[], b: PostDTO[]) {
+  const merged = uniqueByPostId([...a, ...b]);
+  merged.sort((x, y) => safeDateMs(y.createdAt) - safeDateMs(x.createdAt));
+  return merged;
+}
+
+/** ====================== Component ====================== */
+
+const PAGE_INIT_SIZE = 10;
+const PAGE_MORE_SIZE = 5;
+
 const HomePostPage = () => {
   const [posts, setPosts] = useState<PostDTO[]>([]);
   const [publicPage, setPublicPage] = useState<number>(0);
@@ -23,50 +66,51 @@ const HomePostPage = () => {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<string>("all");
+
   const loaderRef = useRef<HTMLDivElement>(null);
+  const observerRef = useRef<IntersectionObserver | null>(null);
 
   const user = useAuthStore((s) => s.user);
   const profile: UserDto | null = user;
 
-  // Fetch public posts
-  const fetchPublicPosts = async (page: number = 0, size: number = 10) => {
-    try {
-      const response = await axiosInstance.get("/posts/public", {
-        params: { page, size, sortBy: "createdAt", sortDir: "desc" },
-      });
-      return response.data as PostDTO[];
-    } catch (error: any) {
-      console.error("Error fetching public posts:", error);
-      throw new Error(error.response?.data?.message || "Failed to fetch public posts");
-    }
-  };
+  /** ====== Fetchers (đã normalize) ====== */
+  const fetchPublicPosts = useCallback(
+    async (page: number = 0, size: number = PAGE_INIT_SIZE) => {
+      try {
+        const resp = await axiosInstance.get("/posts/public", {
+          params: { page, size, sortBy: "createdAt", sortDir: "desc" },
+        });
+        const { items, last } = normalizeList<PostDTO>(resp?.data);
+        // Nếu backend không trả last, ước lượng theo length
+        const computedLast = typeof last === "boolean" ? last : !(Array.isArray(items) && items.length >= size);
+        return { items, last: computedLast };
+      } catch (err: any) {
+        console.error("Error fetching public posts:", err);
+        throw new Error(err?.response?.data?.message || "Failed to fetch public posts");
+      }
+    },
+    []
+  );
 
-  // Fetch friends posts
-  const fetchFriendsPosts = async (page: number = 0, size: number = 10) => {
-    try {
-      const response = await axiosInstance.get("/posts/friends", {
-        params: { page, size, sortBy: "createdAt", sortDir: "desc" },
-      });
-      return response.data as PostDTO[];
-    } catch (error: any) {
-      console.error("Error fetching friends posts:", error);
-      throw new Error(error.response?.data?.message || "Failed to fetch friends posts");
-    }
-  };
+  const fetchFriendsPosts = useCallback(
+    async (page: number = 0, size: number = PAGE_INIT_SIZE) => {
+      try {
+        const resp = await axiosInstance.get("/posts/friends", {
+          params: { page, size, sortBy: "createdAt", sortDir: "desc" },
+        });
+        const { items, last } = normalizeList<PostDTO>(resp?.data);
+        const computedLast = typeof last === "boolean" ? last : !(Array.isArray(items) && items.length >= size);
+        return { items, last: computedLast };
+      } catch (err: any) {
+        console.error("Error fetching friends posts:", err);
+        throw new Error(err?.response?.data?.message || "Failed to fetch friends posts");
+      }
+    },
+    []
+  );
 
-  // Combine & sort
-  const combineAndSortPosts = (publicPosts: PostDTO[], friendsPosts: PostDTO[]) => {
-    const allPosts = [...publicPosts, ...friendsPosts];
-    const uniquePosts = allPosts.filter(
-      (post, index, self) => self.findIndex((p) => p.postId === post.postId) === index
-    );
-    return uniquePosts.sort(
-      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    );
-  };
-
-  // Filter tabs
-  const getFilteredPosts = () => {
+  /** ====== Filter tabs ====== */
+  const getFilteredPosts = useCallback(() => {
     switch (activeTab) {
       case "public":
         return posts.filter((post) => post.privacy === "PUBLIC");
@@ -75,106 +119,160 @@ const HomePostPage = () => {
       default:
         return posts;
     }
-  };
+  }, [activeTab, posts]);
 
-  // Initial load
+  /** ====== Initial load ====== */
   const loadInitialPosts = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
       const promises = [
-        fetchPublicPosts(0, 10),
-        profile ? fetchFriendsPosts(0, 10) : Promise.resolve([]),
-      ];
-      const [publicResult, friendsResult] = await Promise.allSettled(promises);
-      const publicResults: PostDTO[] =
-        publicResult.status === "fulfilled" ? publicResult.value : [];
-      const friendsResults: PostDTO[] =
-        friendsResult.status === "fulfilled" ? friendsResult.value : [];
-      const combinedPosts = combineAndSortPosts(publicResults, friendsResults);
-      setPosts(combinedPosts);
+        fetchPublicPosts(0, PAGE_INIT_SIZE),
+        profile ? fetchFriendsPosts(0, PAGE_INIT_SIZE) : Promise.resolve({ items: [], last: true }),
+      ] as const;
+
+      const [pubRes, friRes] = await Promise.all(promises);
+
+      const combined = combineAndSortPosts(pubRes.items, friRes.items);
+      setPosts(combined);
+
       setPublicPage(1);
       setFriendsPage(profile ? 1 : 0);
-      setHasMorePublic(publicResults.length >= 10);
-      setHasMoreFriends(profile ? friendsResults.length >= 10 : false);
-    } catch (error: any) {
-      console.error("Error loading initial posts:", error);
-      setError(error.message || "Failed to load posts");
+
+      setHasMorePublic(!pubRes.last);
+      setHasMoreFriends(profile ? !friRes.last : false);
+    } catch (err: any) {
+      console.error("Error loading initial posts:", err);
+      setError(err?.message || "Failed to load posts");
     } finally {
       setIsLoading(false);
     }
-  }, [profile]);
+  }, [fetchPublicPosts, fetchFriendsPosts, profile]);
 
-  // Load more (infinite)
+  /** ====== Load more (infinite) ====== */
   const loadMorePosts = useCallback(async () => {
     if (isLoading || (!hasMorePublic && !hasMoreFriends)) return;
+
     setIsLoading(true);
     setError(null);
     try {
-      const promises: Promise<PostDTO[]>[] = [];
-      if (hasMorePublic) promises.push(fetchPublicPosts(publicPage, 5));
-      if (hasMoreFriends && profile) promises.push(fetchFriendsPosts(friendsPage, 5));
-
-      const results = await Promise.allSettled(promises);
-      let newPublicPosts: PostDTO[] = [];
-      let newFriendsPosts: PostDTO[] = [];
-      let resultIndex = 0;
-
-      if (hasMorePublic && results[resultIndex]) {
-        const result = results[resultIndex];
-        newPublicPosts = result.status === "fulfilled" ? result.value : [];
-        resultIndex++;
-      }
-      if (hasMoreFriends && profile && results[resultIndex]) {
-        const result = results[resultIndex];
-        newFriendsPosts = result.status === "fulfilled" ? result.value : [];
-      }
-
-      const combinedNew = combineAndSortPosts(newPublicPosts, newFriendsPosts);
-      setPosts((prev) => {
-        const all = [...prev, ...combinedNew];
-        const unique = all.filter((p, i, self) => self.findIndex((x) => x.postId === p.postId) === i);
-        return unique.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-      });
+      // chạy song song, chỉ fetch cái nào còn
+      const tasks: Promise<{ items: PostDTO[]; last: boolean }>[] = [];
+      let wantPublic = false;
+      let wantFriends = false;
 
       if (hasMorePublic) {
-        setPublicPage((prev) => prev + 1);
-        setHasMorePublic(newPublicPosts.length >= 5);
+        tasks.push(fetchPublicPosts(publicPage, PAGE_MORE_SIZE));
+        wantPublic = true;
       }
       if (hasMoreFriends && profile) {
-        setFriendsPage((prev) => prev + 1);
-        setHasMoreFriends(newFriendsPosts.length >= 5);
+        tasks.push(fetchFriendsPosts(friendsPage, PAGE_MORE_SIZE));
+        wantFriends = true;
       }
-    } catch (error: any) {
-      console.error("Error loading more posts:", error);
-      setError(error.message || "Failed to load more posts");
+
+      const results = await Promise.allSettled(tasks);
+
+      // mapping kết quả theo thứ tự push
+      let idx = 0;
+      let newPublic: PostDTO[] = [];
+      let pubLast = true;
+      if (wantPublic) {
+        const r = results[idx++];
+        if (r.status === "fulfilled") {
+          newPublic = r.value.items ?? [];
+          pubLast = r.value.last;
+        } else {
+          console.error("Error loading more public posts:", r.reason);
+          // để tránh kẹt, có thể tạm thời coi như hết
+          pubLast = true;
+        }
+      }
+
+      let newFriends: PostDTO[] = [];
+      let friLast = true;
+      if (wantFriends) {
+        const r = results[idx++];
+        if (r.status === "fulfilled") {
+          newFriends = r.value.items ?? [];
+          friLast = r.value.last;
+        } else {
+          console.error("Error loading more friends posts:", r.reason);
+          friLast = true;
+        }
+      }
+
+      const combinedNew = combineAndSortPosts(newPublic, newFriends);
+
+      setPosts((prev) => {
+        const all = uniqueByPostId([...prev, ...combinedNew]);
+        all.sort((a, b) => safeDateMs(b.createdAt) - safeDateMs(a.createdAt));
+        return all;
+      });
+
+      if (wantPublic) {
+        setPublicPage((p) => p + 1);
+        setHasMorePublic(!pubLast);
+      }
+      if (wantFriends) {
+        setFriendsPage((p) => p + 1);
+        setHasMoreFriends(!friLast);
+      }
+    } catch (err: any) {
+      console.error("Error loading more posts:", err);
+      setError(err?.message || "Failed to load more posts");
     } finally {
       setIsLoading(false);
     }
-  }, [isLoading, hasMorePublic, hasMoreFriends, publicPage, friendsPage, profile]);
+  }, [
+    isLoading,
+    hasMorePublic,
+    hasMoreFriends,
+    publicPage,
+    friendsPage,
+    profile,
+    fetchPublicPosts,
+    fetchFriendsPosts,
+  ]);
 
-  // Post update from children
+  /** ====== Post update from children ====== */
   const handlePostUpdate = useCallback((updatedPost: PostDTO) => {
-    setPosts((prev) => prev.map((p) => (p.postId === updatedPost.postId ? updatedPost : p)));
+    setPosts((prev) => {
+      const next = prev.map((p) => (p.postId === updatedPost.postId ? updatedPost : p));
+      // giữ nguyên order theo createdAt
+      next.sort((a, b) => safeDateMs(b.createdAt) - safeDateMs(a.createdAt));
+      return next;
+    });
   }, []);
 
-  // Mount
+  /** ====== Mount: initial fetch ====== */
   useEffect(() => {
     loadInitialPosts();
   }, [loadInitialPosts]);
 
-  // Refresh current user when window focuses (optional)
+  /** ====== Refresh current user when window focuses (optional) ====== */
   useEffect(() => {
-    const refresh = async () => { try { await useAuthStore.getState().refreshMe(); } catch {} };
+    const refresh = async () => {
+      try {
+        await useAuthStore.getState().refreshMe();
+      } catch {}
+    };
     refresh();
     const onFocus = () => refresh();
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
   }, []);
 
-  // IntersectionObserver
+  /** ====== IntersectionObserver ====== */
   useEffect(() => {
-    const observer = new IntersectionObserver(
+    if (!loaderRef.current) return;
+
+    // cleanup instance cũ
+    if (observerRef.current) {
+      observerRef.current.disconnect();
+      observerRef.current = null;
+    }
+
+    const obs = new IntersectionObserver(
       (entries) => {
         if (entries[0].isIntersecting && (hasMorePublic || hasMoreFriends) && !isLoading) {
           loadMorePosts();
@@ -182,11 +280,12 @@ const HomePostPage = () => {
       },
       { threshold: 0.1, rootMargin: "100px" }
     );
-    if (loaderRef.current && (hasMorePublic || hasMoreFriends)) {
-      observer.observe(loaderRef.current);
-    }
+
+    obs.observe(loaderRef.current);
+    observerRef.current = obs;
+
     return () => {
-      if (loaderRef.current) observer.unobserve(loaderRef.current);
+      obs.disconnect();
     };
   }, [hasMorePublic, hasMoreFriends, isLoading, loadMorePosts]);
 
@@ -229,12 +328,9 @@ const HomePostPage = () => {
               avatarUrl={profile.avatar || unknownAvatar}
               onCreated={(post) => {
                 setPosts((prev) => {
-                  const unique = [post, ...prev].filter(
-                    (p, i, self) => self.findIndex((x) => x.postId === p.postId) === i
-                  );
-                  return unique.sort(
-                    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-                  );
+                  const unique = uniqueByPostId([post, ...prev]);
+                  unique.sort((a, b) => safeDateMs(b.createdAt) - safeDateMs(a.createdAt));
+                  return unique;
                 });
               }}
             />

@@ -18,21 +18,18 @@ import com.kkunquizapp.QuizAppBackend.service.NotificationService;
 import com.kkunquizapp.QuizAppBackend.service.PostService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
+
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 import java.util.stream.Collectors;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
 
 @Service
 @RequiredArgsConstructor
@@ -108,9 +105,9 @@ public class PostServiceImpl implements PostService {
 
         Post post = postRepository.findById(postId)
                 .orElseThrow(() -> {
-            log.error("Post not found with ID: {}", postId);
-            return new IllegalArgumentException("Post not found with ID: " + postId);
-        });
+                    log.error("Post not found with ID: {}", postId);
+                    return new IllegalArgumentException("Post not found with ID: " + postId);
+                });
 
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> {
@@ -135,8 +132,8 @@ public class PostServiceImpl implements PostService {
             notificationService.createNotification(
                     post.getUser().getUserId(),
                     userId,
-                    "UNLIKED",                // ✅ verb chuẩn
-                    "POST",                   // ✅ target chuẩn
+                    "UNLIKED",
+                    "POST",
                     postId,
                     com.kkunquizapp.QuizAppBackend.utils.StringUtils.abbreviate(post.getContent(), 60)
             );
@@ -160,8 +157,8 @@ public class PostServiceImpl implements PostService {
             notificationService.createNotification(
                     post.getUser().getUserId(),
                     userId,
-                    "LIKED",                  // ✅
-                    "POST",                   // ✅
+                    "LIKED",
+                    "POST",
                     postId,
                     com.kkunquizapp.QuizAppBackend.utils.StringUtils.abbreviate(post.getContent(), 60)
             );
@@ -214,12 +211,11 @@ public class PostServiceImpl implements PostService {
             notificationService.createNotification(
                     post.getUser().getUserId(),
                     userId,
-                    "UNLIKED",                // ✅
-                    "POST",                   // ✅
+                    "UNLIKED",
+                    "POST",
                     postId,
                     com.kkunquizapp.QuizAppBackend.utils.StringUtils.abbreviate(post.getContent(), 60)
             );
-
 
             log.info("User {} unliked post {}", userId, postId);
 
@@ -276,10 +272,12 @@ public class PostServiceImpl implements PostService {
         return postDTO;
     }
 
+    // ====================== CHUYỂN SANG PAGE ======================
+
     @Transactional(readOnly = true)
     @Override
-    public List<PostDTO> getUserPosts(UUID userId, UUID currentUserId, int page, int size) {
-        log.info("Fetching posts for userId: {}, viewed by currentUserId: {}, page: {}, size: {}", userId, currentUserId, page, size);
+    public Page<PostDTO> getUserPosts(UUID userId, UUID currentUserId, Pageable pageable) {
+        log.info("Fetching posts for userId: {}, viewed by currentUserId: {}, {}", userId, currentUserId, pageable);
 
         User targetUser = userRepository.findById(userId)
                 .orElseThrow(() -> {
@@ -294,54 +292,39 @@ public class PostServiceImpl implements PostService {
             log.debug("Friendship check: userId={} and currentUserId={} -> isFriend={}", userId, currentUserId, isFriend);
         }
 
-        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
-
         Page<Post> postPage;
         if (isOwner) {
             postPage = postRepository.findByUserUserId(userId, pageable);
         } else if (isFriend) {
-            postPage = postRepository.findByUserUserIdAndPrivacyIn(userId, List.of(PostPrivacy.PUBLIC, PostPrivacy.FRIENDS), pageable);
+            postPage = postRepository.findByUserUserIdAndPrivacyIn(
+                    userId, List.of(PostPrivacy.PUBLIC, PostPrivacy.FRIENDS), pageable);
         } else {
             postPage = postRepository.findByUserUserIdAndPrivacy(userId, PostPrivacy.PUBLIC, pageable);
         }
 
-        List<PostDTO> postDTOs = postPage.getContent().stream()
-                .map(post -> mapToPostDTO(post, currentUserId, null))
-                .collect(Collectors.toList());
-
-        log.info("Fetched {} posts for userId: {} (filtered by privacy)", postDTOs.size(), userId);
-        return postDTOs;
+        Page<PostDTO> dtoPage = postPage.map(post -> mapToPostDTO(post, currentUserId, null));
+        log.info("Fetched {} posts (page {} of {}) for userId: {}",
+                dtoPage.getNumberOfElements(), dtoPage.getNumber() + 1, dtoPage.getTotalPages(), userId);
+        return dtoPage;
     }
 
     @Transactional(readOnly = true)
     @Override
-    public List<PostDTO> getPublicPosts(UUID currentUserId, int page, int size, String sortBy, String sortDir) {
-        log.info("Fetching public posts for currentUserId: {}, page: {}, size: {}, sortBy: {}, sortDir: {}",
-                currentUserId, page, size, sortBy, sortDir);
+    public Page<PostDTO> getPublicPosts(UUID currentUserId, Pageable pageable) {
+        log.info("Fetching public posts for currentUserId: {}, pageable: {}", currentUserId, pageable);
 
-        // Validate sort parameters
-        if (!List.of("createdAt", "likeCount", "commentCount").contains(sortBy)) {
-            log.error("Invalid sortBy parameter: {}", sortBy);
-            throw new IllegalArgumentException("Invalid sortBy parameter. Allowed values: createdAt, likeCount, commentCount");
-        }
-        Sort.Direction direction = sortDir.equalsIgnoreCase("asc") ? Sort.Direction.ASC : Sort.Direction.DESC;
-
-        Pageable pageable = PageRequest.of(page, size, Sort.by(direction, sortBy));
         Page<Post> postPage = postRepository.findByPrivacy(PostPrivacy.PUBLIC, pageable);
+        Page<PostDTO> dtoPage = postPage.map(post -> mapToPostDTO(post, currentUserId, null));
 
-        List<PostDTO> postDTOs = postPage.getContent().stream()
-                .map(post -> mapToPostDTO(post, currentUserId, null))
-                .collect(Collectors.toList());
-
-        log.info("Fetched {} public posts", postDTOs.size());
-        return postDTOs;
+        log.info("Fetched {} public posts (page {} of {})",
+                dtoPage.getNumberOfElements(), dtoPage.getNumber() + 1, dtoPage.getTotalPages());
+        return dtoPage;
     }
 
     @Transactional(readOnly = true)
     @Override
-    public List<PostDTO> getFriendsPosts(UUID currentUserId, int page, int size, String sortBy, String sortDir) {
-        log.info("Fetching friends' posts for currentUserId: {}, page: {}, size: {}, sortBy: {}, sortDir: {}",
-                currentUserId, page, size, sortBy, sortDir);
+    public Page<PostDTO> getFriendsPosts(UUID currentUserId, Pageable pageable) {
+        log.info("Fetching friends' posts for currentUserId: {}, pageable: {}", currentUserId, pageable);
 
         User currentUser = userRepository.findById(currentUserId)
                 .orElseThrow(() -> {
@@ -349,34 +332,26 @@ public class PostServiceImpl implements PostService {
                     return new IllegalArgumentException("User not found with ID: " + currentUserId);
                 });
 
-        // Get list of friend IDs
         List<UUID> friendIds = currentUser.getFriends().stream()
                 .map(User::getUserId)
                 .collect(Collectors.toList());
 
         if (friendIds.isEmpty()) {
-            log.info("User {} has no friends, returning empty post list", currentUserId);
-            return List.of();
+            log.info("User {} has no friends, returning empty page", currentUserId);
+            return Page.empty(pageable);
         }
 
-        // Validate sort parameters
-        if (!List.of("createdAt", "likeCount", "commentCount").contains(sortBy)) {
-            log.error("Invalid sortBy parameter: {}", sortBy);
-            throw new IllegalArgumentException("Invalid sortBy parameter. Allowed values: createdAt, likeCount, commentCount");
-        }
-        Sort.Direction direction = sortDir.equalsIgnoreCase("asc") ? Sort.Direction.ASC : Sort.Direction.DESC;
-
-        Pageable pageable = PageRequest.of(page, size, Sort.by(direction, sortBy));
         Page<Post> postPage = postRepository.findByUserUserIdInAndPrivacyIn(
                 friendIds, List.of(PostPrivacy.PUBLIC, PostPrivacy.FRIENDS), pageable);
 
-        List<PostDTO> postDTOs = postPage.getContent().stream()
-                .map(post -> mapToPostDTO(post, currentUserId, null))
-                .collect(Collectors.toList());
+        Page<PostDTO> dtoPage = postPage.map(post -> mapToPostDTO(post, currentUserId, null));
 
-        log.info("Fetched {} posts from friends for userId: {}", postDTOs.size(), currentUserId);
-        return postDTOs;
+        log.info("Fetched {} friends' posts for userId: {} (page {} of {})",
+                dtoPage.getNumberOfElements(), currentUserId, dtoPage.getNumber() + 1, dtoPage.getTotalPages());
+        return dtoPage;
     }
+
+    // ====================== Helpers ======================
 
     private void validatePostRequest(UUID userId, PostRequestDTO requestDTO, List<MultipartFile> mediaFiles) {
         log.info("Validating post request for userId: {}", userId);
@@ -538,8 +513,8 @@ public class PostServiceImpl implements PostService {
             notificationService.createNotification(
                     replyTo.getUser().getUserId(),
                     post.getUser().getUserId(),
-                    "COMMENTED",              // ✅
-                    "POST",                   // ✅
+                    "COMMENTED",
+                    "POST",
                     post.getPostId(),
                     com.kkunquizapp.QuizAppBackend.utils.StringUtils.abbreviate(post.getContent(), 60)
             );
