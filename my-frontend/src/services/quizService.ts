@@ -110,3 +110,12 @@ export const getPublishedQuizzes = async (
     handleApiError(error, "Failed to fetch published quizzes");
   }
 };
+
+export const saveQuizForMe = async (quizId: string) => {
+  try {
+    const response = await axiosInstance.post(`/quizzes/${quizId}/save-for-me`);
+    return response.data as Quiz; // trả về Quiz đã clone
+  } catch (error) {
+    handleApiError(error, "Failed to save quiz for current user");
+  }
+};

@@ -1,9 +1,12 @@
 import React, { useEffect, useState } from "react";
 import "bootstrap/dist/css/bootstrap.min.css";
+import { notification } from "antd";
+
 import {
   getQuestionsByQuizId,
   getQuizzById,
   publishedQuiz,
+  saveQuizForMe,
 } from "@/services/quizService";
 import QuestionCard from "@/components/cards/QuestionCard";
 import { Link, useNavigate, useParams } from "react-router-dom";
@@ -25,6 +28,7 @@ const QuizManagementPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [publishing, setPublishing] = useState(false);
   const navigate = useNavigate();
+  const [saving, setSaving] = useState(false);
 
   // Lấy current user từ store
   const { user } = useAuthStore();
@@ -76,12 +80,36 @@ const QuizManagementPage: React.FC = () => {
     setPublishing(true);
     try {
       await publishedQuiz(quizId);
-      alert("Quiz published successfully!");
-      navigate(`/quizzes`);
+      notification.success({
+        message: "Thành công",
+        description: "Quiz đã được publish thành công!",
+      });
     } catch (error) {
-      alert("Error publishing quiz!");
+      notification.error({
+        message: "Lỗi",
+        description: "Không thể publish quiz!",
+      });
     } finally {
       setPublishing(false);
+    }
+  };
+
+  const handleSaveForMe = async () => {
+    if (!quizId) return;
+    setSaving(true);
+    try {
+      await saveQuizForMe(quizId);
+      notification.success({
+        message: "Thành công",
+        description: "Đã lưu hoạt động vào thư viện của bạn!",
+      });
+    } catch (e) {
+      notification.error({
+        message: "Lỗi",
+        description: "Không thể lưu hoạt động. Vui lòng thử lại.",
+      });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -105,7 +133,7 @@ const QuizManagementPage: React.FC = () => {
           </div>
 
           {/* CHỈ hiển thị khi là chủ sở hữu */}
-          {isOwner && (
+          {isOwner ? (
             <div className="d-flex gap-2">
               <button className="btn btn-outline-secondary">
                 ↩ Undo
@@ -132,6 +160,17 @@ const QuizManagementPage: React.FC = () => {
                     Publish
                   </>
                 )}
+              </button>
+            </div>
+          ): (
+            // KHÔNG phải chủ sở hữu: chỉ hiện 1 nút "Lưu về của tôi"
+            <div className="d-flex gap-2">
+              <button
+                onClick={handleSaveForMe}
+                className="btn btn-outline-primary btn-sm"
+                disabled={saving}
+              >
+                {saving ? "Saving..." : "Save for me"}
               </button>
             </div>
           )}

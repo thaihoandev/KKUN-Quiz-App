@@ -209,4 +209,20 @@ public class QuizController {
         }
     }
 
+    @PostMapping("/{quizId}/save-for-me")
+    public ResponseEntity<QuizResponseDTO> saveForCurrentUser(
+            HttpServletRequest request,
+            @PathVariable UUID quizId) {
+        try {
+            QuizResponseDTO saved = quizService.saveForCurrentUser(request, quizId);
+            return ResponseEntity.ok(saved);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(null);
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(null);
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(null);
+        }
+    }
+
 }

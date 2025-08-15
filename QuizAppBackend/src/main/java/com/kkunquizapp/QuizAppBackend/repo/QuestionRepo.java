@@ -16,4 +16,5 @@ public interface QuestionRepo extends JpaRepository<Question, UUID> {
 
     @Query("SELECT q FROM Question q WHERE q.quiz = :quiz AND q.deleted = false")
     List<Question> findActiveQuestionsByQuiz(@Param("quiz") Quiz quiz);
+
 }

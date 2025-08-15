@@ -74,7 +74,6 @@ const QuizEditorPage: React.FC = () => {
         try {
             await publishedQuiz(quizId);
             alert("Bài quiz đã được xuất bản thành công!");
-            navigate(`/quizzes`);
         } catch (error) {
             alert("Có lỗi xảy ra khi xuất bản bài quiz!");
         } finally {

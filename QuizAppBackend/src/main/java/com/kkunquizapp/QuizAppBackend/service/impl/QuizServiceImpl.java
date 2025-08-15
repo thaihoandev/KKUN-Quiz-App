@@ -4,9 +4,10 @@ import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kkunquizapp.QuizAppBackend.dto.QuizRequestDTO;
 import com.kkunquizapp.QuizAppBackend.dto.QuizResponseDTO;
-import com.kkunquizapp.QuizAppBackend.model.Quiz;
-import com.kkunquizapp.QuizAppBackend.model.User;
+import com.kkunquizapp.QuizAppBackend.model.*;
 import com.kkunquizapp.QuizAppBackend.model.enums.QuizStatus;
+import com.kkunquizapp.QuizAppBackend.repo.OptionRepo;
+import com.kkunquizapp.QuizAppBackend.repo.QuestionRepo;
 import com.kkunquizapp.QuizAppBackend.repo.QuizRepo;
 import com.kkunquizapp.QuizAppBackend.repo.UserRepo;
 import com.kkunquizapp.QuizAppBackend.service.AuthService;
@@ -17,6 +18,7 @@ import org.modelmapper.ModelMapper;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.time.Duration;
@@ -29,6 +31,10 @@ public class QuizServiceImpl implements QuizService {
 
     private final QuizRepo quizRepo;
     private final UserRepo userRepo;
+
+    private final QuestionRepo questionRepo;
+    private final OptionRepo optionRepo;
+
     private final ModelMapper modelMapper;
     private final AuthService authService;
 
@@ -201,4 +207,118 @@ public class QuizServiceImpl implements QuizService {
         }
         return Optional.empty();
     }
+
+
+    @Override
+    @Transactional
+    public QuizResponseDTO saveForCurrentUser(HttpServletRequest request, UUID quizId) {
+        // Lấy current user
+        String currentUserIdStr = null;
+
+        // Ưu tiên lấy từ AuthService (nếu đã dùng chung cho nơi khác)
+        try {
+            currentUserIdStr = authService.getCurrentUserId();
+        } catch (Exception ignored) {}
+
+        // Fallback: đọc từ request attribute (như createQuiz đang làm)
+        if (currentUserIdStr == null) {
+            Object attr = request.getAttribute("currentUserId");
+            if (attr != null) currentUserIdStr = String.valueOf(attr);
+        }
+
+        if (currentUserIdStr == null || currentUserIdStr.isBlank()) {
+            throw new IllegalStateException("User not authenticated");
+        }
+
+        UUID currentUserId = UUID.fromString(currentUserIdStr);
+        User currentUser = userRepo.findById(currentUserId)
+                .orElseThrow(() -> new IllegalArgumentException("User not found with ID: " + currentUserId));
+
+        // Lấy quiz gốc
+        Quiz original = quizRepo.findById(quizId)
+                .orElseThrow(() -> new IllegalArgumentException("Quiz not found with ID: " + quizId));
+
+        // Tạo quiz bản sao
+        Quiz copy = new Quiz();
+        copy.setTitle(original.getTitle());                // hoặc original.getTitle() + " (Copy)"
+        copy.setDescription(original.getDescription());
+        copy.setHost(currentUser);
+        copy.setStatus(QuizStatus.DRAFT);
+        copy.setCreatedAt(java.time.LocalDateTime.now());
+        copy.setUpdatedAt(java.time.LocalDateTime.now());
+        copy.setViewers(new java.util.ArrayList<>()); // rỗng
+        copy.setEditors(new java.util.ArrayList<>()); // rỗng
+        copy.setRecommendationScore(calculateRecommendationScore(copy, currentUserId));
+
+        copy = quizRepo.save(copy);
+
+        // Lấy danh sách câu hỏi của quiz gốc (chỉ câu hỏi active)
+        java.util.List<Question> originalQuestions = questionRepo.findActiveQuestionsByQuiz(original);
+
+        // Clone từng câu hỏi + options
+        for (Question q : originalQuestions) {
+            Question qCopy = new Question();
+            qCopy.setQuiz(copy);
+            qCopy.setQuestionText(q.getQuestionText());
+            qCopy.setQuestionType(q.getQuestionType());
+            qCopy.setImageUrl(q.getImageUrl());
+            qCopy.setTimeLimit(q.getTimeLimit());
+            qCopy.setPoints(q.getPoints());
+            qCopy.setCreatedAt(java.time.LocalDateTime.now());
+            qCopy.setDeleted(false);
+
+            qCopy = questionRepo.save(qCopy);
+
+            // clone options theo kiểu lớp con
+            for (Option opt : q.getOptions()) {
+                Option newOpt = cloneOption(opt, qCopy);
+                optionRepo.save(newOpt);
+            }
+        }
+
+        // Map sang DTO để trả về (nếu muốn trả cả câu hỏi + options, nên refetch)
+        Quiz fresh = quizRepo.findById(copy.getQuizId())
+                .orElseThrow(() -> new IllegalStateException("Cloned quiz not found"));
+        QuizResponseDTO dto = modelMapper.map(fresh, QuizResponseDTO.class);
+
+        // Nếu cần tính lại score theo user hiện tại ngay trên DTO:
+        dto.setRecommendationScore(calculateRecommendationScore(fresh, currentUserId));
+
+        return dto;
+    }
+
+    /**
+     * Clone 1 option theo đúng subclass.
+     */
+    private Option cloneOption(Option source, Question owner) {
+        if (source instanceof MultipleChoiceOption m) {
+            MultipleChoiceOption x = new MultipleChoiceOption();
+            x.setQuestion(owner);
+            x.setOptionText(m.getOptionText());
+            x.setCorrect(m.isCorrect());
+            return x;
+        } else if (source instanceof SingleChoiceOption s) {
+            SingleChoiceOption x = new SingleChoiceOption();
+            x.setQuestion(owner);
+            x.setOptionText(s.getOptionText());
+            x.setCorrect(s.isCorrect());
+            return x;
+        } else if (source instanceof TrueFalseOption t) {
+            TrueFalseOption x = new TrueFalseOption();
+            x.setQuestion(owner);
+            x.setOptionText(t.getOptionText());
+            x.setCorrect(t.isCorrect());
+            return x;
+        } else if (source instanceof FillInTheBlankOption f) {
+            FillInTheBlankOption x = new FillInTheBlankOption();
+            x.setQuestion(owner);
+            x.setOptionText(f.getOptionText());
+            x.setCorrect(true);
+            x.setCorrectAnswer(f.getCorrectAnswer()); // hoặc dùng optionText làm đáp án
+            return x;
+        } else {
+            throw new IllegalArgumentException("Unsupported option type: " + source.getClass().getSimpleName());
+        }
+    }
+
 }
