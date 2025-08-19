@@ -9,15 +9,14 @@ import {
   getIncomingFriendRequestsPaged,
   getOutgoingFriendRequestsPaged,
   FriendRequestItem,
-  getUserById,
 } from "@/services/userService";
 import SuggestionsWidget from "@/components/widgets/SuggestionsWidget";
 import { hydrateRequests } from "@/utils/userHydrator";
 
 /**
  * Trang quản lý kết nối: Incoming & Sent
- * - Phân trang theo PageResponse từ BE
- * - Nút Load more cho từng tab
+ * \- Sửa phân trang để dùng đúng PageResponse từ BE (Spring) 
+ * \- "Load more" dựa trên trường `last` và `number` thay vì `hasNext`/`page`
  */
 
 export default function FriendConnectionsPage() {
@@ -37,53 +36,63 @@ export default function FriendConnectionsPage() {
   const [outgoingHasNext, setOutgoingHasNext] = useState(false);
   const [loadingOutgoing, setLoadingOutgoing] = useState(false);
 
-    
-    const loadIncoming = useCallback(
-        async (page = 0, append = false) => {
-            if (!profile?.userId) return;
-            setLoadingIncoming(true);
-            try {
-            const resp = await getIncomingFriendRequestsPaged(page, incomingSize);
-            const raw = Array.isArray(resp.content) ? resp.content : [];
-            const content = await hydrateRequests(raw, "incoming");
-            setIncoming(prev => (append ? [...(prev ?? []), ...content] : content));
-            setIncomingPage(resp.page ?? page);
-            setIncomingHasNext(!!resp.hasNext);
-            } catch (e: any) {
-            message.error(e?.message || "Failed to load incoming requests");
-            setIncoming(prev => prev ?? []);
-            setIncomingHasNext(false);
-            } finally {
-            setLoadingIncoming(false);
-            }
-        },
-        [profile?.userId, incomingSize]
-        );
+  // ---------- Loaders (đã sửa tham số & cờ phân trang) ----------
+  const loadIncoming = useCallback(
+    async (page = 0, append = false) => {
+      if (!profile?.userId) return;
+      setLoadingIncoming(true);
+      try {
+        const resp = await getIncomingFriendRequestsPaged({ page, size: incomingSize });
+        const raw = Array.isArray(resp.content) ? resp.content : [];
+        const content = await hydrateRequests(raw, "incoming");
 
-        const loadOutgoing = useCallback(
-        async (page = 0, append = false) => {
-            if (!profile?.userId) return;
-            setLoadingOutgoing(true);
-            try {
-            const resp = await getOutgoingFriendRequestsPaged(page, outgoingSize);
-            const raw = Array.isArray(resp.content) ? resp.content : [];
-            const content = await hydrateRequests(raw, "outgoing");
-            setOutgoing(prev => (append ? [...(prev ?? []), ...content] : content));
-            setOutgoingPage(resp.page ?? page);
-            setOutgoingHasNext(!!resp.hasNext);
-            } catch (e: any) {
-            message.error(e?.message || "Failed to load sent requests");
-            setOutgoing(prev => prev ?? []);
-            setOutgoingHasNext(false);
-            } finally {
-            setLoadingOutgoing(false);
-            }
-        },
-        [profile?.userId, outgoingSize]
-        );
+        setIncoming((prev) => (append ? [...(prev ?? []), ...content] : content));
+        setIncomingPage(resp.number ?? page);
+        setIncomingHasNext(!resp.last); // còn trang kế tiếp khi chưa phải trang cuối
+      } catch (e: any) {
+        message.error(e?.message || "Failed to load incoming requests");
+        setIncoming((prev) => prev ?? []);
+        setIncomingHasNext(false);
+      } finally {
+        setLoadingIncoming(false);
+      }
+    },
+    [profile?.userId, incomingSize]
+  );
+
+  const loadOutgoing = useCallback(
+    async (page = 0, append = false) => {
+      if (!profile?.userId) return;
+      setLoadingOutgoing(true);
+      try {
+        const resp = await getOutgoingFriendRequestsPaged({ page, size: outgoingSize });
+        const raw = Array.isArray(resp.content) ? resp.content : [];
+        const content = await hydrateRequests(raw, "outgoing");
+
+        setOutgoing((prev) => (append ? [...(prev ?? []), ...content] : content));
+        setOutgoingPage(resp.number ?? page);
+        setOutgoingHasNext(!resp.last);
+      } catch (e: any) {
+        message.error(e?.message || "Failed to load sent requests");
+        setOutgoing((prev) => prev ?? []);
+        setOutgoingHasNext(false);
+      } finally {
+        setLoadingOutgoing(false);
+      }
+    },
+    [profile?.userId, outgoingSize]
+  );
 
   // Initial load both
   useEffect(() => {
+    // reset danh sách khi user thay đổi
+    setIncoming([]);
+    setOutgoing([]);
+    setIncomingPage(0);
+    setOutgoingPage(0);
+    setIncomingHasNext(false);
+    setOutgoingHasNext(false);
+
     loadIncoming(0, false);
     loadOutgoing(0, false);
   }, [loadIncoming, loadOutgoing]);
@@ -92,7 +101,6 @@ export default function FriendConnectionsPage() {
   const onAccept = async (reqId: string) => {
     try {
       await acceptFriendRequest(reqId);
-      // remove from incoming list
       setIncoming((prev) => prev.filter((r) => r.id !== reqId));
       message.success("Accepted!");
     } catch (e: any) {
@@ -133,7 +141,7 @@ export default function FriendConnectionsPage() {
       ) : (
         <>
           <div className="d-flex flex-column gap-3">
-            {(incoming ?? []).map((r) => ( 
+            {(incoming ?? []).map((r) => (
               <div key={r.id} className="d-flex align-items-center">
                 <img
                   src={r.requesterAvatar || unknownAvatar}
@@ -223,6 +231,7 @@ export default function FriendConnectionsPage() {
       )}
     </>
   );
+
   return (
     <div className="container py-4">
       <div className="row g-4">
@@ -234,26 +243,24 @@ export default function FriendConnectionsPage() {
               <Tabs
                 defaultActiveKey="incoming"
                 items={[
-                    {
+                  {
                     key: "incoming",
                     label: `Incoming (${incoming?.length ?? 0})`,
                     children: <IncomingList />,
-                    },
-                    {
+                  },
+                  {
                     key: "outgoing",
                     label: `Sent (${outgoing?.length ?? 0})`,
                     children: <OutgoingList />,
-                    },
+                  },
                 ]}
-                />
+              />
             </div>
           </div>
         </div>
 
-        {/* Bạn có thể thêm một cột phải để hiển thị Suggestions mở rộng nếu thích */}
-              {/* <aside className="col-12 col-lg-4"> ... </aside> */}
         <div className="col-12 col-lg-4">
-            <SuggestionsWidget />
+          <SuggestionsWidget />
         </div>
       </div>
     </div>
