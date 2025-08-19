@@ -11,7 +11,6 @@ import {
   FriendRequestItem,
   getUserById,
 } from "@/services/userService";
-import { PageResponse } from "@/services/notificationService";
 import SuggestionsWidget from "@/components/widgets/SuggestionsWidget";
 import { hydrateRequests } from "@/utils/userHydrator";
 

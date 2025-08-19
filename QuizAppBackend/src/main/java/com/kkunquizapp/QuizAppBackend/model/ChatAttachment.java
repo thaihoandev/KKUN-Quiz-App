@@ -1,7 +1,6 @@
 // src/main/java/com/kkunquizapp/QuizAppBackend/model/chat/ChatAttachment.java
 package com.kkunquizapp.QuizAppBackend.model;
 
-import com.kkunquizapp.QuizAppBackend.model.Media;
 import jakarta.persistence.*;
 import lombok.*;
 

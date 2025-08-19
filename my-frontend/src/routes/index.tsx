@@ -26,6 +26,7 @@ import UserDashboardPage from "@/pages/UserDashboardPage";
 import UserProfilePage from "@/pages/UserProfilePage";
 import HomePostPage from "@/pages/HomePostPage";
 import FriendConnectionsPage from "@/pages/FriendConnectionsPage";
+import ChatPage from "@/pages/ChatPage";
 
 const AppRoutes: React.FC = () => (
   <>
@@ -55,6 +56,8 @@ const AppRoutes: React.FC = () => (
           <Route path="settings"          element={<SettingProfilePage />} />
           <Route path="change-password" element={<ChangePasswordPage />} />
           <Route path="/friends" element={<FriendConnectionsPage />} />
+          <Route path="/chat" element={<ChatPage />} />
+
           
         </Route>
 

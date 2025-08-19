@@ -1,8 +1,6 @@
 // src/main/java/com/kkunquizapp/QuizAppBackend/model/chat/Message.java
 package com.kkunquizapp.QuizAppBackend.model;
 
-import com.kkunquizapp.QuizAppBackend.model.Conversation;
-import com.kkunquizapp.QuizAppBackend.model.User;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;

@@ -394,15 +394,23 @@ public class PostServiceImpl implements PostService {
         return post;
     }
 
-    private void savePostMedia(Post post, User user, List<MediaDTO> mediaDTOs, List<MultipartFile> mediaFiles, List<String> uploadedPublicIds) throws IOException {
+    private void savePostMedia(
+            Post post,
+            User user,
+            List<MediaDTO> mediaDTOs,
+            List<MultipartFile> mediaFiles,
+            List<String> uploadedPublicIds
+    ) throws IOException {
         log.info("Saving media for postId: {}, number of files: {}", post.getPostId(), mediaFiles.size());
+
         if (mediaFiles.isEmpty()) {
             log.info("No media files to save");
             return;
         }
 
         if (mediaDTOs.size() != mediaFiles.size()) {
-            log.error("Media files count ({}) does not match media DTOs count ({})", mediaFiles.size(), mediaDTOs.size());
+            log.error("Media files count ({}) does not match media DTOs count ({})",
+                    mediaFiles.size(), mediaDTOs.size());
             throw new IllegalArgumentException("Number of media files must match number of media DTOs");
         }
 
@@ -410,36 +418,46 @@ public class PostServiceImpl implements PostService {
             MultipartFile file = mediaFiles.get(i);
             MediaDTO mediaDTO = mediaDTOs.get(i);
 
+            // Validate file trước khi upload
             log.info("Validating media file at index: {}", i);
             validateMediaFile(file);
 
-            log.info("Uploading media file to Cloudinary: {}", file.getOriginalFilename());
-            Map<String, Object> uploadResult = cloudinaryService.upload(file, CLOUDINARY_FOLDER);
+            // Tạo publicId duy nhất cho từng file
+            String publicId = "posts/%s/%02d_%s"
+                    .formatted(post.getPostId(), i + 1, UUID.randomUUID());
+
+            log.info("Uploading media file to Cloudinary with publicId={}", publicId);
+            Map<String, Object> uploadResult = cloudinaryService.uploadWithPublicId(file, publicId);
             log.debug("Cloudinary upload result: {}", uploadResult);
 
-            String publicId = (String) uploadResult.get("public_id");
-            if (publicId == null) {
-                log.error("Cloudinary upload failed: public_id is null");
-                throw new IllegalStateException("Cloudinary upload failed: public_id is null");
+            String secureUrl = (String) uploadResult.get("secure_url");
+            String format    = (String) uploadResult.get("format");
+            Integer width    = toInt(uploadResult.get("width"));
+            Integer height   = toInt(uploadResult.get("height"));
+            Long sizeBytes   = toLong(uploadResult.get("bytes"));
+
+            if (secureUrl == null || format == null || sizeBytes == null) {
+                throw new IllegalStateException(
+                        "Cloudinary upload result missing required fields: " +
+                                "url=" + secureUrl + ", format=" + format + ", sizeBytes=" + sizeBytes
+                );
             }
+
+            // Lưu publicId để cleanup khi lỗi
             uploadedPublicIds.add(publicId);
 
-            String url = (String) uploadResult.get("secure_url");
-            String thumbnailUrl = (String) uploadResult.get("thumbnail_url");
-            String mimeType = (String) uploadResult.get("format");
+            // Lấy MIME type chuẩn
+            String mimeType = file.getContentType() != null
+                    ? file.getContentType()
+                    : ("image/" + format);
 
-            Integer width = toInt(uploadResult.get("width"));
-            Integer height = toInt(uploadResult.get("height"));
-            Long sizeBytes = toLong(uploadResult.get("bytes"));
+            // Nếu muốn thumbnail_url thì phải tự tạo transformation khi upload
+            String thumbnailUrl = null;
 
-            if (url == null || mimeType == null || sizeBytes == null) {
-                log.error("Cloudinary upload result missing required fields: url={}, mimeType={}, sizeBytes={}", url, mimeType, sizeBytes);
-                throw new IllegalStateException("Cloudinary upload result missing required fields: url=" + url + ", mimeType=" + mimeType + ", sizeBytes=" + sizeBytes);
-            }
-
+            // Tạo entity Media
             Media media = Media.builder()
                     .ownerUser(user)
-                    .url(url)
+                    .url(secureUrl)
                     .publicId(publicId)
                     .thumbnailUrl(thumbnailUrl)
                     .mimeType(mimeType)
@@ -447,15 +465,9 @@ public class PostServiceImpl implements PostService {
                     .height(height)
                     .sizeBytes(sizeBytes)
                     .build();
+            media = mediaRepository.save(media);
 
-            try {
-                log.info("Saving media entity: {}", media);
-                media = mediaRepository.save(media);
-            } catch (Exception e) {
-                log.error("Failed to save Media entity: {}", e.getMessage(), e);
-                throw new RuntimeException("Failed to save media entity: " + e.getMessage(), e);
-            }
-
+            // Tạo entity PostMedia
             PostMedia postMedia = PostMedia.builder()
                     .post(post)
                     .media(media)
@@ -463,10 +475,12 @@ public class PostServiceImpl implements PostService {
                     .caption(mediaDTO.getCaption())
                     .isCover(mediaDTO.isCover())
                     .build();
-            log.info("Saving PostMedia: {}", postMedia);
             postMediaRepository.save(postMedia);
+
+            log.info("Saved media {} for post {}", publicId, post.getPostId());
         }
     }
+
 
     private void validateMediaFile(MultipartFile file) {
         log.info("Validating media file: {}", file.getOriginalFilename());
