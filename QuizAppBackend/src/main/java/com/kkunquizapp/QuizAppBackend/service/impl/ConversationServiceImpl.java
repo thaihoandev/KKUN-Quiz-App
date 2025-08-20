@@ -3,6 +3,8 @@ package com.kkunquizapp.QuizAppBackend.service.impl;
 
 import com.kkunquizapp.QuizAppBackend.dto.ConversationDTO;
 import com.kkunquizapp.QuizAppBackend.dto.MessageDTO;
+import com.kkunquizapp.QuizAppBackend.dto.ParticipantDTO;
+import com.kkunquizapp.QuizAppBackend.dto.UserBriefDTO;
 import com.kkunquizapp.QuizAppBackend.mapper.ChatMapper;
 import com.kkunquizapp.QuizAppBackend.repo.*;
 import com.kkunquizapp.QuizAppBackend.service.ConversationService;
@@ -117,18 +119,65 @@ public class ConversationServiceImpl implements ConversationService {
 
     // helpers
     private ConversationDTO toConversationDTO(Conversation c, UUID me) {
-        var partDTOs = partRepo.findByConversation_Id(c.getId()).stream()
-                .map(ChatMapper::toParticipantDTO)
-                .toList();
+        // 1. Map participants -> ParticipantDTO
+        var parts = partRepo.findByConversation_Id(c.getId()).stream()
+                .map(p -> ParticipantDTO.builder()
+                        .userId(p.getUser().getUserId())
+                        .role(p.getRole() != null ? p.getRole().name() : "MEMBER")
+                        .nickname(p.getNickname())
+                        .joinedAt(p.getJoinedAt())
+                        .user(UserBriefDTO.builder()
+                                .userId(p.getUser().getUserId())
+                                .name(p.getUser().getName())
+                                .username(p.getUser().getUsername())
+                                .avatar(p.getUser().getAvatar())
+                                .build()
+                        )
+                        .build()
+                ).toList();
 
+        // 2. Map last message -> MessageDTO
         var last = msgRepo.findFirstByConversation_IdOrderByCreatedAtDesc(c.getId()).orElse(null);
         MessageDTO lastDTO = null;
         if (last != null) {
-            List<ChatReaction> reactions = List.of();
-            lastDTO = ChatMapper.toMessageDTO(last, me, reactions);
+            // reactions đếm emoji (có thể từ bảng reactions riêng)
+            Map<String, Integer> rx = new HashMap<>();
+            // ví dụ: reactionRepo.findByMessage_Id(last.getId()) -> gộp count
+            // rxList.forEach(r -> rx.merge(r.getEmoji(), 1, Integer::sum));
+
+            lastDTO = MessageDTO.builder()
+                    .id(last.getId())
+                    .conversationId(c.getId())
+                    .clientId(last.getClientId())
+                    .sender(UserBriefDTO.builder()
+                            .userId(last.getSender().getUserId())
+                            .name(last.getSender().getName())
+                            .username(last.getSender().getUsername())
+                            .avatar(last.getSender().getAvatar())
+                            .build())
+                    .content(last.getContent())
+                    .replyToId(last.getReplyTo() != null ? last.getReplyTo().getId() : null)
+                    .createdAt(last.getCreatedAt())
+                    .editedAt(last.getEditedAt())
+                    .deleted(last.getDeletedAt() != null)
+                    .attachments(List.of()) // TODO: map MediaBriefDTO nếu có
+                    .reactions(rx)
+                    .reactedByMe(false) // TODO: tính theo userId "me" nếu cần
+                    .build();
         }
 
+        // 3. Unread count
         long unread = statusRepo.countByUser_UserIdAndReadAtIsNullAndMessage_Conversation_Id(me, c.getId());
-        return ChatMapper.toConversationDTO(c, partDTOs, lastDTO, unread);
+
+        // 4. Build ConversationDTO (giả sử bạn có class ConversationDTO như sau)
+        return ConversationDTO.builder()
+                .id(c.getId())
+                .type(c.getType().name())
+                .title(c.getTitle())
+                .participants(parts)
+                .lastMessage(lastDTO)
+                .unreadCount(unread)
+                .build();
     }
+
 }

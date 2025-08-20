@@ -1,8 +1,7 @@
-// src/main/java/com/kkunquizapp/QuizAppBackend/model/chat/ConversationParticipant.java
 package com.kkunquizapp.QuizAppBackend.model;
 
-import com.kkunquizapp.QuizAppBackend.model.Conversation;
-import com.kkunquizapp.QuizAppBackend.model.User;
+import com.fasterxml.jackson.annotation.JsonBackReference;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.kkunquizapp.QuizAppBackend.model.enums.ParticipantRole;
 import jakarta.persistence.*;
 import lombok.*;
@@ -17,27 +16,34 @@ import java.util.UUID;
         @Index(name = "idx_participants_conv", columnList = "conversation_id"),
         @Index(name = "idx_participants_user", columnList = "user_id")
 })
-@Data
-@Builder
+@Getter @Setter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor
+@Builder
+@ToString(onlyExplicitlyIncluded = true)
 public class ConversationParticipant {
 
     @EmbeddedId
+    @ToString.Include
     private ConversationParticipantId id;
 
     @MapsId("conversationId")
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "conversation_id", nullable = false)
+    @JsonBackReference(value = "conv-participants")
+    @ToString.Exclude
     private Conversation conversation;
 
     @MapsId("userId")
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
+    @JsonIgnore // tránh serialize cả User tree (đã có DTO cho user)
+    @ToString.Exclude
     private User user;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
+    @ToString.Include
     private ParticipantRole role = ParticipantRole.MEMBER;
 
     @Column(length = 100)
@@ -47,10 +53,12 @@ public class ConversationParticipant {
     @Column(name = "joined_at", nullable = false)
     private LocalDateTime joinedAt;
 
+    // ===== EmbeddedId =====
     @Embeddable
-    @Data
+    @Getter @Setter
     @NoArgsConstructor
     @AllArgsConstructor
+    @EqualsAndHashCode
     public static class ConversationParticipantId implements Serializable {
         @Column(name = "conversation_id", nullable = false)
         private UUID conversationId;
@@ -58,4 +66,14 @@ public class ConversationParticipant {
         @Column(name = "user_id", nullable = false)
         private UUID userId;
     }
+
+    // equals/hashCode dựa trên embedded id
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof ConversationParticipant other)) return false;
+        return id != null && id.equals(other.id);
+    }
+    @Override
+    public int hashCode() { return 31; }
 }

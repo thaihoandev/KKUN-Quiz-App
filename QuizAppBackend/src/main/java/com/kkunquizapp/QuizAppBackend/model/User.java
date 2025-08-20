@@ -1,20 +1,20 @@
 package com.kkunquizapp.QuizAppBackend.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.kkunquizapp.QuizAppBackend.model.enums.UserRole;
 import jakarta.persistence.*;
-import lombok.EqualsAndHashCode;
-import lombok.Getter;
-import lombok.Setter;
-
+import lombok.*;
 import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
 
 @Entity
-@Getter
-@Setter
 @Table(name = "users")
+@Getter @Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@ToString(onlyExplicitlyIncluded = true)
 @EqualsAndHashCode(onlyExplicitlyIncluded = true)
 public class User {
 
@@ -22,25 +22,26 @@ public class User {
     @GeneratedValue(strategy = GenerationType.AUTO)
     @Column(updatable = false, nullable = false, unique = true)
     @EqualsAndHashCode.Include
+    @ToString.Include
     private UUID userId;
 
     @Column(nullable = false, unique = true, length = 100)
+    @ToString.Include
     private String username;
 
     @Column(nullable = false, length = 100)
+    @ToString.Include
     private String name;
 
     @Column(nullable = false, unique = true, length = 255)
     private String email;
 
     /**
-     * -- SETTER --
-     *  Setter password không encode.
-     *  Việc encode phải thực hiện ở service trước khi set để tránh double-encode.
+     * Password đã/ sẽ encode ở service.
      */
-    @Setter
     @Column(nullable = false, length = 255)
-    private String password; // sẽ được encode ở service
+    @JsonIgnore
+    private String password;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
@@ -61,6 +62,7 @@ public class User {
     @Column(nullable = false)
     private boolean isActive = true;
 
+    // Tự tham chiếu: KHÔNG serialize để tránh kéo cả graph
     @ManyToMany
     @JoinTable(
             name = "user_friends",
@@ -68,6 +70,8 @@ public class User {
             inverseJoinColumns = @JoinColumn(name = "friend_id"),
             uniqueConstraints = @UniqueConstraint(columnNames = {"user_id", "friend_id"})
     )
+    @JsonIgnore
+    @ToString.Exclude
     private Set<User> friends = new HashSet<>();
 
     // ======= Quan hệ bạn bè =======
@@ -78,8 +82,8 @@ public class User {
     }
 
     public void removeFriend(User friend) {
-        friends.remove(friend);
-        friend.friends.remove(this);
+        this.friends.remove(friend);
+        friend.getFriends().remove(this);
     }
 
     public boolean isFriendsWith(UUID otherId) {
@@ -96,5 +100,4 @@ public class User {
     public void preUpdate() {
         this.updatedAt = LocalDateTime.now();
     }
-
 }

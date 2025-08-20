@@ -48,7 +48,8 @@ export interface ConversationDTO {
   id: string;
   type: "DIRECT" | "GROUP";
   title?: string;
-  createdAt: string;
+    createdAt: string;
+    avatarUrl?: string;
   participants: ParticipantDTO[];
   lastMessage?: MessageDTO | null;
   unreadCount: number;

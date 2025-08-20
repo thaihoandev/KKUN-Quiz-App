@@ -1,13 +1,14 @@
 package com.kkunquizapp.QuizAppBackend.service.impl;
 
-// chat/service/impl/MessageServiceImpl.java
 import com.kkunquizapp.QuizAppBackend.dto.MessageDTO;
+import com.kkunquizapp.QuizAppBackend.event.MessageCreatedEvent;
 import com.kkunquizapp.QuizAppBackend.mapper.ChatMapper;
+import com.kkunquizapp.QuizAppBackend.model.*;
 import com.kkunquizapp.QuizAppBackend.repo.*;
 import com.kkunquizapp.QuizAppBackend.service.MessageService;
-import com.kkunquizapp.QuizAppBackend.model.Media;
-import com.kkunquizapp.QuizAppBackend.model.*;
 import jakarta.transaction.Transactional;
+import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.*;
 import org.springframework.stereotype.Service;
 
@@ -17,6 +18,7 @@ import java.util.stream.Collectors;
 
 @Service
 @Transactional
+@RequiredArgsConstructor
 public class MessageServiceImpl implements MessageService {
 
     private final MessageRepo msgRepo;
@@ -24,92 +26,91 @@ public class MessageServiceImpl implements MessageService {
     private final ChatReactionRepo rxRepo;
     private final MessageStatusRepo statusRepo;
     private final ChatAttachmentRepo attRepo;
-    private final com.kkunquizapp.QuizAppBackend.repo.UserRepo userRepo;
-    private final com.kkunquizapp.QuizAppBackend.repo.MediaRepo mediaRepo;
-
-    public MessageServiceImpl(MessageRepo msgRepo,
-                              ConversationParticipantRepo partRepo,
-                              ChatReactionRepo rxRepo,
-                              MessageStatusRepo statusRepo,
-                              ChatAttachmentRepo attRepo,
-                              com.kkunquizapp.QuizAppBackend.repo.UserRepo userRepo,
-                              com.kkunquizapp.QuizAppBackend.repo.MediaRepo mediaRepo) {
-        this.msgRepo = msgRepo;
-        this.partRepo = partRepo;
-        this.rxRepo = rxRepo;
-        this.statusRepo = statusRepo;
-        this.attRepo = attRepo;
-        this.userRepo = userRepo;
-        this.mediaRepo = mediaRepo;
-    }
+    private final UserRepo userRepo;
+    private final MediaRepo mediaRepo;
+    private final ApplicationEventPublisher publisher;
 
     @Override
-    public MessageDTO sendMessage(UUID senderId, UUID conversationId, String content,
-                                  List<UUID> mediaIds, UUID replyToId, String clientId) {
-        if (!partRepo.existsByConversation_IdAndUser_UserId(conversationId, senderId)) {
-            throw new IllegalArgumentException("Sender is not a participant of the conversation");
-        }
+    public MessageDTO sendMessage(UUID senderId,
+                                  UUID conversationId,
+                                  String content,
+                                  List<UUID> mediaIds,
+                                  UUID replyToId,
+                                  String clientId) {
 
-        var m = Message.builder()
+        // 1) Validate participant
+        validateSender(senderId, conversationId);
+
+        // 2) Build message
+        Message message = Message.builder()
                 .conversation(Conversation.builder().id(conversationId).build())
                 .sender(userRepo.getReferenceById(senderId))
                 .content(content)
                 .clientId(clientId)
                 .build();
 
+        // Reply-to
         if (replyToId != null) {
-            m.setReplyTo(msgRepo.findById(replyToId).orElse(null));
+            msgRepo.findById(replyToId).ifPresent(message::setReplyTo);
         }
 
+        // 3) Attach media
         if (mediaIds != null && !mediaIds.isEmpty()) {
-            int ord = 0;
-            var atts = new LinkedHashSet<ChatAttachment>();
+            int order = 0;
+            Set<ChatAttachment> attachments = new LinkedHashSet<>();
             for (UUID mid : mediaIds) {
                 Media media = mediaRepo.getReferenceById(mid);
-                var ca = ChatAttachment.builder()
-                        .message(m)
+                attachments.add(ChatAttachment.builder()
+                        .message(message)
                         .media(media)
-                        .displayOrder(ord++)
-                        .build();
-                atts.add(ca);
+                        .displayOrder(order++)
+                        .build());
             }
-            m.setAttachments(atts);
+            message.setAttachments(attachments);
         }
 
-        m = msgRepo.save(m);
+        // 4) Save (flush to get ID/createdAt immediately)
+        message = msgRepo.saveAndFlush(message);
 
-        // tạo status cho mọi participant
-        var participants = partRepo.findByConversation_Id(conversationId);
+        // 5) Create MessageStatus
+        List<ConversationParticipant> participants = partRepo.findByConversation_Id(conversationId);
         LocalDateTime now = LocalDateTime.now();
-        for (var p : participants) {
-            var id = new MessageStatus.MessageStatusId(m.getId(), p.getUser().getUserId());
-            var ms = MessageStatus.builder()
-                    .id(id)
-                    .message(m)
-                    .user(p.getUser())
-                    .deliveredAt(p.getUser().getUserId().equals(senderId) ? now : null)
-                    .readAt(null)
-                    .build();
-            statusRepo.save(ms);
-        }
 
-        List<ChatReaction> reactions = Collections.emptyList();
-        return ChatMapper.toMessageDTO(m, senderId, reactions);
+        final Message saved = message; // effectively final for lambda
+        List<MessageStatus> statuses = participants.stream()
+                .map(p -> MessageStatus.builder()
+                        .id(new MessageStatus.MessageStatusId(saved.getId(), p.getUser().getUserId()))
+                        .message(saved)
+                        .user(p.getUser())
+                        .deliveredAt(Objects.equals(p.getUser().getUserId(), senderId) ? now : null)
+                        .readAt(null)
+                        .build())
+                .toList();
+        statusRepo.saveAll(statuses);
+
+        // 6) Map to DTO (no reactions yet)
+        MessageDTO dto = ChatMapper.toMessageDTO(saved, senderId, List.of());
+
+        // 7) Publish event; listener will broadcast AFTER COMMIT
+        List<UUID> participantIds = participants.stream()
+                .map(p -> p.getUser().getUserId())
+                .toList();
+        publisher.publishEvent(new MessageCreatedEvent(conversationId, dto, participantIds));
+
+        return dto;
     }
 
     @Override
     public Page<MessageDTO> getMessages(UUID conversationId, UUID beforeMessageId, Pageable pageable, UUID me) {
-        // ép sort createdAt DESC cho ngược thời gian (chat view)
-        Pageable effective = pageable;
-        if (pageable.getSort().isUnsorted()) {
-            effective = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(),
-                    Sort.by(Sort.Direction.DESC, "createdAt"));
-        }
+        Pageable effective = pageable.getSort().isUnsorted()
+                ? PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), Sort.by(Sort.Direction.DESC, "createdAt"))
+                : pageable;
 
         Page<Message> page;
         long total;
+
         if (beforeMessageId != null) {
-            var anchor = msgRepo.findById(beforeMessageId).orElseThrow();
+            Message anchor = msgRepo.findById(beforeMessageId).orElseThrow();
             page = msgRepo.findByConversation_IdAndCreatedAtBeforeOrderByCreatedAtDesc(
                     conversationId, anchor.getCreatedAt(), effective);
             total = msgRepo.countByConversation_IdAndCreatedAtBefore(conversationId, anchor.getCreatedAt());
@@ -118,38 +119,52 @@ public class MessageServiceImpl implements MessageService {
             total = msgRepo.countByConversation_Id(conversationId);
         }
 
-        // load reactions theo từng message (đơn giản – có thể tối ưu bằng batch)
+        // Load reactions per message (keep simple; can optimize later)
         Map<UUID, List<ChatReaction>> rxByMsg = page.getContent().stream()
-                .collect(Collectors.toMap(Message::getId, m -> rxRepo.findByMessage_Id(m.getId())));
+                .collect(Collectors.toMap(
+                        Message::getId,
+                        m -> rxRepo.findByMessage_Id(m.getId())
+                ));
 
         List<MessageDTO> mapped = page.getContent().stream()
                 .map(m -> ChatMapper.toMessageDTO(m, me, rxByMsg.getOrDefault(m.getId(), List.of())))
-                .collect(Collectors.toList());
+                .toList();
 
         return new PageImpl<>(mapped, effective, total);
     }
 
     @Override
     public void markReadUpTo(UUID conversationId, UUID readerId, UUID lastMessageId) {
-        var last = msgRepo.findById(lastMessageId).orElseThrow();
-        if (!last.getConversation().getId().equals(conversationId))
+        Message last = msgRepo.findById(lastMessageId).orElseThrow();
+        if (!last.getConversation().getId().equals(conversationId)) {
             throw new IllegalArgumentException("Message does not belong to conversation");
-        var now = LocalDateTime.now();
-        statusRepo.markReadUpTo(readerId, conversationId, last.getCreatedAt(), now);
+        }
+        statusRepo.markReadUpTo(readerId, conversationId, last.getCreatedAt(), LocalDateTime.now());
     }
 
-    @Override public void addReaction(UUID messageId, UUID userId, String emoji) {
+    @Override
+    public void addReaction(UUID messageId, UUID userId, String emoji) {
         var id = new ChatReaction.ReactionId(messageId, userId, emoji);
         if (rxRepo.existsById(id)) return;
-        var rx = ChatReaction.builder()
+
+        ChatReaction rx = ChatReaction.builder()
                 .id(id)
                 .message(Message.builder().id(messageId).build())
                 .user(userRepo.getReferenceById(userId))
                 .build();
+
         rxRepo.save(rx);
     }
 
-    @Override public void removeReaction(UUID messageId, UUID userId, String emoji) {
+    @Override
+    public void removeReaction(UUID messageId, UUID userId, String emoji) {
         rxRepo.deleteById(new ChatReaction.ReactionId(messageId, userId, emoji));
+    }
+
+    // --- helpers ---
+    private void validateSender(UUID senderId, UUID conversationId) {
+        if (!partRepo.existsByConversation_IdAndUser_UserId(conversationId, senderId)) {
+            throw new IllegalArgumentException("Sender is not a participant of the conversation");
+        }
     }
 }

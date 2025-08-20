@@ -1,47 +1,48 @@
-import {Outlet} from "react-router-dom";
-import Header from "@/components/sidebars/SidebarMain";
-import Footer from "@/components/Footer";
-import Navbar from "@/components/navbars/Navbar";
-import {getCurrentUser} from "@/services/userService";
-import {useNavigate} from "react-router-dom";
-import React, {useEffect, useState} from "react";
+import { Outlet } from "react-router-dom";
+import React, { useEffect, useState } from "react";
+import { getCurrentUser } from "@/services/userService";
+import { useNavigate } from "react-router-dom";
+import HeaderMain from "@/components/headers/HeaderMain";
 
 const SingleLayout = () => {
-    const [profile, setProfile] = useState<any>(null);
-    const [loading, setLoading] = useState<boolean>(true);
-    const [error, setError] = useState<string | null>(null);
-    const navigate = useNavigate();
-    useEffect(() => {
-        const fetchUserProfile = async () => {
-            try {
-                const data = await getCurrentUser();
-                setProfile(data);
-            } catch (err: any) {
-                setError("Không thể tải thông tin người dùng");
-            } finally {
-                setLoading(false);
-            }
-        };
+  const [profile, setProfile] = useState<any>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+  const navigate = useNavigate();
 
-        fetchUserProfile();
-    }, []);
+  useEffect(() => {
+    const fetchUserProfile = async () => {
+      try {
+        const data = await getCurrentUser();
+        setProfile(data);
+      } catch (err: any) {
+        setError("Không thể tải thông tin người dùng");
+      } finally {
+        setLoading(false);
+      }
+    };
 
-    useEffect(() => {
-        const script = document.createElement("script");
-        script.async = true;
-        document.body.appendChild(script);
+    fetchUserProfile();
+  }, []);
 
-        return () => {
-            document.body.removeChild(script); // Cleanup khi unmount
-        };
-    }, []);
-    return (
-        <div className="layout-wrapper layout-content-navbar">
-            <div className="layout-container">
-                <Outlet /> {/* Render trang con */}
-            </div>
+  return (
+    <>
+      <header className="fixed-top bg-light shadow-sm">
+        <HeaderMain profile={profile} />
+      </header>
+
+      {/* Phần còn lại của màn hình, không cho trang scroll */}
+      <main
+              id="app-main"
+      >
+        <div className="h-100">            {/* h-100 để cột cao đầy */}
+          <div className="h-100" style={{ paddingTop: "70px" }}>
+            <Outlet />
+          </div>
         </div>
-    );
+      </main>
+    </>
+  );
 };
 
 export default SingleLayout;
