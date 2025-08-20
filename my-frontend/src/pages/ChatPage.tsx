@@ -1,12 +1,7 @@
-// src/pages/ChatPage.tsx
-// Chat UI: no day header, hide seconds, show sender meta only if gap >= 1 minute or sender changes,
-// fetch newest on open, lazy-load older messages on scroll-up. Includes optimistic send + clientId de-dupe.
-
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import { List, Avatar, Button, Input, Typography, Badge, Select, Empty, message, Spin } from "antd";
-import { SendOutlined, LikeOutlined, LoadingOutlined } from "@ant-design/icons";
 import { Client, IMessage, IFrame } from "@stomp/stompjs";
 import SockJS from "sockjs-client";
+import * as bootstrap from "bootstrap";
 import {
   ConversationDTO,
   MessageDTO,
@@ -25,35 +20,44 @@ import { getMyFriends } from "@/services/userService";
 const PAGE_SIZE_CONV = 20;
 const PAGE_SIZE_MSG = 30;
 const PAGE_SIZE_FRIENDS = 20;
-const SHOW_META_GAP_MS = 60 * 1000; // 1 minute
-const { Text, Title } = Typography;
-const { Option } = Select as any;
+const SHOW_META_GAP_MS = 60 * 1000;
+const TIME_SEPARATOR_GAP_MS = 15 * 60 * 1000;
 
-// WebSocket endpoint (Vite env var or fallback)
 const WS_ENDPOINT: string = (import.meta as any).env?.VITE_WS_URL || "/ws";
 
-// ---------- Helpers ----------
+type Msg = MessageDTO & { myReaction?: string | null };
+
+const EMOJI_CHOICES = [
+  "👍", "❤️", "😂", "😮", "😢", "😡", "👏", "🔥", "🎉", "🙏"
+];
+
 function byNewest(aTime?: string, bTime?: string) {
   const ta = new Date(aTime ?? 0).getTime();
   const tb = new Date(bTime ?? 0).getTime();
   return tb - ta;
 }
 
-// Upsert message: match by clientId first, then by id
-function upsertMessage(list: MessageDTO[], incoming: MessageDTO): MessageDTO[] {
+function upsertMessage(list: Msg[], incoming: Msg): Msg[] {
   if (!incoming) return list;
+
+  const mergePreserve = (oldMsg: Msg | undefined, inc: Msg): Msg => {
+    if (!oldMsg) return inc;
+    if (inc.myReaction === undefined) inc = { ...inc, myReaction: oldMsg.myReaction };
+    return inc;
+  };
+
   if (incoming.clientId) {
     const i = list.findIndex(m => m.clientId === incoming.clientId);
     if (i >= 0) {
       const next = list.slice();
-      next[i] = incoming;
+      next[i] = mergePreserve(list[i], incoming);
       return next;
     }
   }
   const j = list.findIndex(m => m.id === incoming.id);
   if (j >= 0) {
     const next = list.slice();
-    next[j] = incoming;
+    next[j] = mergePreserve(list[j], incoming);
     return next;
   }
   return [...list, incoming];
@@ -61,7 +65,7 @@ function upsertMessage(list: MessageDTO[], incoming: MessageDTO): MessageDTO[] {
 
 function formatHm(ts: any) {
   try {
-    return new Date(ts).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }); // no seconds
+    return new Date(ts).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
   } catch {
     return "";
   }
@@ -78,41 +82,66 @@ function shouldShowMeta(prev: MessageDTO | undefined, curr: MessageDTO): boolean
   return (currAt - prevAt) >= SHOW_META_GAP_MS;
 }
 
+function shouldShowTimeSeparator(prev: MessageDTO | undefined, curr: MessageDTO): boolean {
+  if (!prev || !curr) return false;
+  const prevAt = new Date((prev as any).createdAt ?? 0).getTime();
+  const currAt = new Date((curr as any).createdAt ?? 0).getTime();
+  return (currAt - prevAt) >= TIME_SEPARATOR_GAP_MS;
+}
+
 const ChatPage: React.FC = () => {
   const user = useAuthStore((s) => s.user) as UserDto | null;
   const currentUserId = user?.userId;
 
-  // Sidebar state
   const [convPage, setConvPage] = useState<PageResponse<ConversationDTO> | null>(null);
   const [convs, setConvs] = useState<ConversationDTO[]>([]);
   const [convPageIndex, setConvPageIndex] = useState(0);
   const [selectedConv, setSelectedConv] = useState<ConversationDTO | null>(null);
   const [loadingConvs, setLoadingConvs] = useState(false);
 
-  // Friends (for quick-direct chat)
   const [friends, setFriends] = useState<UserResponseDTO[]>([]);
   const [friendsPage, setFriendsPage] = useState<PageResponse<UserResponseDTO> | null>(null);
   const [friendPageIndex, setFriendPageIndex] = useState(0);
   const [loadingFriends, setLoadingFriends] = useState(false);
   const [friendQuery, setFriendQuery] = useState("");
+  const [friendDropdownOpen, setFriendDropdownOpen] = useState(false);
 
-  // Messages state
-  const [messages, setMessages] = useState<MessageDTO[]>([]);
+  const [messages, setMessages] = useState<Msg[]>([]);
   const [loadingMsgs, setLoadingMsgs] = useState(false);
   const [hasMoreMsgs, setHasMoreMsgs] = useState(true);
   const [input, setInput] = useState("");
   const scrollBoxRef = useRef<HTMLDivElement | null>(null);
 
-  // STOMP
+  const [pickerFor, setPickerFor] = useState<string | null>(null);
+
+  const [toast, setToast] = useState<{ type: "success" | "danger"; text: string } | null>(null);
+  const showToast = (type: "success" | "danger", text: string) => {
+    setToast({ type, text });
+    setTimeout(() => setToast(null), 2000);
+  };
+
   const stompRef = useRef<Client | null>(null);
   const topicSubRef = useRef<any>(null);
   const inboxSubRef = useRef<any>(null);
   const selectedConvIdRef = useRef<string | null>(null);
   const autoScrollToBottomRef = useRef<boolean>(false);
 
-  const oldestId = useMemo(() => (messages.length ? messages[0].id : undefined), [messages]);
+  const oldestId = useMemo(() => (messages.length ? (messages[0].id as any) : undefined), [messages]);
 
-  // ---------- Scroll helpers ----------
+  // Initialize Bootstrap tooltips
+  useEffect(() => {
+    const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
+    const tooltipList = [...tooltipTriggerList].map(tooltipTriggerEl => 
+      new bootstrap.Tooltip(tooltipTriggerEl, {
+        container: 'body', // Attach to body to avoid clipping
+        offset: [0, 8], // Adjust offset for better positioning
+      })
+    );
+    return () => {
+      tooltipList.forEach(tooltip => tooltip.dispose());
+    };
+  }, [messages]);
+
   const scrollToBottom = () => {
     const box = scrollBoxRef.current; if (!box) return; box.scrollTop = box.scrollHeight;
   };
@@ -130,7 +159,6 @@ const ChatPage: React.FC = () => {
 
   useEffect(() => { selectedConvIdRef.current = selectedConv?.id ?? null; }, [selectedConv?.id]);
 
-  // When images in the message list load, keep sticking to bottom if user is near bottom
   useEffect(() => {
     const el = scrollBoxRef.current;
     if (!el) return;
@@ -144,23 +172,21 @@ const ChatPage: React.FC = () => {
     return () => el.removeEventListener('load', onLoad, true);
   }, [selectedConv?.id]);
 
-  // After messages render for a newly opened conversation, force scroll to newest
   useEffect(() => {
     if (!autoScrollToBottomRef.current) return;
     requestAnimationFrame(() => {
       scrollToBottom();
-      setTimeout(scrollToBottom, 0); // extra tick for async layout/images
+      setTimeout(scrollToBottom, 0);
     });
     autoScrollToBottomRef.current = false;
   }, [messages, selectedConv?.id]);
 
-  // ---------- STOMP: subscribe to conversation topic ----------
   const subscribeConversationTopic = (client: Client, conversationId: string) => {
     try {
       topicSubRef.current?.unsubscribe?.();
       topicSubRef.current = client.subscribe(`/topic/conv.${conversationId}`, (msg: IMessage) => {
         try {
-          const payload = JSON.parse(msg.body) as MessageDTO;
+          const payload = JSON.parse(msg.body) as Msg;
           if (!payload?.id) return;
           setMessages(prev => upsertMessage(prev, payload));
           if (isNearBottom()) setTimeout(scrollToBottomSmooth, 0);
@@ -173,7 +199,6 @@ const ChatPage: React.FC = () => {
     }
   };
 
-  // ---------- Sidebar: refresh first page and merge ----------
   const refreshTopConvs = useCallback(async () => {
     if (!currentUserId) return;
     try {
@@ -190,7 +215,6 @@ const ChatPage: React.FC = () => {
     }
   }, [currentUserId]);
 
-  // ---------- STOMP client lifecycle ----------
   const ensureStompClient = useCallback(() => {
     if (stompRef.current) return;
 
@@ -204,18 +228,16 @@ const ChatPage: React.FC = () => {
     client.debug = (str: string) => { if (!/PING|PONG/.test(str)) console.log("[STOMP]", str); };
 
     client.onConnect = (_frame: IFrame) => {
-      // Always re-subscribe inbox after reconnect
       try { inboxSubRef.current?.unsubscribe?.(); } catch {}
       inboxSubRef.current = client.subscribe("/user/queue/inbox", async (msg: IMessage) => {
         try {
           const payload = JSON.parse(msg.body);
           if (payload?.type !== "NEW_MESSAGE" || !payload?.message) return;
-          const dto = payload.message as MessageDTO;
-          const convId = dto.conversationId;
+          const dto = payload.message as Msg;
+          const convId = dto.conversationId as any;
           const activeId = selectedConvIdRef.current;
 
           if (activeId === convId) {
-            // Active chat: show message, move conv up, reset unread, mark read
             setMessages(prev => upsertMessage(prev, dto));
             if (isNearBottom()) setTimeout(scrollToBottomSmooth, 0);
 
@@ -229,7 +251,6 @@ const ChatPage: React.FC = () => {
 
             if (currentUserId) markReadUpTo(convId, dto.id, currentUserId).catch(() => {});
           } else {
-            // Not active: bump unread and reorder
             setConvs(prev => {
               const idx = prev.findIndex(c => c.id === convId);
               if (idx === -1) { refreshTopConvs(); return prev; }
@@ -262,7 +283,6 @@ const ChatPage: React.FC = () => {
     stompRef.current = client;
   }, [currentUserId, refreshTopConvs]);
 
-  // ---------- Initial load ----------
   useEffect(() => {
     if (!currentUserId) return;
 
@@ -308,7 +328,6 @@ const ChatPage: React.FC = () => {
     }
   };
 
-  // ---------- Friends for quick DM ----------
   const loadFriends = useCallback(
     async (page = 0, append = false) => {
       setLoadingFriends(true);
@@ -332,11 +351,10 @@ const ChatPage: React.FC = () => {
 
   const filteredFriends = useMemo(() => {
     const q = friendQuery.trim().toLowerCase();
-    if (!q) return friends;
+    if (!q) return [] as UserResponseDTO[];
     return friends.filter((f) => [f.name, f.username, f.email].filter(Boolean).some((s) => (s as string).toLowerCase().includes(q)));
   }, [friendQuery, friends]);
 
-  // ---------- When selecting a conversation (fetch newest first) ----------
   useEffect(() => {
     if (!selectedConv || !currentUserId) return;
 
@@ -347,11 +365,11 @@ const ChatPage: React.FC = () => {
       setLoadingMsgs(true);
       try {
         const page = await getMessages({ conversationId: selectedConv.id, me: currentUserId, size: PAGE_SIZE_MSG });
-        const arr = [...page.content].reverse(); // oldest -> newest for display
-        setMessages(arr);
+        const arr = [...page.content].reverse();
+        setMessages(arr as Msg[]);
         setHasMoreMsgs(!page.last);
-        autoScrollToBottomRef.current = true; // ensure we snap to bottom after render
-        if (arr.length) await markReadUpTo(selectedConv.id, arr[arr.length - 1].id, currentUserId);
+        autoScrollToBottomRef.current = true;
+        if (arr.length) await markReadUpTo(selectedConv.id, (arr[arr.length - 1] as any).id, currentUserId);
       } finally {
         setLoadingMsgs(false);
       }
@@ -369,14 +387,13 @@ const ChatPage: React.FC = () => {
     };
   }, [selectedConv?.id, currentUserId, ensureStompClient]);
 
-  // ---------- Pagination older messages (lazy load on scroll-up) ----------
   const loadOlder = async () => {
     if (!selectedConv || !currentUserId || !hasMoreMsgs || loadingMsgs || !oldestId) return;
     setLoadingMsgs(true);
     try {
       const page = await getMessages({ conversationId: selectedConv.id, me: currentUserId, beforeMessageId: oldestId, size: PAGE_SIZE_MSG });
       const moreAsc = [...page.content].reverse();
-      setMessages(prev => [...moreAsc, ...prev]);
+      setMessages(prev => [...(moreAsc as Msg[]), ...prev]);
       setHasMoreMsgs(!page.last);
       preserveScrollAfterPrepend();
     } finally {
@@ -384,24 +401,23 @@ const ChatPage: React.FC = () => {
     }
   };
 
-  // ---------- Send message (optimistic) ----------
   const onSend = async () => {
     const text = input.trim();
     if (!text || !selectedConv || !currentUserId) return;
 
     const clientId = `c_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
-    // optimistic temp message
-    const tempMsg: MessageDTO = {
+    const tempMsg: Msg = {
       id: `temp:${clientId}` as any,
       clientId,
       conversationId: selectedConv.id,
       sender: { userId: currentUserId, name: (user as any)?.name, avatar: (user as any)?.avatar } as any,
       content: text,
       createdAt: new Date().toISOString() as any,
-      attachments: [], // required by MessageDTO type
+      attachments: [],
       reactions: {},
       reactedByMe: false as any,
+      myReaction: null,
     };
 
     setMessages(prev => [...prev, tempMsg]);
@@ -410,9 +426,8 @@ const ChatPage: React.FC = () => {
 
     try {
       const dto = await sendMessage(currentUserId, { conversationId: selectedConv.id, content: text, clientId });
-      setMessages(prev => upsertMessage(prev, dto));
+      setMessages(prev => upsertMessage(prev, dto as Msg));
 
-      // reorder conversations
       setConvs(prev => {
         const idx = prev.findIndex(c => c.id === selectedConv.id);
         if (idx < 0) return prev;
@@ -422,13 +437,11 @@ const ChatPage: React.FC = () => {
       });
     } catch (e) {
       console.error("[SEND] error", e);
-      // rollback optimistic
       setMessages(prev => prev.filter(m => m.clientId !== clientId));
-      message.error("Gửi tin nhắn thất bại");
+      showToast("danger", "Gửi tin nhắn thất bại");
     }
   };
 
-  // ---------- Start / open direct chat ----------
   const startDirectChat = async (friendId: string) => {
     if (!currentUserId) return;
     try {
@@ -439,43 +452,65 @@ const ChatPage: React.FC = () => {
         return next.sort((a, b) => byNewest(a.lastMessage?.createdAt ?? a.createdAt, b.lastMessage?.createdAt ?? b.createdAt));
       });
       setSelectedConv(conv);
-      message.success("Đã mở hội thoại");
+      showToast("success", "Đã mở hội thoại");
     } catch (e) {
       console.error("[DIRECT] open error", e);
-      message.error("Không tạo được hội thoại");
+      showToast("danger", "Không tạo được hội thoại");
     }
   };
 
-  // ---------- Reactions ----------
-  const toggleThumb = async (m: MessageDTO) => {
+  const selectReaction = async (m: Msg, emoji: string) => {
     if (!currentUserId) return;
-    const has = (m.reactedByMe && m.reactions?.["👍"] > 0) || false;
+    const prevEmoji = m.myReaction || null;
+
+    if (prevEmoji === emoji) {
+      try { await removeReaction(m.id, currentUserId, emoji); } catch (e) { console.warn(e); }
+      setMessages(list => list.map(x => {
+        if (x.id !== m.id) return x;
+        const nextCounts = { ...(x.reactions || {}) } as Record<string, number>;
+        nextCounts[emoji] = Math.max(0, (nextCounts[emoji] || 1) - 1);
+        return { ...x, myReaction: null, reactedByMe: false as any, reactions: nextCounts };
+      }));
+      return;
+    }
+
     try {
-      if (has) await removeReaction(m.id, currentUserId, "👍");
-      else await addReaction(m.id, currentUserId, "👍");
-      setMessages(prev => prev.map(x => x.id !== m.id ? x : {
-        ...x,
-        reactions: { ...x.reactions, "👍": has ? Math.max(0, (x.reactions?.["👍"] || 1) - 1) : (x.reactions?.["👍"] || 0) + 1 },
-        reactedByMe: !has,
+      if (prevEmoji) {
+        try { await removeReaction(m.id, currentUserId, prevEmoji); } catch (e) { console.warn(e); }
+      }
+      await addReaction(m.id, currentUserId, emoji);
+
+      setMessages(list => list.map(x => {
+        if (x.id !== m.id) return x;
+        const nextCounts = { ...(x.reactions || {}) } as Record<string, number>;
+        if (prevEmoji) nextCounts[prevEmoji] = Math.max(0, (nextCounts[prevEmoji] || 1) - 1);
+        nextCounts[emoji] = (nextCounts[emoji] || 0) + 1;
+        return { ...x, myReaction: emoji, reactedByMe: true as any, reactions: nextCounts };
       }));
     } catch (e) {
-      console.error("[REACTION] toggle error", e);
+      console.error("[REACTION] set error", e);
+      showToast("danger", "Không thể cập nhật cảm xúc");
     }
   };
 
-  // ---------- Infinite scroll up ----------
   const onScroll = (e: React.UIEvent<HTMLDivElement>) => {
     if (e.currentTarget.scrollTop <= 0 && !loadingMsgs) loadOlder();
   };
 
-  // ---------- Utils to render ----------
   const getConversationTitle = (c: ConversationDTO, myId: string) => {
-    if (c.type === "DIRECT") return c.participants.find(p => p.userId !== myId)?.user?.name || "Direct";
-    return c.title || "Nhóm";
+    if ((c as any).type === "DIRECT") return c.participants.find(p => p.userId !== myId)?.user?.name || "Direct";
+    return (c as any).title || "Nhóm";
   };
   const getConversationAvatar = (c: ConversationDTO, myId: string) => {
-    if (c.type === "DIRECT") return c.participants.find(p => p.userId !== myId)?.user?.avatar;
+    if ((c as any).type === "DIRECT") return c.participants.find(p => p.userId !== myId)?.user?.avatar;
     return (c as any).avatarUrl;
+  };
+
+  const isLastInMetaGroup = (currIdx: number) => {
+    if (currIdx >= messages.length - 1) return true;
+    const curr = messages[currIdx];
+    const next = messages[currIdx + 1];
+    return shouldShowMeta(curr, next);
   };
 
   if (!currentUserId) {
@@ -487,132 +522,195 @@ const ChatPage: React.FC = () => {
   }
 
   return (
-    <div style={{
-      height: "calc(100vh - 70px)", width: "100%", display: "flex", overflow: "hidden",
-      background: "linear-gradient(135deg, #f0f4f8 0%, #d9e2ec 100%)"
-    }}>
+    <div
+      style={{
+        height: "calc(100vh - 70px)",
+        width: "100%",
+        display: "flex",
+        overflow: "hidden",
+        background: "linear-gradient(135deg, #f0f4f8 0%, #d9e2ec 100%)"
+      }}
+    >
       {/* Sidebar */}
-      <div style={{
-        width: "33%", maxWidth: 400, minWidth: 300, display: "flex", flexDirection: "column",
-        borderRight: "1px solid #d0d7de", backgroundColor: "#fff"
-      }}>
-        <div style={{ padding: 16, borderBottom: "1px solid #d0d7de", display: "flex", flexDirection: "column", height: "100%" }}>
-          <div style={{ marginBottom: 12 }}>
-            <Title level={4} style={{ margin: 0 }}>Hội thoại</Title>
+      <div className="d-flex flex-column bg-white border-end" style={{ width: "33%", maxWidth: 400, minWidth: 300 }}>
+        <div className="d-flex flex-column h-100 p-3">
+          <div className="mb-3">
+            <h4 className="m-0">Hội thoại</h4>
           </div>
 
-          {/* Quick DM search */}
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-            <Select
-              showSearch
-              placeholder="Tìm bạn để chat"
-              onSearch={(value: string) => setFriendQuery(value)}
-              onChange={(friendId: string) => { setFriendQuery(""); startDirectChat(friendId); }}
-              style={{ flex: 1 }}
-              filterOption={false}
-              notFoundContent={loadingFriends ? <LoadingOutlined /> : <Empty description="Không tìm thấy bạn bè" />}
-              onDropdownVisibleChange={(open: boolean) => { if (open) loadFriends(0, false); }}
-            >
-              {filteredFriends.map((f) => (
-                <Option key={f.userId} value={f.userId}>
-                  <div style={{ display: "flex", alignItems: "center" }}>
-                    <Avatar src={f.avatar} size={24} style={{ marginRight: 8 }} />
-                    <span>{f.name || f.username}</span>
+          <div className="mb-3 position-relative">
+            <div className="input-group">
+              <span className="input-group-text">🔎</span>
+              <input
+                type="text"
+                className="form-control"
+                placeholder="Tìm bạn để chat"
+                value={friendQuery}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFriendQuery(e.target.value)}
+                onFocus={() => setFriendDropdownOpen(true)}
+                onBlur={() => setTimeout(() => setFriendDropdownOpen(false), 120)}
+              />
+              {friendDropdownOpen && friendsPage && !friendsPage.last && (
+                <button
+                  className="btn btn-outline-secondary"
+                  onMouseDown={(e: React.MouseEvent) => e.preventDefault()}
+                  onClick={loadMoreFriends}
+                >
+                  Thêm
+                </button>
+              )}
+            </div>
+
+            {friendDropdownOpen && friendQuery.trim().length === 0 && (
+              <div className="position-absolute w-100 mt-1 p-2 bg-white border rounded-3 shadow-sm text-muted small">
+                Nhập tên để tìm bạn…
+              </div>
+            )}
+
+            {friendDropdownOpen && friendQuery.trim().length > 0 && (
+              <div className="position-absolute w-100 mt-1 bg-white border rounded-3 shadow-sm" style={{ maxHeight: 280, overflowY: "auto", zIndex: 10 }}>
+                {loadingFriends && (
+                  <div className="d-flex align-items-center justify-content-center py-2">
+                    <div className="spinner-border spinner-border-sm me-2" role="status"></div>
+                    <span className="small text-muted">Đang tải…</span>
                   </div>
-                </Option>
-              ))}
-            </Select>
-            {!loadingFriends && friendsPage && !friendsPage.last && (
-              <Button size="small" icon={<LoadingOutlined />} onClick={loadMoreFriends}>Thêm</Button>
+                )}
+                {!loadingFriends && filteredFriends.length === 0 && (
+                  <div className="p-2 text-muted small">Không tìm thấy bạn bè</div>
+                )}
+                <ul className="list-group list-group-flush">
+                  {filteredFriends.map((f) => (
+                    <li
+                      key={f.userId}
+                      className="list-group-item list-group-item-action d-flex align-items-center"
+                      style={{ cursor: "pointer" }}
+                      onMouseDown={(e: React.MouseEvent) => e.preventDefault()}
+                      onClick={() => {
+                        setFriendQuery("");
+                        setFriendDropdownOpen(false);
+                        startDirectChat(f.userId);
+                      }}
+                    >
+                      <img
+                        src={f.avatar || ""}
+                        onError={(e: React.SyntheticEvent<HTMLImageElement>) => { e.currentTarget.style.display = "none"; }}
+                        className="rounded-circle me-2"
+                        style={{ width: 24, height: 24, objectFit: "cover" }}
+                        alt=""
+                      />
+                      <span>{f.name || f.username}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
           </div>
 
-          {/* Conversation list header */}
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0 8px 8px" }}>
-            <Text strong>Danh sách</Text>
+          <div className="d-flex justify-content-between align-items-center px-2 pb-2">
+            <strong>Danh sách</strong>
             {!loadingConvs && convPage && !convPage.last && (
-              <Button size="small" icon={<LoadingOutlined />} onClick={loadMoreConvs}>Tải thêm</Button>
+              <button className="btn btn-sm btn-outline-secondary" onClick={loadMoreConvs}>
+                Tải thêm
+              </button>
             )}
           </div>
 
-          {/* Conversation list */}
-          <div style={{ flex: 1, overflowY: "auto" }}>
-            <List
-              rowKey="id"
-              loading={loadingConvs}
-              dataSource={convs}
-              locale={{ emptyText: <Empty description="Chưa có hội thoại" /> }}
-              renderItem={(c) => {
+          <div className="flex-grow-1 overflow-auto">
+            {loadingConvs && convs.length === 0 && (
+              <div className="text-center text-muted py-3">
+                <div className="spinner-border spinner-border-sm me-2" role="status"></div>
+                Đang tải…
+              </div>
+            )}
+            {!loadingConvs && convs.length === 0 && (
+              <div className="text-center text-muted py-3">Chưa có hội thoại</div>
+            )}
+            <ul className="list-group">
+              {convs.map((c) => {
                 const last = c.lastMessage as any;
                 const title = getConversationTitle(c, currentUserId!);
                 const preview = last ? `${last.sender?.name ? last.sender.name + ": " : ""}${last.content ?? "[media]"}` : "Không có tin nhắn";
+                const active = selectedConv?.id === c.id;
                 return (
-                  <List.Item
+                  <li
+                    key={c.id}
+                    className={`list-group-item ${active ? "active" : ""}`}
+                    style={{ cursor: "pointer" }}
                     onClick={() => {
                       setSelectedConv(c);
                       setConvs(prev => prev.map(x => (x.id === c.id ? { ...x, unreadCount: 0 } : x)));
                     }}
-                    style={{
-                      padding: "8px 12px",
-                      cursor: "pointer",
-                      backgroundColor: selectedConv?.id === c.id ? "#e6f4ff" : "transparent",
-                      borderBottom: "1px solid #f0f0f0",
-                      transition: "background-color 0.2s"
-                    }}
-                    onMouseEnter={(e) => {
-                      if (selectedConv?.id !== c.id) (e.currentTarget as any).style.backgroundColor = "#fafafa";
-                    }}
-                    onMouseLeave={(e) => {
-                      (e.currentTarget as any).style.backgroundColor = selectedConv?.id === c.id ? "#e6f4ff" : "transparent";
-                    }}
                   >
-                    <List.Item.Meta
-                      avatar={<Avatar src={getConversationAvatar(c, currentUserId!)}>{(title?.[0] ?? "?")}</Avatar>}
-                      title={
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                          <span style={{ maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{title}</span>
+                    <div className="d-flex align-items-start">
+                      {getConversationAvatar(c, currentUserId!) ? (
+                        <img
+                          src={getConversationAvatar(c, currentUserId!)!}
+                          alt=""
+                          className={`rounded-circle me-2 ${active ? "border border-light" : ""}`}
+                          style={{ width: 36, height: 36, objectFit: "cover" }}
+                        />
+                      ) : (
+                        <div
+                          className={`rounded-circle bg-secondary text-white d-flex align-items-center justify-content-center me-2 ${active ? "border border-light" : ""}`}
+                          style={{ width: 36, height: 36 }}
+                        >
+                          {title?.[0] ?? "?"}
+                        </div>
+                      )}
+                      <div className="flex-grow-1">
+                        <div className="d-flex justify-content-between">
+                          <div
+                            className={`fw-semibold ${active ? "text-white" : ""}`}
+                            style={{ maxWidth: 180, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+                          >
+                            {title}
+                          </div>
                           {(c as any).unreadCount > 0 && (
-                            <Badge count={(c as any).unreadCount > 99 ? "99+" : (c as any).unreadCount} />
+                            <span className={`badge rounded-pill ${active ? "bg-light text-dark" : "bg-primary"}`}>
+                              {(c as any).unreadCount > 99 ? "99+" : (c as any).unreadCount}
+                            </span>
                           )}
                         </div>
-                      }
-                      description={
-                        <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "#888" }}>
+                        <div
+                          className={`small ${active ? "text-white-50" : "text-muted"}`}
+                          style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+                        >
                           {preview}
-                        </span>
-                      }
-                    />
-                  </List.Item>
+                        </div>
+                      </div>
+                    </div>
+                  </li>
                 );
-              }}
-            />
+              })}
+            </ul>
           </div>
         </div>
       </div>
 
-      {/* Chat Pane */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
-        <div style={{ padding: 16, borderBottom: "1px solid #d0d7de", fontWeight: 600, backgroundColor: "#fff" }}>
+      <div className="d-flex flex-column flex-grow-1">
+        <div className="p-3 border-bottom bg-white fw-semibold">
           {selectedConv ? getConversationTitle(selectedConv, currentUserId!) : "Chọn hội thoại"}
         </div>
 
         <div
           ref={scrollBoxRef}
           onScroll={onScroll}
-          style={{ flex: 1, overflowY: "auto", padding: 16, backgroundColor: "#fff" }}
+          className="flex-grow-1 overflow-auto p-3 bg-white"
         >
-          {/* Lazy-load indicator at top while fetching older */}
-          {loadingMsgs && messages.length > 0 && (
-            <div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}>
-              <Spin size="small" />
-            </div>
-          )}
+          <style>{`
+            .message-container:hover .reaction-button {
+              opacity: 1 !important;
+            }
+            .tooltip {
+              z-index: 2000 !important; /* Ensure tooltip is above other elements */
+            }
+          `}</style>
 
           {loadingMsgs && messages.length === 0 && (
-            <div style={{ textAlign: "center", color: "#888" }}>Đang tải…</div>
+            <div className="text-center text-muted">Đang tải…</div>
           )}
           {hasMoreMsgs && messages.length > 0 && (
-            <div style={{ textAlign: "center", color: "#aaa", fontSize: 12 }}>Kéo lên để xem cũ hơn…</div>
+            <div className="text-center text-muted small">Kéo lên để xem cũ hơn…</div>
           )}
 
           {messages.map((m, idx) => {
@@ -620,72 +718,166 @@ const ChatPage: React.FC = () => {
             const pending = (m.id as any)?.toString?.().startsWith?.("temp:");
             const prev = idx > 0 ? messages[idx - 1] : undefined;
             const showMeta = shouldShowMeta(prev, m);
+            const showSeparator = shouldShowTimeSeparator(prev, m);
+            const isLast = isLastInMetaGroup(idx);
+            const hasReactions = Object.entries(m.reactions || {}).some(([_, count]) => (count as number) > 0);
+
             return (
-              <div key={m.id as any} style={{ marginBottom: 10, textAlign: mine ? "right" : "left", opacity: pending ? 0.6 : 1 }}>
-                {showMeta && (
-                  <Text style={{ display: "block", fontSize: 12, color: "#888", margin: mine ? "0 8px 4px 0" : "0 0 4px 8px" }}>
-                    {(m.sender as any)?.name} · {formatHm((m as any).createdAt)}
-                  </Text>
-                )}
-
-                {m.content && (
-                  <div style={{
-                    display: "inline-block",
-                    padding: "8px 12px",
-                    borderRadius: 8,
-                    backgroundColor: mine ? "#1890ff" : "#f5f5f5",
-                    color: mine ? "#fff" : "#000",
-                    maxWidth: "70%",
-                    wordBreak: "break-word",
-                  }}>
-                    {m.content}
+              <React.Fragment key={m.id as any}>
+                {showSeparator && (
+                  <div className="text-center small text-muted my-3">
+                    {formatHm((m as any).createdAt)}
                   </div>
                 )}
-
-                {m.attachments?.length > 0 && (
-                  <div
-                    style={{
-                      marginTop: 8,
-                      display: "grid",
-                      gridTemplateColumns: m.attachments.length > 1 ? "1fr 1fr" : "1fr",
-                      gap: 8,
-                    }}
-                  >
-                    {m.attachments.map((a) => (
-                      <div key={(a as any).mediaId}>
-                        <a href={(a as any).url} target="_blank" rel="noreferrer">
-                          <img src={(a as any).thumbnailUrl || (a as any).url} alt="" style={{ width: "100%", borderRadius: 8 }} />
-                        </a>
+                <div
+                  className={`message-container mb-${isLast ? 3 : 1} ${mine ? "d-flex justify-content-end" : "d-flex justify-content-start"}`}
+                  style={{ opacity: pending ? 0.6 : 1 }}
+                >
+                  {!mine && (
+                    <div
+                      style={{ width: 32, marginRight: 8, alignSelf: isLast ? "flex-end" : "flex-start" }}
+                    >
+                      {isLast && (
+                        <img
+                          src={(m.sender as any)?.avatar || ""}
+                          alt=""
+                          className="rounded-circle"
+                          style={{ width: 32, height: 32, objectFit: "cover" }}
+                          onError={(e: React.SyntheticEvent<HTMLImageElement>) => { e.currentTarget.style.display = "none"; }}
+                        />
+                      )}
+                    </div>
+                  )}
+                  <div className="d-flex align-items-center" style={{ maxWidth: "70%", position: "relative" }}>
+                    <div
+                      className={`position-relative ${mine ? "order-0 me-2" : "order-2 ms-2"} reaction-button`}
+                      style={{ opacity: 0, transition: "opacity 0.2s" }}
+                    >
+                      <button
+                        className={`btn btn-sm p-0 px-2 ${m.myReaction ? "text-primary" : "text-secondary"}`}
+                        style={{ fontSize: "1.2em" }}
+                        onClick={() => setPickerFor(pickerFor === (m.id as any) ? null : (m.id as any))}
+                        onBlur={() => setTimeout(() => setPickerFor(cur => cur === (m.id as any) ? null : cur), 120)}
+                        title={m.myReaction ? `Cảm xúc của bạn: ${m.myReaction}` : "Chọn cảm xúc"}
+                      >
+                        ☺
+                      </button>
+                      {pickerFor === (m.id as any) && (
+                        <div
+                          className="position-absolute bg-white border rounded-3 shadow-sm p-2"
+                          style={{ zIndex: 10, top: "100%", left: 0 }}
+                        >
+                          <div className="d-flex flex-wrap gap-1" style={{ maxWidth: 240 }}>
+                            {EMOJI_CHOICES.map((emo) => (
+                              <button
+                                key={emo}
+                                className={`btn btn-sm ${m.myReaction === emo ? "btn-primary" : "btn-outline-secondary"}`}
+                                onMouseDown={(e: React.MouseEvent) => e.preventDefault()}
+                                onClick={() => { selectReaction(m, emo); setPickerFor(null); }}
+                              >
+                                {emo}
+                              </button>
+                            ))}
+                            {m.myReaction && (
+                              <button
+                                className="btn btn-sm btn-outline-danger"
+                                onMouseDown={(e: React.MouseEvent) => e.preventDefault()}
+                                onClick={() => { selectReaction(m, m.myReaction!); setPickerFor(null); }}
+                              >
+                                Bỏ
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    <div className={`order-${mine ? 1 : 1}`}>
+                      {!mine && showMeta && (
+                        <div className="small text-muted mb-1 text-start">
+                          {(m.sender as any)?.name}
+                        </div>
+                      )}
+                      <div
+                        className={`px-3 py-2 rounded-3 ${mine ? "bg-primary text-white" : "bg-light"}`}
+                        style={{ wordBreak: "break-word" }}
+                        data-bs-toggle="tooltip"
+                        data-bs-placement={mine ? "left" : "right"}
+                        data-bs-title={formatHm((m as any).createdAt)}
+                        data-bs-container="body"
+                      >
+                        {m.content && <div>{m.content}</div>}
                       </div>
-                    ))}
+                      {m.attachments?.length > 0 && (
+                        <div
+                          className="mt-2"
+                          style={{ display: "grid", gridTemplateColumns: m.attachments.length > 1 ? "1fr 1fr" : "1fr", gap: 8 }}
+                        >
+                          {m.attachments.map((a) => (
+                            <div key={(a as any).mediaId}>
+                              <a href={(a as any).url} target="_blank" rel="noreferrer">
+                                <img
+                                  src={(a as any).thumbnailUrl || (a as any).url}
+                                  alt=""
+                                  style={{ width: "100%", borderRadius: 8 }}
+                                />
+                              </a>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {hasReactions && (
+                        <div
+                          className={`small d-flex gap-1 ${mine ? "justify-content-end" : "justify-content-start"}`}
+                          style={{ position: "sticky", top: 0, marginTop: 4, zIndex: 5 }}
+                        >
+                          {Object.entries(m.reactions || {})
+                            .filter(([_, count]) => (count as number) > 0)
+                            .map(([emoji, count]) => (
+                              <button
+                                key={emoji}
+                                className={`btn btn-sm p-0 px-1 ${m.myReaction === emoji ? "text-primary" : "text-secondary"}`}
+                                style={{ fontSize: "0.8em" }}
+                                onClick={() => selectReaction(m, emoji)}
+                              >
+                                {emoji} {count as number > 1 ? count : ""}
+                              </button>
+                            ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                )}
-
-                <div style={{ marginTop: 4, fontSize: 12, color: "#888", display: "flex", gap: 8, justifyContent: mine ? "flex-end" : "flex-start" }}>
-                  <Button size="small" type={m.reactedByMe ? "primary" : "default"} icon={<LikeOutlined />} onClick={() => toggleThumb(m)}>
-                    {m.reactions?.["👍"] || 0}
-                  </Button>
                 </div>
-              </div>
+              </React.Fragment>
             );
           })}
         </div>
 
-        {/* Input */}
-        <div style={{ padding: 16, borderTop: "1px solid #d0d7de", display: "flex", alignItems: "center", gap: 8, backgroundColor: "#fff" }}>
-          <Input
+        <div className="p-3 border-top bg-white d-flex align-items-center gap-2">
+          <input
+            className="form-control"
             placeholder={selectedConv ? "Nhập tin nhắn…" : "Chọn hội thoại để nhắn"}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onPressEnter={onSend}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setInput(e.target.value)}
+            onKeyDown={(e: React.KeyboardEvent) => { if (e.key === "Enter") onSend(); }}
             disabled={!selectedConv}
-            style={{ flex: 1 }}
           />
-          <Button type="primary" icon={<SendOutlined />} onClick={onSend} disabled={!selectedConv || !input.trim()}>
+          <button
+            className="btn btn-primary"
+            onClick={onSend}
+            disabled={!selectedConv || !input.trim()}
+          >
             Gửi
-          </Button>
+          </button>
         </div>
       </div>
+
+      {toast && (
+        <div className="position-fixed bottom-0 end-0 p-3" style={{ zIndex: 1080 }}>
+          <div className={`alert alert-${toast.type} shadow-sm mb-0`} role="alert">
+            {toast.text}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -19,6 +19,9 @@ interface NotificationHeaderProps {
   profile: { userId: string } | null;
 }
 
+// Cho phép chỉnh nhanh min-width của dropdown
+const DROPDOWN_MIN_WIDTH = 360; // px
+
 // Map DTO → UI model
 const mapToNotification = (dto: NotificationDTO): Notification => {
   const createdDate = dto.createdAt ? parseDate(dto.createdAt) : new Date();
@@ -172,7 +175,10 @@ const NotificationHeader: React.FC<NotificationHeaderProps> = ({ profile }) => {
         </span>
       </a>
 
-      <ul className="dropdown-menu dropdown-menu-end p-0">
+      <ul
+        className="dropdown-menu dropdown-menu-end p-0"
+        style={{ minWidth: DROPDOWN_MIN_WIDTH }} // 👈 thêm min-width cho dropdown
+      >
         <li className="dropdown-menu-header border-bottom">
           <div className="dropdown-header d-flex align-items-center py-3">
             <h6 className="mb-0 me-auto">Notifications</h6>
