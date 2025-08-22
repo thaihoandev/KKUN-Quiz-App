@@ -1,79 +1,136 @@
 import "@/assets/vendor/css/pages/page-profile.css";
 import HeaderProfile from "@/components/headers/HeaderProfile";
-import { useEffect, useState } from "react";
-import { getUserById } from "@/services/userService"; // Assume this function is added to userService.ts
-import ViewProfileTab from "@/components/tabs/ViewProfileTab"; // The new view-only tab
+import { useEffect, useMemo, useState } from "react";
+import { getCurrentUser, getUserById } from "@/services/userService";
+import ProfileTab from "@/components/tabs/ProfileTab";
+import ViewProfileTab from "@/components/tabs/ViewProfileTab";
 import ClassesTab from "@/components/tabs/ClassesTab";
 import QuizzesTab from "@/components/tabs/QuizzesTab";
 import CoursesTab from "@/components/tabs/CourseTab";
 import NavigationMenu from "@/components/NavigationMenuProfile";
+import EditProfileModal from "@/components/modals/EditProfileModal";
+import EditAvatarModal from "@/components/modals/EditAvatarModal";
 import { UserResponseDTO } from "@/interfaces";
 import { useParams } from "react-router-dom";
 
 const UserProfilePage = () => {
-  const { userId } = useParams<{ userId: string }>();
+  const { userId: routeUserId } = useParams<{ userId?: string }>();
 
-  const profileMenuItems = [
-    { path: "profile", icon: "bx-user", label: "Profile" },
-    { path: "classes", icon: "bx-chalkboard", label: "Classes" },
-    { path: "courses", icon: "bx-book", label: "Courses" },
-  ];
-
+  const [currentUser, setCurrentUser] = useState<UserResponseDTO | null>(null);
   const [profile, setProfile] = useState<UserResponseDTO | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<string>("profile");
+  const [showProfileModal, setShowProfileModal] = useState<boolean>(false);
+  const [showAvatarModal, setShowAvatarModal] = useState<boolean>(false);
+
+  const isOwner = useMemo(() => {
+    if (!currentUser) return false;
+    // Xem trang của mình khi:
+    // - Không có routeUserId (đi đường /dashboard hoặc /profile)
+    // - Hoặc routeUserId === currentUser.userId
+    return !routeUserId || routeUserId === currentUser.userId;
+  }, [routeUserId, currentUser]);
+
+  // Menu động theo quyền
+  const menuItems = useMemo(
+    () =>
+      isOwner
+        ? [
+            { path: "profile", icon: "bx-user", label: "Profile" },
+            { path: "classes", icon: "bx-chalkboard", label: "Classes" },
+            { path: "courses", icon: "bx-book", label: "Courses" },
+            { path: "quizzes", icon: "bx-task", label: "Quizzes" },
+          ]
+        : [
+            { path: "profile", icon: "bx-user", label: "Profile" },
+            { path: "classes", icon: "bx-chalkboard", label: "Classes" },
+            { path: "courses", icon: "bx-book", label: "Courses" },
+          ],
+    [isOwner]
+  );
 
   useEffect(() => {
-    const fetchUserProfile = async () => {
-      if (!userId) {
-        setError("No user ID provided");
-        setLoading(false);
-        return;
-      }
+    let cancelled = false;
+
+    const load = async () => {
+      setLoading(true);
+      setError(null);
       try {
-        const data = await getUserById(userId);
-        setProfile(data);
-      } catch (err: any) {
+        // 1) Luôn lấy current user để biết quyền
+        const me = await getCurrentUser();
+        if (cancelled) return;
+        setCurrentUser(me);
+
+        // 2) Quyết định fetch profile hiển thị
+        if (!routeUserId || routeUserId === me?.userId) {
+          setProfile(me);
+        } else {
+          const other = await getUserById(routeUserId);
+          if (cancelled) return;
+          setProfile(other);
+        }
+      } catch (e) {
+        if (cancelled) return;
         setError("Không thể tải thông tin người dùng");
+        setProfile(null);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
 
-    fetchUserProfile();
-  }, [userId]);
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [routeUserId]);
+
+  // Đổi user xem → nên quay lại tab “profile”
+  useEffect(() => {
+    setActiveTab("profile");
+  }, [routeUserId]);
+
+  const handleUpdateProfile = (updated: UserResponseDTO) => {
+    setProfile(updated);
+    // Nếu sửa avatar/hồ sơ của chính mình, đồng bộ currentUser
+    if (isOwner) setCurrentUser(updated);
+  };
 
   const renderTabContent = () => {
     switch (activeTab) {
       case "profile":
-        return <ViewProfileTab profile={profile} />;
+        return isOwner ? (
+          <ProfileTab profile={profile} onEditProfile={() => setShowProfileModal(true)} />
+        ) : (
+          <ViewProfileTab profile={profile} />
+        );
       case "classes":
-        return <ClassesTab />; // Pass userId if needed for fetching data
+        return <ClassesTab /* có thể truyền userId nếu cần */ />;
       case "courses":
-        return <CoursesTab  />; // Pass userId if needed
+        return <CoursesTab /* có thể truyền userId nếu cần */ />;
       case "quizzes":
-        return <QuizzesTab profile={profile} />;
+        return isOwner ? <QuizzesTab profile={profile} /> : <ViewProfileTab profile={profile} />;
       default:
-        return <ViewProfileTab profile={profile} />;
+        return isOwner ? (
+          <ProfileTab profile={profile} onEditProfile={() => setShowProfileModal(true)} />
+        ) : (
+          <ViewProfileTab profile={profile} />
+        );
     }
   };
 
   return (
     <div className="container-xxl flex-grow-1 container-p-y">
-      {/* <!-- Header --> */}
-          <HeaderProfile profile={profile} onEditAvatar={() => { }}/> {/* No edit option */}
-      {/* <!--/ Header --> */}
-
-      {/* <!-- Navbar pills --> */}
-      <NavigationMenu
-        menuItems={profileMenuItems}
-        activeTab={activeTab}
-        onTabChange={setActiveTab}
+      {/* Header */}
+      <HeaderProfile
+        profile={profile}
+        onEditAvatar={isOwner ? () => setShowAvatarModal(true) : () => {}}
       />
-      {/* <!--/ Navbar pills --> */}
 
-      {/* <!-- Tab Content --> */}
+      {/* Navbar pills */}
+      <NavigationMenu menuItems={menuItems} activeTab={activeTab} onTabChange={setActiveTab} />
+
+      {/* Tab Content */}
       {loading ? (
         <div>Loading...</div>
       ) : error ? (
@@ -81,7 +138,22 @@ const UserProfilePage = () => {
       ) : (
         renderTabContent()
       )}
-      {/* <!--/ Tab Content --> */}
+
+      {/* Only owner gets edit modals */}
+      {isOwner && showProfileModal && profile && (
+        <EditProfileModal
+          profile={profile}
+          onClose={() => setShowProfileModal(false)}
+          onUpdate={handleUpdateProfile}
+        />
+      )}
+      {isOwner && showAvatarModal && profile && (
+        <EditAvatarModal
+          profile={profile}
+          onClose={() => setShowAvatarModal(false)}
+          onUpdate={handleUpdateProfile}
+        />
+      )}
     </div>
   );
 };

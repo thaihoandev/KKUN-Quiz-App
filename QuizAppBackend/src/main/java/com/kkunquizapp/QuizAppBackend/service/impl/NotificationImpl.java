@@ -15,6 +15,8 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.LocalDateTime;
 import java.util.Date;
@@ -68,7 +70,11 @@ public class NotificationImpl implements NotificationService {
 
         // Send real-time notification
         NotificationDTO notificationDTO = mapToNotificationDTO(notification);
-        messagingTemplate.convertAndSend("/topic/notifications/user/" + userId, notificationDTO);
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override public void afterCommit() {
+                messagingTemplate.convertAndSendToUser(userId.toString(), "/queue/notifications", notificationDTO);
+            }
+        });
     }
 
     @Override

@@ -1,37 +1,46 @@
 package com.kkunquizapp.QuizAppBackend.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.kkunquizapp.QuizAppBackend.model.enums.UserRole;
 import jakarta.persistence.*;
-import lombok.Data;
-import lombok.EqualsAndHashCode;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
-
+import lombok.*;
 import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
 
 @Entity
-@Data
 @Table(name = "users")
-@EqualsAndHashCode(callSuper = false)
+@Getter @Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@ToString(onlyExplicitlyIncluded = true)
+@EqualsAndHashCode(onlyExplicitlyIncluded = true)
 public class User {
+
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
     @Column(updatable = false, nullable = false, unique = true)
+    @EqualsAndHashCode.Include
+    @ToString.Include
     private UUID userId;
 
     @Column(nullable = false, unique = true, length = 100)
+    @ToString.Include
     private String username;
 
     @Column(nullable = false, length = 100)
+    @ToString.Include
     private String name;
 
     @Column(nullable = false, unique = true, length = 255)
     private String email;
 
+    /**
+     * Password đã/ sẽ encode ở service.
+     */
     @Column(nullable = false, length = 255)
+    @JsonIgnore
     private String password;
 
     @Enumerated(EnumType.STRING)
@@ -50,41 +59,45 @@ public class User {
     @Column(nullable = false)
     private LocalDateTime updatedAt = LocalDateTime.now();
 
-    @Column(nullable = true)
+    @Column(nullable = false)
     private boolean isActive = true;
 
+    // Tự tham chiếu: KHÔNG serialize để tránh kéo cả graph
     @ManyToMany
     @JoinTable(
             name = "user_friends",
             joinColumns = @JoinColumn(name = "user_id"),
-            inverseJoinColumns = @JoinColumn(name = "friend_id")
+            inverseJoinColumns = @JoinColumn(name = "friend_id"),
+            uniqueConstraints = @UniqueConstraint(columnNames = {"user_id", "friend_id"})
     )
+    @JsonIgnore
+    @ToString.Exclude
     private Set<User> friends = new HashSet<>();
 
-    public void addFriend(User friend) {
-        friends.add(friend);
-        friend.friends.add(this); // Ensure bidirectional relationship
+    // ======= Quan hệ bạn bè =======
+    public void addFriend(User other) {
+        if (this.friends.contains(other)) return;
+        this.friends.add(other);
+        other.getFriends().add(this);
     }
 
     public void removeFriend(User friend) {
-        friends.remove(friend);
-        friend.friends.remove(this);
+        this.friends.remove(friend);
+        friend.getFriends().remove(this);
     }
 
-    @Transient
-    private BCryptPasswordEncoder passwordEncoder;
-
-    public User() {
-        this.passwordEncoder = new BCryptPasswordEncoder();
+    public boolean isFriendsWith(UUID otherId) {
+        return friends.stream().anyMatch(u -> u.getUserId().equals(otherId));
     }
 
-    public void setPassword(String password) {
-        this.password = passwordEncoder.encode(password);
-    }
-
+    // ======= Lifecycle =======
     @PrePersist
-    public void prePersist() { this.createdAt = this.updatedAt = LocalDateTime.now(); }
+    public void prePersist() {
+        this.createdAt = this.updatedAt = LocalDateTime.now();
+    }
 
     @PreUpdate
-    public void preUpdate()  { this.updatedAt = LocalDateTime.now(); }
+    public void preUpdate() {
+        this.updatedAt = LocalDateTime.now();
+    }
 }

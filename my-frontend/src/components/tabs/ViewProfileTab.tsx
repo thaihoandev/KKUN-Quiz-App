@@ -9,10 +9,14 @@ interface ViewProfileTabProps {
 }
 
 const ViewProfileTab = ({ profile }: ViewProfileTabProps) => {
-  const [newPost, setNewPost] = useState<PostDTO | null>(null); // Optional, if real-time updates are needed
+  const [newPost, setNewPost] = useState<PostDTO | null>(null);
 
   const handlePostUpdate = useCallback((updatedPost: PostDTO) => {
-    // Handle post update if necessary (e.g., like/unlike updates)
+    // TODO: cập nhật local state nếu cần (like/unlike, sửa bài, v.v.)
+    // Ví dụ:
+    // if (newPost && newPost.postId === updatedPost.postId) {
+    //   setNewPost(updatedPost);
+    // }
   }, []);
 
   return (
@@ -46,6 +50,7 @@ const ViewProfileTab = ({ profile }: ViewProfileTabProps) => {
               </ul>
             </div>
           </div>
+
           <div className="card border-0 shadow-sm">
             <div className="card-body p-4">
               <h6 className="fw-bold text-uppercase text-muted small mb-3">Overview</h6>
@@ -70,6 +75,7 @@ const ViewProfileTab = ({ profile }: ViewProfileTabProps) => {
             </div>
           </div>
         </div>
+
         <div className="col-lg-8">
           {profile?.userId ? (
             <PostList
@@ -77,6 +83,7 @@ const ViewProfileTab = ({ profile }: ViewProfileTabProps) => {
               onUpdate={handlePostUpdate}
               userId={profile.userId}
               newPost={newPost}
+              className=""
             />
           ) : (
             <div className="text-center text-muted py-3">

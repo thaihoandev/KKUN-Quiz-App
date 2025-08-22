@@ -1,189 +1,175 @@
-import { useState, useEffect, useRef } from "react";
-import { UserResponseDTO } from "@/interfaces";
-import { getUserPosts, PostDTO } from "@/services/postService";
+import { useEffect, useRef, useState, useCallback } from "react";
+import { PageResponse, UserResponseDTO } from "@/interfaces";
+import { getPublicPosts, PostDTO } from "@/services/postService";
 import PostCard from "./PostCard";
 
-interface PostListProps {
+type Props = {
   profile: UserResponseDTO | null;
-  onUpdate: (updatedPost: PostDTO) => void;
-  userId: string;
-  newPost?: PostDTO | null;
-}
+  className?: string;
+  onUpdate: (updatedPost: PostDTO) => void; // nhận từ ViewProfileTab
+  userId: string;                            // userId của profile đang xem
+  newPost: PostDTO | null;                   // để prepend khi có post mới (tuỳ chọn)
+};
 
-const PostList = ({ profile, onUpdate, userId, newPost }: PostListProps) => {
-  const [currentPosts, setCurrentPosts] = useState<PostDTO[]>([]);
-  const [page, setPage] = useState<number>(0);
-  const [hasMore, setHasMore] = useState<boolean>(true);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
+const PAGE_SIZE = 10;
+const DEFAULT_SORT = "createdAt,desc";
+
+export default function PostList({
+  profile,
+  className = "",
+  onUpdate,
+  userId,
+  newPost,
+}: Props) {
+  const [posts, setPosts] = useState<PostDTO[]>([]);
+  const [page, setPage] = useState(0); // 0-based
+  const pageRef = useRef(0);
+  const [hasMore, setHasMore] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
   const loaderRef = useRef<HTMLDivElement>(null);
 
-  // Check if current user is the profile owner
-  const isOwner = profile?.userId === userId;
-
-  // Fetch initial posts on mount or userId change
+  // prepend newPost khi prop thay đổi (nếu muốn realtime)
   useEffect(() => {
-    const fetchInitialPosts = async () => {
-      if (!userId) {
-        setCurrentPosts([]);
-        setHasMore(false);
-        setError("No user ID provided.");
-        return;
+    if (!newPost) return;
+    setPosts((prev) => {
+      const exists = prev.some((p) => p.postId === newPost.postId);
+      if (exists) {
+        return prev.map((p) => (p.postId === newPost.postId ? newPost : p));
       }
-
-      if (newPost) {
-        console.log('Skipping initial fetch due to new post');
-        return;
-      }
-
-      setIsLoading(true);
-      setError(null);
-      try {
-        const initialPosts = await getUserPosts(userId, 0, 10);
-        setCurrentPosts((prevPosts) => {
-          const newPostIds = prevPosts.map((p) => p.postId);
-          const filteredFetchedPosts = initialPosts.filter((post) => !newPostIds.includes(post.postId));
-          const updatedPosts = [...prevPosts, ...filteredFetchedPosts].sort(
-            (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-          );
-          return updatedPosts;
-        });
-        setPage(1);
-        setHasMore(initialPosts.length >= 10);
-      } catch (error: any) {
-        console.error('Error fetching initial posts:', error);
-        setError(error.message || 'Failed to load posts.');
-        setHasMore(false);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchInitialPosts();
-  }, [userId]);
-
-  // Handle new post notifications
-  useEffect(() => {
-    if (newPost) {
-      console.log('Received new post:', newPost);
-      setCurrentPosts((prevPosts) => {
-        if (prevPosts.some((p) => p.postId === newPost.postId)) {
-          return prevPosts;
-        }
-        const updatedPosts = [newPost, ...prevPosts].sort(
-          (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-        );
-        return updatedPosts;
-      });
-    }
+      return [newPost, ...prev];
+    });
   }, [newPost]);
 
-  const loadMorePosts = async () => {
-    if (isLoading || !hasMore || !userId) {
-      console.log('Skipping loadMorePosts:', { isLoading, hasMore, userId });
-      return;
-    }
+  // fetch trang đầu
+  useEffect(() => {
+    const fetchInitial = async () => {
+      setLoading(true);
+      setErr(null);
+      try {
+        const resp: PageResponse<PostDTO> = await getPublicPosts({
+          page: 0,
+          size: PAGE_SIZE,
+          sort: DEFAULT_SORT,
+          // Nếu có API riêng cho userId, thay bằng getUserPosts(userId, ...)
+          // Còn hiện tại đang dùng public feed
+        });
 
-    setIsLoading(true);
-    setError(null);
+        const items = Array.isArray(resp?.content) ? resp.content : [];
+        setPosts(items);
+        const nextPage = (resp?.number ?? 0) + 1;
+        setPage(nextPage);
+        pageRef.current = nextPage;
+        setHasMore(!resp?.last);
+      } catch (e: any) {
+        setErr(e?.message || "Failed to load posts.");
+        setHasMore(false);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchInitial();
+  }, [userId]); // nếu chuyển profile khác, refetch
+
+  const loadMore = useCallback(async () => {
+    if (loading || !hasMore) return;
+    setLoading(true);
+    setErr(null);
     try {
-      const newPosts = await getUserPosts(userId, page, 10);
-      if (newPosts.length === 0) {
+      const nextPage = pageRef.current;
+      const resp: PageResponse<PostDTO> = await getPublicPosts({
+        page: nextPage,
+        size: PAGE_SIZE,
+        sort: DEFAULT_SORT,
+      });
+
+      const items = Array.isArray(resp?.content) ? resp.content : [];
+      if (items.length === 0 && resp?.last) {
         setHasMore(false);
       } else {
-        setCurrentPosts((prevPosts) => {
-          const uniquePosts = [...prevPosts, ...newPosts].filter(
-            (post, index, self) => self.findIndex((p) => p.postId === post.postId) === index
+        setPosts((prev) => {
+          const merged = [...prev, ...items];
+          // loại trùng theo postId (phòng trường hợp backend thay đổi sort)
+          const unique = merged.filter(
+            (p, i, self) => self.findIndex((x) => x.postId === p.postId) === i
           );
-          return uniquePosts.sort(
-            (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-          );
+          return unique;
         });
-        setPage((prevPage) => prevPage + 1);
-        setHasMore(newPosts.length >= 10);
+        const advanced = (resp?.number ?? nextPage) + 1;
+        setPage(advanced);
+        pageRef.current = advanced;
+        setHasMore(!resp?.last);
       }
-    } catch (error: any) {
-      console.error("Error loading more posts:", error);
-      setError(error.message || 'Failed to load more posts.');
+    } catch (e: any) {
+      setErr(e?.message || "Failed to load more posts.");
       setHasMore(false);
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
-  };
+  }, [loading, hasMore]);
 
-  // Set up IntersectionObserver for lazy loading
+  // IntersectionObserver cho infinite scroll
   useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0].isIntersecting && hasMore && !isLoading) {
-          loadMorePosts();
+        if (entries[0].isIntersecting && hasMore && !loading) {
+          loadMore();
         }
       },
-      { threshold: 0.1, rootMargin: '100px' }
+      { threshold: 0.1, rootMargin: "100px" }
     );
 
-    if (loaderRef.current && hasMore) {
-      observer.observe(loaderRef.current);
-    }
-
+    const el = loaderRef.current;
+    if (el && hasMore) observer.observe(el);
     return () => {
-      if (loaderRef.current) {
-        observer.unobserve(loaderRef.current);
-      }
+      if (el) observer.unobserve(el);
+      observer.disconnect();
     };
-  }, [hasMore, isLoading, userId]);
+  }, [hasMore, loading, loadMore]);
 
   return (
-    <>
-      <div className="card mb-4 shadow-sm">
-        <div className="card-body">
-          <small className="card-text text-uppercase text-body-secondary small">
-            Posts
-          </small>
+    <div className={`post-list ${className}`}>
+      <div className="card mb-3 shadow-sm">
+        <div className="card-body d-flex justify-content-between align-items-center">
+          <small className="text-uppercase text-body-secondary">Posts</small>
+          {/* chỗ này tuỳ biến filter/sort nếu cần */}
         </div>
       </div>
-      <div className="post-list" style={{ minHeight: '200px' }}>
-        {error && (
-          <div className="text-center text-danger py-3">
-            {error}
-          </div>
-        )}
-        {currentPosts.length === 0 && !error ? (
-          <div className="text-center text-muted py-3">
-            {isLoading ? 'Loading posts...' : isOwner ? 'No posts yet. Share something!' : 'No visible posts.'}
-          </div>
-        ) : (
-          <div className="d-flex flex-column gap-3">
-            {currentPosts.map((post) => (
-              <PostCard
-                key={post.postId}
-                post={post}
-                profile={profile}
-                onUpdate={onUpdate}
-              />
-            ))}
-          </div>
-        )}
-        {hasMore ? (
-          <div ref={loaderRef} className="text-center py-3" style={{ minHeight: '50px' }}>
-            {isLoading ? (
-              <div className="spinner-border" role="status">
-                <span className="visually-hidden">Loading...</span>
-              </div>
-            ) : (
-              <span>Loading more posts...</span>
-            )}
-          </div>
-        ) : (
-          currentPosts.length > 0 && !error && (
-            <div className="text-center py-3 text-muted">
-              No more posts to load.
-            </div>
-          )
-        )}
-      </div>
-    </>
-  );
-};
 
-export default PostList;
+      {err && <div className="text-center text-danger py-3">{err}</div>}
+
+      {posts.length === 0 && !err ? (
+        <div className="text-center text-muted py-3">
+          {loading ? "Loading posts..." : "No posts yet."}
+        </div>
+      ) : (
+        <div className="d-flex flex-column gap-3">
+          {posts.map((p) => (
+            <PostCard
+              key={p.postId}
+              post={p}
+              profile={profile}
+              onUpdate={onUpdate}
+            />
+          ))}
+        </div>
+      )}
+
+      {hasMore ? (
+        <div ref={loaderRef} className="text-center py-3" style={{ minHeight: 50 }}>
+          {loading ? (
+            <div className="spinner-border" role="status">
+              <span className="visually-hidden">Loading…</span>
+            </div>
+          ) : (
+            <span>Loading more posts…</span>
+          )}
+        </div>
+      ) : (
+        posts.length > 0 && !err && (
+          <div className="text-center py-3 text-muted">No more posts to load.</div>
+        )
+      )}
+    </div>
+  );
+}

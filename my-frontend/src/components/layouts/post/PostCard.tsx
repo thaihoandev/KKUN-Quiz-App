@@ -319,128 +319,149 @@ const PostCard: React.FC<PostCardProps> = ({ post, profile, onUpdate }) => {
     const visibleReplyCount = expandedReplies[comment.id] || 0;
     const hasMoreReplies = comment.replies && comment.replies.length > visibleReplyCount;
     const isReply = !!comment.parentCommentId;
-
+    const UserWrapper: React.FC<{ children: React.ReactNode }> = ({ children }) =>
+      comment.user?.userId ? (
+        <Link
+          to={`/profile/${comment.user.userId}`}
+          className="d-flex align-items-start text-decoration-none text-dark"
+        >
+          {children}
+        </Link>
+      ) : (
+        <div className="d-flex align-items-start">{children}</div>
+    );
     return (
       <div key={comment.id} className={`d-flex mb-3 ${level > 0 ? "ms-4 reply-container" : ""}`} style={isReply ? { borderLeft: "2px solid #e0e0e0", paddingLeft: "1rem" } : {}}>
         <div className="me-2">
-          {comment.user?.avatar ? (
-            <img
-              src={comment.user.avatar}
-              alt={`${comment.user.name || "User"}'s avatar`}
-              className="rounded-circle"
-              style={{ width: "24px", height: "24px", objectFit: "cover" }}
-              onError={(e) => {
-                e.currentTarget.src = unknownAvatar;
-              }}
-            />
-          ) : (
-            <i className="icon-base bx bxs-user-circle fs-5 text-primary" aria-hidden="true" />
-          )}
-        </div>
-        <div className="flex-grow-1 px-2 pb-2 rounded">
-          <small className="fw-bold">{comment.user?.name || "User"}</small>
-          <p className="mb-1">{comment.content}</p>
-          <small className="text-muted">
-            {formatDateOnly(comment.createdAt)}
-            {!isReply && (
-              <button
-                type="button"
-                className="btn btn-link btn-sm text-primary p-0 ms-2"
-                onClick={() => handleReply(comment.id)}
-                aria-label={`Reply to ${comment.user?.name || "User"}'s comment`}
-              >
-                Reply
-              </button>
+        <UserWrapper>
+          
+            {comment.user?.avatar ? (
+              <img
+                src={comment.user.avatar}
+                alt={`${comment.user.name || "User"}'s avatar`}
+                className="rounded-circle"
+                style={{ width: "24px", height: "24px", objectFit: "cover" }}
+                onError={(e) => {
+                  e.currentTarget.src = unknownAvatar;
+                }}
+              />
+            ) : (
+              <i className="icon-base bx bxs-user-circle fs-5 text-primary" aria-hidden="true" />
             )}
-            {!isReply && comment.replies && comment.replies.length > 0 && (
-              <>
-                {visibleReplyCount === 0 ? (
-                  <button
-                    type="button"
-                    className="btn btn-link btn-sm text-primary p-0 ms-2"
-                    onClick={() => handleShowReplies(comment.id)}
-                    aria-label={`Show ${comment.replies.length} replies`}
-                  >
-                    <i className="bx bx-chevron-down me-1"></i>Show {comment.replies.length} {comment.replies.length === 1 ? "reply" : "replies"}
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    className="btn btn-link btn-sm text-primary p-0 ms-2"
-                    onClick={() => handleHideReplies(comment.id)}
-                    aria-label="Hide replies"
-                  >
-                    <i className="bx bx-chevron-up me-1"></i>Hide replies
-                  </button>
-                )}
-              </>
-            )}
-          </small>
-          {!isReply && visibleReplyCount > 0 && comment.replies && (
-            <div className="mt-2">
-              {comment.replies.slice(0, visibleReplyCount).map((reply) => renderComment(reply, level + 1))}
-              {hasMoreReplies && (
+        </UserWrapper>
+
+          </div>
+          <div className="flex-grow-1 px-2 pb-2 rounded">
+        <UserWrapper>
+            <small className="fw-bold">{comment.user?.name || "User"}</small>
+        </UserWrapper>
+
+            <p className="mb-1">{comment.content}</p>
+            <small className="text-muted">
+              {formatDateOnly(comment.createdAt)}
+              {!isReply && (
                 <button
                   type="button"
-                  className="btn btn-link btn-sm text-primary p-0"
-                  onClick={() => handleShowReplies(comment.id)}
-                  aria-label={`Show more replies for ${comment.user?.name || "User"}'s comment`}
+                  className="btn btn-link btn-sm text-primary p-0 ms-2"
+                  onClick={() => handleReply(comment.id)}
+                  aria-label={`Reply to ${comment.user?.name || "User"}'s comment`}
                 >
-                  <i className="bx bx-chevron-down me-1"></i>Show {comment.replies.length - visibleReplyCount} more {comment.replies.length - visibleReplyCount === 1 ? "reply" : "replies"}
+                  Reply
                 </button>
               )}
-            </div>
-          )}
-          {!isReply && activeReplyId === comment.id && (
-            <div className="mt-2 d-flex align-items-center">
-              <div className="me-2">
-                {profile?.avatar ? (
-                  <img
-                    src={profile.avatar}
-                    alt={`${profile.name || "User"}'s avatar`}
-                    className="rounded-circle"
-                    style={{ width: "24px", height: "24px", objectFit: "cover" }}
-                    onError={(e) => {
-                      e.currentTarget.src = unknownAvatar;
-                    }}
-                  />
-                ) : (
-                  <i className="icon-base bx bxs-user-circle fs-5 text-primary" aria-hidden="true" />
+              {!isReply && comment.replies && comment.replies.length > 0 && (
+                <>
+                  {visibleReplyCount === 0 ? (
+                    <button
+                      type="button"
+                      className="btn btn-link btn-sm text-primary p-0 ms-2"
+                      onClick={() => handleShowReplies(comment.id)}
+                      aria-label={`Show ${comment.replies.length} replies`}
+                    >
+                      <i className="bx bx-chevron-down me-1"></i>Show {comment.replies.length} {comment.replies.length === 1 ? "reply" : "replies"}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn btn-link btn-sm text-primary p-0 ms-2"
+                      onClick={() => handleHideReplies(comment.id)}
+                      aria-label="Hide replies"
+                    >
+                      <i className="bx bx-chevron-up me-1"></i>Hide replies
+                    </button>
+                  )}
+                </>
+              )}
+            </small>
+            {!isReply && visibleReplyCount > 0 && comment.replies && (
+              <div className="mt-2">
+                {comment.replies.slice(0, visibleReplyCount).map((reply) => renderComment(reply, level + 1))}
+                {hasMoreReplies && (
+                  <button
+                    type="button"
+                    className="btn btn-link btn-sm text-primary p-0"
+                    onClick={() => handleShowReplies(comment.id)}
+                    aria-label={`Show more replies for ${comment.user?.name || "User"}'s comment`}
+                  >
+                    <i className="bx bx-chevron-down me-1"></i>Show {comment.replies.length - visibleReplyCount} more {comment.replies.length - visibleReplyCount === 1 ? "reply" : "replies"}
+                  </button>
                 )}
               </div>
-              <div className="flex-grow-1">
-                <input
-                  ref={(el) => {
-                    replyInputRefs.current[comment.id] = el;
-                  }}
-                  className="form-control form-control-sm"
-                  placeholder={`Replying to ${comment.user?.name || "User"}...`}
-                  value={replyContents[comment.id] || ""}
-                  onChange={(e) => handleReplyChange(comment.id, e.target.value)}
-                  onKeyDown={(e) => handleReplyKeyDown(e, comment.id)}
-                  aria-label={`Reply to ${comment.user?.name || "User"}`}
-                />
+            )}
+            {!isReply && activeReplyId === comment.id && (
+              <div className="mt-2 d-flex align-items-center">
+              <div className="me-2">
+        <UserWrapper>
+                
+                  {profile?.avatar ? (
+                    <img
+                      src={profile.avatar}
+                      alt={`${profile.name || "User"}'s avatar`}
+                      className="rounded-circle"
+                      style={{ width: "24px", height: "24px", objectFit: "cover" }}
+                      onError={(e) => {
+                        e.currentTarget.src = unknownAvatar;
+                      }}
+                    />
+                  ) : (
+                    <i className="icon-base bx bxs-user-circle fs-5 text-primary" aria-hidden="true" />
+                  )}
+        </UserWrapper>
+
+                </div>
+                <div className="flex-grow-1">
+                  <input
+                    ref={(el) => {
+                      replyInputRefs.current[comment.id] = el;
+                    }}
+                    className="form-control form-control-sm"
+                    placeholder={`Replying to ${comment.user?.name || "User"}...`}
+                    value={replyContents[comment.id] || ""}
+                    onChange={(e) => handleReplyChange(comment.id, e.target.value)}
+                    onKeyDown={(e) => handleReplyKeyDown(e, comment.id)}
+                    aria-label={`Reply to ${comment.user?.name || "User"}`}
+                  />
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm ms-2"
+                  onClick={() => handleAddComment(replyContents[comment.id] || "", comment.id)}
+                  disabled={!replyContents[comment.id]?.trim()}
+                  aria-label="Post reply"
+                >
+                  Post
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm ms-2"
+                  onClick={() => handleCancelReply(comment.id)}
+                  aria-label="Cancel reply"
+                >
+                  Cancel
+                </button>
               </div>
-              <button
-                type="button"
-                className="btn btn-primary btn-sm ms-2"
-                onClick={() => handleAddComment(replyContents[comment.id] || "", comment.id)}
-                disabled={!replyContents[comment.id]?.trim()}
-                aria-label="Post reply"
-              >
-                Post
-              </button>
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm ms-2"
-                onClick={() => handleCancelReply(comment.id)}
-                aria-label="Cancel reply"
-              >
-                Cancel
-              </button>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
       </div>
     );
   };

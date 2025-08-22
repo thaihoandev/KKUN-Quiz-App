@@ -17,6 +17,8 @@ import com.kkunquizapp.QuizAppBackend.service.QuestionService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.modelmapper.ModelMapper;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -156,23 +158,21 @@ public class QuestionServiceImpl implements QuestionService {
     }
 
     @Override
-    public List<QuestionResponseDTO> getQuestionsByQuizId(UUID quizId) {
-        // Lấy Quiz từ DB
-        Quiz quiz = quizRepository.findById(quizId).orElseThrow(
-                () -> new IllegalArgumentException("Quiz not found with ID: " + quizId));
+    public Page<QuestionResponseDTO> getQuestionsByQuizId(UUID quizId, Pageable pageable) {
+        Quiz quiz = quizRepository.findById(quizId)
+                .orElseThrow(() -> new IllegalArgumentException("Quiz not found with ID: " + quizId));
 
-        // Lấy danh sách câu hỏi của Quiz
-        List<Question> questions = questionRepository.findActiveQuestionsByQuiz(quiz);
+        Page<Question> questionPage = questionRepository.findByQuizAndDeletedFalse(quiz, pageable);
 
-        // Map danh sách câu hỏi sang DTO
-        return questions.stream().map(question -> {
-            QuestionResponseDTO responseDTO = modelMapper.map(question, QuestionResponseDTO.class);
-            responseDTO.setOptions(question.getOptions().stream()
+        return questionPage.map(q -> {
+            QuestionResponseDTO dto = modelMapper.map(q, QuestionResponseDTO.class);
+            dto.setOptions(q.getOptions().stream()
                     .map(this::mapOptionToResponseDTO)
                     .collect(Collectors.toList()));
-            return responseDTO;
-        }).collect(Collectors.toList());
+            return dto;
+        });
     }
+
 
     @Override
     @Transactional

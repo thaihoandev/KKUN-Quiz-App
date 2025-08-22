@@ -1,4 +1,34 @@
 
+export interface PageResponse<T> {
+  content: T[];
+  pageable: Pageable;
+  totalPages: number;
+  totalElements: number;
+  last: boolean;
+  size: number;              // page size
+  number: number;            // current page index (0-based)
+  sort: PageSort;
+  first: boolean;
+  numberOfElements: number;  // items in current page
+  empty: boolean;
+}
+
+export interface Pageable {
+  pageNumber: number;
+  pageSize: number;
+  sort: PageSort;
+  offset: number;
+  paged: boolean;
+  unpaged: boolean;
+}
+
+export interface PageSort {
+  empty: boolean;
+  sorted: boolean;
+  unsorted: boolean;
+}
+
+
 export interface User {
     id: string;
     username: string;

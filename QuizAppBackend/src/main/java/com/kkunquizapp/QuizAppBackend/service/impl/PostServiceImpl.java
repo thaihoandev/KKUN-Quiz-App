@@ -18,21 +18,18 @@ import com.kkunquizapp.QuizAppBackend.service.NotificationService;
 import com.kkunquizapp.QuizAppBackend.service.PostService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
+
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 import java.util.stream.Collectors;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
 
 @Service
 @RequiredArgsConstructor
@@ -108,9 +105,9 @@ public class PostServiceImpl implements PostService {
 
         Post post = postRepository.findById(postId)
                 .orElseThrow(() -> {
-            log.error("Post not found with ID: {}", postId);
-            return new IllegalArgumentException("Post not found with ID: " + postId);
-        });
+                    log.error("Post not found with ID: {}", postId);
+                    return new IllegalArgumentException("Post not found with ID: " + postId);
+                });
 
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> {
@@ -135,10 +132,10 @@ public class PostServiceImpl implements PostService {
             notificationService.createNotification(
                     post.getUser().getUserId(),
                     userId,
-                    "unliked",
-                    "post",
+                    "UNLIKED",
+                    "POST",
                     postId,
-                    com.kkunquizapp.QuizAppBackend.utils.StringUtils.abbreviate(post.getContent(),10)
+                    com.kkunquizapp.QuizAppBackend.utils.StringUtils.abbreviate(post.getContent(), 60)
             );
 
             log.info("User {} unliked post {}", userId, postId);
@@ -160,10 +157,10 @@ public class PostServiceImpl implements PostService {
             notificationService.createNotification(
                     post.getUser().getUserId(),
                     userId,
-                    "liked",
-                    "post",
+                    "LIKED",
+                    "POST",
                     postId,
-                    com.kkunquizapp.QuizAppBackend.utils.StringUtils.abbreviate(post.getContent(),10)
+                    com.kkunquizapp.QuizAppBackend.utils.StringUtils.abbreviate(post.getContent(), 60)
             );
 
             log.info("User {} liked post {} with reaction type {}", userId, postId, type);
@@ -214,10 +211,10 @@ public class PostServiceImpl implements PostService {
             notificationService.createNotification(
                     post.getUser().getUserId(),
                     userId,
-                    "unliked",
-                    "post",
+                    "UNLIKED",
+                    "POST",
                     postId,
-                    com.kkunquizapp.QuizAppBackend.utils.StringUtils.abbreviate(post.getContent(),10)
+                    com.kkunquizapp.QuizAppBackend.utils.StringUtils.abbreviate(post.getContent(), 60)
             );
 
             log.info("User {} unliked post {}", userId, postId);
@@ -275,10 +272,12 @@ public class PostServiceImpl implements PostService {
         return postDTO;
     }
 
+    // ====================== CHUYỂN SANG PAGE ======================
+
     @Transactional(readOnly = true)
     @Override
-    public List<PostDTO> getUserPosts(UUID userId, UUID currentUserId, int page, int size) {
-        log.info("Fetching posts for userId: {}, viewed by currentUserId: {}, page: {}, size: {}", userId, currentUserId, page, size);
+    public Page<PostDTO> getUserPosts(UUID userId, UUID currentUserId, Pageable pageable) {
+        log.info("Fetching posts for userId: {}, viewed by currentUserId: {}, {}", userId, currentUserId, pageable);
 
         User targetUser = userRepository.findById(userId)
                 .orElseThrow(() -> {
@@ -293,54 +292,39 @@ public class PostServiceImpl implements PostService {
             log.debug("Friendship check: userId={} and currentUserId={} -> isFriend={}", userId, currentUserId, isFriend);
         }
 
-        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
-
         Page<Post> postPage;
         if (isOwner) {
             postPage = postRepository.findByUserUserId(userId, pageable);
         } else if (isFriend) {
-            postPage = postRepository.findByUserUserIdAndPrivacyIn(userId, List.of(PostPrivacy.PUBLIC, PostPrivacy.FRIENDS), pageable);
+            postPage = postRepository.findByUserUserIdAndPrivacyIn(
+                    userId, List.of(PostPrivacy.PUBLIC, PostPrivacy.FRIENDS), pageable);
         } else {
             postPage = postRepository.findByUserUserIdAndPrivacy(userId, PostPrivacy.PUBLIC, pageable);
         }
 
-        List<PostDTO> postDTOs = postPage.getContent().stream()
-                .map(post -> mapToPostDTO(post, currentUserId, null))
-                .collect(Collectors.toList());
-
-        log.info("Fetched {} posts for userId: {} (filtered by privacy)", postDTOs.size(), userId);
-        return postDTOs;
+        Page<PostDTO> dtoPage = postPage.map(post -> mapToPostDTO(post, currentUserId, null));
+        log.info("Fetched {} posts (page {} of {}) for userId: {}",
+                dtoPage.getNumberOfElements(), dtoPage.getNumber() + 1, dtoPage.getTotalPages(), userId);
+        return dtoPage;
     }
 
     @Transactional(readOnly = true)
     @Override
-    public List<PostDTO> getPublicPosts(UUID currentUserId, int page, int size, String sortBy, String sortDir) {
-        log.info("Fetching public posts for currentUserId: {}, page: {}, size: {}, sortBy: {}, sortDir: {}",
-                currentUserId, page, size, sortBy, sortDir);
+    public Page<PostDTO> getPublicPosts(UUID currentUserId, Pageable pageable) {
+        log.info("Fetching public posts for currentUserId: {}, pageable: {}", currentUserId, pageable);
 
-        // Validate sort parameters
-        if (!List.of("createdAt", "likeCount", "commentCount").contains(sortBy)) {
-            log.error("Invalid sortBy parameter: {}", sortBy);
-            throw new IllegalArgumentException("Invalid sortBy parameter. Allowed values: createdAt, likeCount, commentCount");
-        }
-        Sort.Direction direction = sortDir.equalsIgnoreCase("asc") ? Sort.Direction.ASC : Sort.Direction.DESC;
-
-        Pageable pageable = PageRequest.of(page, size, Sort.by(direction, sortBy));
         Page<Post> postPage = postRepository.findByPrivacy(PostPrivacy.PUBLIC, pageable);
+        Page<PostDTO> dtoPage = postPage.map(post -> mapToPostDTO(post, currentUserId, null));
 
-        List<PostDTO> postDTOs = postPage.getContent().stream()
-                .map(post -> mapToPostDTO(post, currentUserId, null))
-                .collect(Collectors.toList());
-
-        log.info("Fetched {} public posts", postDTOs.size());
-        return postDTOs;
+        log.info("Fetched {} public posts (page {} of {})",
+                dtoPage.getNumberOfElements(), dtoPage.getNumber() + 1, dtoPage.getTotalPages());
+        return dtoPage;
     }
 
     @Transactional(readOnly = true)
     @Override
-    public List<PostDTO> getFriendsPosts(UUID currentUserId, int page, int size, String sortBy, String sortDir) {
-        log.info("Fetching friends' posts for currentUserId: {}, page: {}, size: {}, sortBy: {}, sortDir: {}",
-                currentUserId, page, size, sortBy, sortDir);
+    public Page<PostDTO> getFriendsPosts(UUID currentUserId, Pageable pageable) {
+        log.info("Fetching friends' posts for currentUserId: {}, pageable: {}", currentUserId, pageable);
 
         User currentUser = userRepository.findById(currentUserId)
                 .orElseThrow(() -> {
@@ -348,34 +332,26 @@ public class PostServiceImpl implements PostService {
                     return new IllegalArgumentException("User not found with ID: " + currentUserId);
                 });
 
-        // Get list of friend IDs
         List<UUID> friendIds = currentUser.getFriends().stream()
                 .map(User::getUserId)
                 .collect(Collectors.toList());
 
         if (friendIds.isEmpty()) {
-            log.info("User {} has no friends, returning empty post list", currentUserId);
-            return List.of();
+            log.info("User {} has no friends, returning empty page", currentUserId);
+            return Page.empty(pageable);
         }
 
-        // Validate sort parameters
-        if (!List.of("createdAt", "likeCount", "commentCount").contains(sortBy)) {
-            log.error("Invalid sortBy parameter: {}", sortBy);
-            throw new IllegalArgumentException("Invalid sortBy parameter. Allowed values: createdAt, likeCount, commentCount");
-        }
-        Sort.Direction direction = sortDir.equalsIgnoreCase("asc") ? Sort.Direction.ASC : Sort.Direction.DESC;
-
-        Pageable pageable = PageRequest.of(page, size, Sort.by(direction, sortBy));
         Page<Post> postPage = postRepository.findByUserUserIdInAndPrivacyIn(
                 friendIds, List.of(PostPrivacy.PUBLIC, PostPrivacy.FRIENDS), pageable);
 
-        List<PostDTO> postDTOs = postPage.getContent().stream()
-                .map(post -> mapToPostDTO(post, currentUserId, null))
-                .collect(Collectors.toList());
+        Page<PostDTO> dtoPage = postPage.map(post -> mapToPostDTO(post, currentUserId, null));
 
-        log.info("Fetched {} posts from friends for userId: {}", postDTOs.size(), currentUserId);
-        return postDTOs;
+        log.info("Fetched {} friends' posts for userId: {} (page {} of {})",
+                dtoPage.getNumberOfElements(), currentUserId, dtoPage.getNumber() + 1, dtoPage.getTotalPages());
+        return dtoPage;
     }
+
+    // ====================== Helpers ======================
 
     private void validatePostRequest(UUID userId, PostRequestDTO requestDTO, List<MultipartFile> mediaFiles) {
         log.info("Validating post request for userId: {}", userId);
@@ -418,15 +394,23 @@ public class PostServiceImpl implements PostService {
         return post;
     }
 
-    private void savePostMedia(Post post, User user, List<MediaDTO> mediaDTOs, List<MultipartFile> mediaFiles, List<String> uploadedPublicIds) throws IOException {
+    private void savePostMedia(
+            Post post,
+            User user,
+            List<MediaDTO> mediaDTOs,
+            List<MultipartFile> mediaFiles,
+            List<String> uploadedPublicIds
+    ) throws IOException {
         log.info("Saving media for postId: {}, number of files: {}", post.getPostId(), mediaFiles.size());
+
         if (mediaFiles.isEmpty()) {
             log.info("No media files to save");
             return;
         }
 
         if (mediaDTOs.size() != mediaFiles.size()) {
-            log.error("Media files count ({}) does not match media DTOs count ({})", mediaFiles.size(), mediaDTOs.size());
+            log.error("Media files count ({}) does not match media DTOs count ({})",
+                    mediaFiles.size(), mediaDTOs.size());
             throw new IllegalArgumentException("Number of media files must match number of media DTOs");
         }
 
@@ -434,36 +418,46 @@ public class PostServiceImpl implements PostService {
             MultipartFile file = mediaFiles.get(i);
             MediaDTO mediaDTO = mediaDTOs.get(i);
 
+            // Validate file trước khi upload
             log.info("Validating media file at index: {}", i);
             validateMediaFile(file);
 
-            log.info("Uploading media file to Cloudinary: {}", file.getOriginalFilename());
-            Map<String, Object> uploadResult = cloudinaryService.upload(file, CLOUDINARY_FOLDER);
+            // Tạo publicId duy nhất cho từng file
+            String publicId = "posts/%s/%02d_%s"
+                    .formatted(post.getPostId(), i + 1, UUID.randomUUID());
+
+            log.info("Uploading media file to Cloudinary with publicId={}", publicId);
+            Map<String, Object> uploadResult = cloudinaryService.uploadWithPublicId(file, publicId);
             log.debug("Cloudinary upload result: {}", uploadResult);
 
-            String publicId = (String) uploadResult.get("public_id");
-            if (publicId == null) {
-                log.error("Cloudinary upload failed: public_id is null");
-                throw new IllegalStateException("Cloudinary upload failed: public_id is null");
+            String secureUrl = (String) uploadResult.get("secure_url");
+            String format    = (String) uploadResult.get("format");
+            Integer width    = toInt(uploadResult.get("width"));
+            Integer height   = toInt(uploadResult.get("height"));
+            Long sizeBytes   = toLong(uploadResult.get("bytes"));
+
+            if (secureUrl == null || format == null || sizeBytes == null) {
+                throw new IllegalStateException(
+                        "Cloudinary upload result missing required fields: " +
+                                "url=" + secureUrl + ", format=" + format + ", sizeBytes=" + sizeBytes
+                );
             }
+
+            // Lưu publicId để cleanup khi lỗi
             uploadedPublicIds.add(publicId);
 
-            String url = (String) uploadResult.get("secure_url");
-            String thumbnailUrl = (String) uploadResult.get("thumbnail_url");
-            String mimeType = (String) uploadResult.get("format");
+            // Lấy MIME type chuẩn
+            String mimeType = file.getContentType() != null
+                    ? file.getContentType()
+                    : ("image/" + format);
 
-            Integer width = toInt(uploadResult.get("width"));
-            Integer height = toInt(uploadResult.get("height"));
-            Long sizeBytes = toLong(uploadResult.get("bytes"));
+            // Nếu muốn thumbnail_url thì phải tự tạo transformation khi upload
+            String thumbnailUrl = null;
 
-            if (url == null || mimeType == null || sizeBytes == null) {
-                log.error("Cloudinary upload result missing required fields: url={}, mimeType={}, sizeBytes={}", url, mimeType, sizeBytes);
-                throw new IllegalStateException("Cloudinary upload result missing required fields: url=" + url + ", mimeType=" + mimeType + ", sizeBytes=" + sizeBytes);
-            }
-
+            // Tạo entity Media
             Media media = Media.builder()
                     .ownerUser(user)
-                    .url(url)
+                    .url(secureUrl)
                     .publicId(publicId)
                     .thumbnailUrl(thumbnailUrl)
                     .mimeType(mimeType)
@@ -471,15 +465,9 @@ public class PostServiceImpl implements PostService {
                     .height(height)
                     .sizeBytes(sizeBytes)
                     .build();
+            media = mediaRepository.save(media);
 
-            try {
-                log.info("Saving media entity: {}", media);
-                media = mediaRepository.save(media);
-            } catch (Exception e) {
-                log.error("Failed to save Media entity: {}", e.getMessage(), e);
-                throw new RuntimeException("Failed to save media entity: " + e.getMessage(), e);
-            }
-
+            // Tạo entity PostMedia
             PostMedia postMedia = PostMedia.builder()
                     .post(post)
                     .media(media)
@@ -487,10 +475,12 @@ public class PostServiceImpl implements PostService {
                     .caption(mediaDTO.getCaption())
                     .isCover(mediaDTO.isCover())
                     .build();
-            log.info("Saving PostMedia: {}", postMedia);
             postMediaRepository.save(postMedia);
+
+            log.info("Saved media {} for post {}", publicId, post.getPostId());
         }
     }
+
 
     private void validateMediaFile(MultipartFile file) {
         log.info("Validating media file: {}", file.getOriginalFilename());
@@ -537,10 +527,10 @@ public class PostServiceImpl implements PostService {
             notificationService.createNotification(
                     replyTo.getUser().getUserId(),
                     post.getUser().getUserId(),
-                    "commented",
-                    "post",
+                    "COMMENTED",
+                    "POST",
                     post.getPostId(),
-                    com.kkunquizapp.QuizAppBackend.utils.StringUtils.abbreviate(post.getContent(),10)
+                    com.kkunquizapp.QuizAppBackend.utils.StringUtils.abbreviate(post.getContent(), 60)
             );
         } else {
             log.info("No reply notification created, replyToPost is null");

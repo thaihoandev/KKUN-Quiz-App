@@ -7,6 +7,9 @@ import com.kkunquizapp.QuizAppBackend.service.AuthService;
 import com.kkunquizapp.QuizAppBackend.service.PostService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -29,15 +32,10 @@ public class PostController {
             @RequestPart("post") @Valid PostRequestDTO dto,
             @RequestPart(value = "mediaFiles", required = false) List<MultipartFile> mediaFiles,
             Authentication authentication) {
-        if (authentication == null) {
-            return ResponseEntity.status(401).build(); // Unauthorized
-        }
-
+        if (authentication == null) return ResponseEntity.status(401).build();
         try {
-            String userIdStr = authService.getCurrentUserId();
-            UUID userId = UUID.fromString(userIdStr);
-            PostDTO postDTO = postService.createPost(userId, dto, mediaFiles);
-            return ResponseEntity.ok(postDTO);
+            UUID userId = UUID.fromString(authService.getCurrentUserId());
+            return ResponseEntity.ok(postService.createPost(userId, dto, mediaFiles));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(null);
         } catch (Exception e) {
@@ -50,12 +48,9 @@ public class PostController {
             @PathVariable UUID postId,
             @RequestBody ReactionType type,
             Authentication authentication) {
-        if (authentication == null) {
-            return ResponseEntity.status(401).build();
-        }
+        if (authentication == null) return ResponseEntity.status(401).build();
         try {
-            String userIdStr = authService.getCurrentUserId();
-            UUID userId = UUID.fromString(userIdStr);
+            UUID userId = UUID.fromString(authService.getCurrentUserId());
             postService.likePost(userId, postId, type);
             return ResponseEntity.ok().build();
         } catch (IllegalArgumentException e) {
@@ -66,15 +61,10 @@ public class PostController {
     }
 
     @PostMapping("/{postId}/unlike")
-    public ResponseEntity<Void> unlikePost(
-            @PathVariable UUID postId,
-            Authentication authentication) {
-        if (authentication == null) {
-            return ResponseEntity.status(401).build();
-        }
+    public ResponseEntity<Void> unlikePost(@PathVariable UUID postId, Authentication authentication) {
+        if (authentication == null) return ResponseEntity.status(401).build();
         try {
-            String userIdStr = authService.getCurrentUserId();
-            UUID userId = UUID.fromString(userIdStr);
+            UUID userId = UUID.fromString(authService.getCurrentUserId());
             postService.unlikePost(userId, postId);
             return ResponseEntity.ok().build();
         } catch (IllegalArgumentException e) {
@@ -84,84 +74,66 @@ public class PostController {
         }
     }
 
+    // ====== User's posts -> Page ======
     @GetMapping("/user/{userId}")
-    public ResponseEntity<List<PostDTO>> getUserPosts(
+    public ResponseEntity<Page<PostDTO>> getUserPosts(
             @PathVariable UUID userId,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "10") int size,
+            @PageableDefault(size = 10, sort = "createdAt") Pageable pageable,
             Authentication authentication) {
-        if (authentication == null) {
-            return ResponseEntity.status(401).build(); // Unauthorized
-        }
+        if (authentication == null) return ResponseEntity.status(401).build();
         try {
-            String currentUserIdStr = authService.getCurrentUserId();
-            UUID currentUserId = UUID.fromString(currentUserIdStr);
-            List<PostDTO> posts = postService.getUserPosts(userId, currentUserId, page, size);
+            UUID currentUserId = UUID.fromString(authService.getCurrentUserId());
+            Page<PostDTO> posts = postService.getUserPosts(userId, currentUserId, pageable);
             return ResponseEntity.ok(posts);
         } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(null);
+            return ResponseEntity.badRequest().body(Page.empty(pageable));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).build();
+        }
+    }
+
+    // ====== Public posts -> Page ======
+    @GetMapping("/public")
+    public ResponseEntity<Page<PostDTO>> getPublicPosts(
+            @PageableDefault(size = 10, sort = "createdAt") Pageable pageable,
+            Authentication authentication) {
+        try {
+            UUID currentUserId = null;
+            if (authentication != null) {
+                currentUserId = UUID.fromString(authService.getCurrentUserId());
+            }
+            Page<PostDTO> posts = postService.getPublicPosts(currentUserId, pageable);
+            return ResponseEntity.ok(posts);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Page.empty(pageable));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).build();
+        }
+    }
+
+    // ====== Friends posts -> Page ======
+    @GetMapping("/friends")
+    public ResponseEntity<Page<PostDTO>> getFriendsPosts(
+            @PageableDefault(size = 10, sort = "createdAt") Pageable pageable,
+            Authentication authentication) {
+        if (authentication == null) return ResponseEntity.status(401).build();
+        try {
+            UUID currentUserId = UUID.fromString(authService.getCurrentUserId());
+            Page<PostDTO> posts = postService.getFriendsPosts(currentUserId, pageable);
+            return ResponseEntity.ok(posts);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Page.empty(pageable));
         } catch (Exception e) {
             return ResponseEntity.status(500).build();
         }
     }
 
     @GetMapping("/{postId}")
-    public ResponseEntity<PostDTO> getPostById(
-            @PathVariable UUID postId,
-            Authentication authentication) {
-        if (authentication == null) {
-            return ResponseEntity.status(401).build(); // Unauthorized
-        }
-
+    public ResponseEntity<PostDTO> getPostById(@PathVariable UUID postId, Authentication authentication) {
+        if (authentication == null) return ResponseEntity.status(401).build();
         try {
-            String userIdStr = authService.getCurrentUserId();
-            UUID userId = UUID.fromString(userIdStr);
-            PostDTO postDTO = postService.getPostById(postId, userId);
-            return ResponseEntity.ok(postDTO);
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(null);
-        } catch (Exception e) {
-            return ResponseEntity.status(500).build();
-        }
-    }
-
-    @GetMapping("/public")
-    public ResponseEntity<List<PostDTO>> getPublicPosts(
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "10") int size,
-            @RequestParam(defaultValue = "createdAt") String sortBy,
-            @RequestParam(defaultValue = "desc") String sortDir,
-            Authentication authentication) {
-        try {
-            UUID currentUserId = null;
-            if (authentication != null) {
-                String userIdStr = authService.getCurrentUserId();
-                currentUserId = UUID.fromString(userIdStr);
-            }
-            List<PostDTO> posts = postService.getPublicPosts(currentUserId, page, size, sortBy, sortDir);
-            return ResponseEntity.ok(posts);
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(null);
-        } catch (Exception e) {
-            return ResponseEntity.status(500).build();
-        }
-    }
-
-    @GetMapping("/friends")
-    public ResponseEntity<List<PostDTO>> getFriendsPosts(
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "10") int size,
-            @RequestParam(defaultValue = "createdAt") String sortBy,
-            @RequestParam(defaultValue = "desc") String sortDir,
-            Authentication authentication) {
-        if (authentication == null) {
-            return ResponseEntity.status(401).build(); // Unauthorized
-        }
-        try {
-            String userIdStr = authService.getCurrentUserId();
-            UUID currentUserId = UUID.fromString(userIdStr);
-            List<PostDTO> posts = postService.getFriendsPosts(currentUserId, page, size, sortBy, sortDir);
-            return ResponseEntity.ok(posts);
+            UUID userId = UUID.fromString(authService.getCurrentUserId());
+            return ResponseEntity.ok(postService.getPostById(postId, userId));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(null);
         } catch (Exception e) {

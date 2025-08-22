@@ -25,6 +25,8 @@ import GamePlayPage from "@/pages/game/GamePlayPage";
 import UserDashboardPage from "@/pages/UserDashboardPage";
 import UserProfilePage from "@/pages/UserProfilePage";
 import HomePostPage from "@/pages/HomePostPage";
+import FriendConnectionsPage from "@/pages/FriendConnectionsPage";
+import ChatPage from "@/pages/ChatPage";
 
 const AppRoutes: React.FC = () => (
   <>
@@ -44,15 +46,17 @@ const AppRoutes: React.FC = () => (
           {/* index = "/" */}
           <Route index element={<HomePage />} />
           <Route path="posts" element={<HomePostPage />} />
-
+          
           {/* 4) User profile and dashboard */}
           {/* nested paths */}
-          <Route path="dashboard" element={<UserDashboardPage />} />
+          <Route path="dashboard" element={<UserProfilePage />} />
           <Route path="profile/:userId"   element={<UserProfilePage />} />
           <Route path="quizzes/:quizId"   element={<QuizManagementPage />} />
           <Route path="achievements"      element={<AchievementPage />} />
           <Route path="settings"          element={<SettingProfilePage />} />
           <Route path="change-password" element={<ChangePasswordPage />} />
+          <Route path="friends" element={<FriendConnectionsPage />} />
+
           
         </Route>
 
@@ -63,6 +67,8 @@ const AppRoutes: React.FC = () => (
           <Route path="quizzes/:quizId/edit" element={<QuizEditorPage />} />
           <Route path="quizzes/:quizId/questions/create" element={<QuestionCreatePage />} />
           <Route path="quizzes/:quizId/questions/:questionId/edit" element={<QuestionEditorPage />} />
+          <Route path="chat" element={<ChatPage />} />
+          
         </Route>
 
         {/* 5) 404 catch-all */}

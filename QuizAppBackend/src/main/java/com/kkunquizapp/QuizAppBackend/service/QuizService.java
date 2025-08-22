@@ -23,4 +23,6 @@ public interface QuizService {
     void addEditorByEmail(UUID quizId, String email);
 
     Page<QuizResponseDTO> getPublishedQuizzes(Pageable pageable);
+    QuizResponseDTO saveForCurrentUser(HttpServletRequest request, UUID quizId);
+
 }

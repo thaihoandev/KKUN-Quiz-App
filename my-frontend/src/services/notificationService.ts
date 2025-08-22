@@ -1,5 +1,5 @@
 // notificationService.ts
-import axios from 'axios';
+import { PageResponse } from '@/interfaces';
 import axiosInstance from './axiosInstance';
 
 export interface NotificationDTO {
@@ -14,18 +14,21 @@ export interface NotificationDTO {
   content: string;
 }
 
-export interface PaginatedResponse<T> {
-  content: T[];
-  totalPages: number;
-  totalElements: number;
-  number: number;
-  size: number;
-}
+export type NotificationQuery = {
+  page: number;   // 0-based
+  size: number;   // page size
+  sort: string;   // e.g. "createdAt,desc"
+};
 
-export const getNotifications = async (params: { page: number; size: number; sort: string }): Promise<PaginatedResponse<NotificationDTO>> => {
+export const getNotifications = async (
+  params: NotificationQuery
+): Promise<PageResponse<NotificationDTO>> => {
   try {
-    const response = await axiosInstance.get<PaginatedResponse<NotificationDTO>>('/notifications', { params });
-    return response.data;
+    const { data } = await axiosInstance.get<PageResponse<NotificationDTO>>(
+      '/notifications',
+      { params }
+    );
+    return data;
   } catch (error) {
     console.error('Error fetching notifications:', error);
     throw error;

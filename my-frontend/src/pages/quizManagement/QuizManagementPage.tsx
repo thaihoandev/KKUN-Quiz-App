@@ -1,36 +1,39 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import "bootstrap/dist/css/bootstrap.min.css";
+import { notification, Pagination } from "antd";
+import { Link, useNavigate, useParams } from "react-router-dom";
+
 import {
-  getQuestionsByQuizId,
+  getPagedQuestionsByQuizId,
   getQuizzById,
   publishedQuiz,
+  saveQuizForMe,
 } from "@/services/quizService";
-import QuestionCard from "@/components/cards/QuestionCard";
-import { Link, useNavigate, useParams } from "react-router-dom";
 import { Question, Quiz } from "@/interfaces";
 import { useAuthStore } from "@/store/authStore";
-
-interface Option {
-  optionId: string;
-  optionText: string;
-  correct: boolean;
-  correctAnswer: string;
-}
+import QuestionList from "@/components/layouts/question/QuestionList";
 
 const QuizManagementPage: React.FC = () => {
   const { quizId } = useParams<{ quizId: string }>();
+  const navigate = useNavigate();
+
   const [quiz, setQuiz] = useState<Quiz | undefined>();
   const [questions, setQuestions] = useState<Question[]>([]);
   const [showAnswers, setShowAnswers] = useState(true);
   const [loading, setLoading] = useState(true);
   const [publishing, setPublishing] = useState(false);
-  const navigate = useNavigate();
+  const [saving, setSaving] = useState(false);
 
-  // Lấy current user từ store
-  const { user } = useAuthStore();
-  const currentUserId = user?.userId || (user as any)?.id;
+  // pagination state
+  const [page, setPage] = useState<number>(0);       // 0-based for backend
+  const [size, setSize] = useState<number>(10);      // page size
+  const [total, setTotal] = useState<number>(0);     // totalElements from backend
 
-  // Tính owner linh hoạt theo nhiều cấu trúc có thể có trên quiz
+  // current user
+  const user = useAuthStore((s) => s.user);
+  const currentUserId = (user as any)?.userId || (user as any)?.id;
+
+  // compute owner
   const quizOwnerId =
     (quiz as any)?.host?.userId ||
     (quiz as any)?.host?.id ||
@@ -39,49 +42,96 @@ const QuizManagementPage: React.FC = () => {
 
   const isOwner = Boolean(currentUserId && quizOwnerId && currentUserId === quizOwnerId);
 
-  const fetchQuestions = async () => {
+  const fetchQuestions = useCallback(async () => {
     if (!quizId) return;
-
     setLoading(true);
     try {
-      const data = await getQuestionsByQuizId(quizId);
-      setQuestions(data ?? []);
+      const data = await getPagedQuestionsByQuizId(quizId, page, size);
+      setQuestions(data.content ?? []);
+      setTotal(data.totalElements ?? 0);
     } catch (error) {
       console.error("Error fetching questions:", error);
+      notification.error({
+        message: "Error",
+        description: "Unable to load the question list.",
+      });
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
-  };
+  }, [quizId, page, size]);
 
-  const fetchQuizInfo = async () => {
+  const fetchQuizInfo = useCallback(async () => {
     if (!quizId) return;
-
     setLoading(true);
     try {
       const data = await getQuizzById(quizId);
       setQuiz(data);
     } catch (error) {
       console.error("Error fetching quiz info:", error);
+      notification.error({
+        message: "Error",
+        description: "Unable to load quiz information.",
+      });
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
-  };
+  }, [quizId]);
 
   useEffect(() => {
     fetchQuizInfo();
+  }, [fetchQuizInfo]);
+
+  useEffect(() => {
     fetchQuestions();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [quizId]);
+  }, [fetchQuestions]);
 
   const handlePublish = async () => {
     if (!quizId) return;
     setPublishing(true);
     try {
       await publishedQuiz(quizId);
-      alert("Quiz published successfully!");
-      navigate(`/quizzes`);
+      notification.success({
+        message: "Success",
+        description: "The quiz has been published successfully!",
+      });
     } catch (error) {
-      alert("Error publishing quiz!");
+      notification.error({
+        message: "Error",
+        description: "Failed to publish the quiz!",
+      });
     } finally {
       setPublishing(false);
+    }
+  };
+
+  const handleSaveForMe = async () => {
+    if (!quizId) return;
+    setSaving(true);
+    try {
+      await saveQuizForMe(quizId);
+      notification.success({
+        message: "Success",
+        description: "The quiz has been saved to your library!",
+      });
+    } catch (e) {
+      notification.error({
+        message: "Error",
+        description: "Unable to save the quiz. Please try again.",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Antd Pagination is 1-based; backend is 0-based
+  const onPageChange = (p: number, pageSize?: number) => {
+    const newSize = pageSize ?? size;
+    // if user changed page size, reset to first page
+    if (newSize !== size) {
+      setSize(newSize);
+      setPage(0);
+    } else {
+      setPage(p - 1);
     }
   };
 
@@ -100,20 +150,14 @@ const QuizManagementPage: React.FC = () => {
               </span>
             </h4>
             <p className="text-muted mb-1">
-              {quiz?.host?.name ?? quizOwnerId ?? "Unknown"} • {quiz?.description}
+              {(quiz as any)?.host?.name ?? quizOwnerId ?? "Unknown"} • {quiz?.description}
             </p>
           </div>
 
-          {/* CHỈ hiển thị khi là chủ sở hữu */}
-          {isOwner && (
+          {isOwner ? (
             <div className="d-flex gap-2">
-              <button className="btn btn-outline-secondary">
-                ↩ Undo
-              </button>
-              <Link
-                to={`/quizzes/${quizId}/edit`}
-                className="btn btn-outline-primary"
-              >
+              <button className="btn btn-outline-secondary">↩ Undo</button>
+              <Link to={`/quizzes/${quizId}/edit`} className="btn btn-outline-primary">
                 ✏ Edit
               </Link>
               <button
@@ -123,61 +167,51 @@ const QuizManagementPage: React.FC = () => {
               >
                 {publishing ? (
                   <>
-                    <i className="bx bx-loader bx-spin"></i>{" "}
-                    Publishing
+                    <i className="bx bx-loader bx-spin"></i> Publishing
                   </>
                 ) : (
                   <>
-                    <i className="bx bx-cloud-upload"></i>{" "}
-                    Publish
+                    <i className="bx bx-cloud-upload"></i> Publish
                   </>
                 )}
+              </button>
+            </div>
+          ) : (
+            <div className="d-flex gap-2">
+              <button
+                onClick={handleSaveForMe}
+                className="btn btn-outline-primary btn-sm"
+                disabled={saving}
+              >
+                {saving ? "Saving..." : "Save for me"}
               </button>
             </div>
           )}
         </div>
       </div>
 
-      <div className="card shadow-sm p-3 mt-2">
-        <div className="d-flex justify-content-between align-items-center p-2">
-          <h6 className="fw-bold mb-0">
-            {questions.length} QUESTIONS
-          </h6>
-          <div className="form-check form-switch mb-0">
-            <input
-              className="form-check-input"
-              type="checkbox"
-              checked={showAnswers}
-              onChange={() => setShowAnswers(!showAnswers)}
-            />
-            <label className="form-check-label ms-2 fw-bold">
-              Show Answers
-            </label>
-          </div>
-        </div>
+      <QuestionList
+        questions={questions}
+        loading={loading}
+        showAnswers={showAnswers}
+        onToggleShowAnswers={() => setShowAnswers(!showAnswers)}
+        total={total}
+        page={page}
+        size={size}
+        onPageChange={(p, s) => {
+          setPage(p);   // 0-based
+          setSize(s);
+        }}
+      />
 
-        {loading ? (
-          <p className="text-center text-muted">
-            Loading questions...
+      {quiz?.status === "DRAFT" && (
+        <div className="alert alert-light border mt-3">
+          <span className="fw-bold">⚠ This is a draft activity</span>
+          <p className="mb-0 text-muted">
+            Publish this activity to share it with your students.
           </p>
-        ) : (
-          questions.map((question, index) => (
-            <QuestionCard
-              key={question.questionId}
-              question={question}
-              index={index}
-              showAnswers={showAnswers}
-            />
-          ))
-        )}
-      </div>
-
-      <div className="alert alert-light border mt-3">
-        <span className="fw-bold">⚠ This is a draft activity</span>
-        <p className="mb-0 text-muted">
-          Publish this activity to share it with your students.
-        </p>
-      </div>
+        </div>
+      )}
     </div>
   );
 };

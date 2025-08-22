@@ -79,9 +79,17 @@ public class QuizController {
     }
 
     @GetMapping("/{quizId}/questions")
-    public ResponseEntity<List<QuestionResponseDTO>> getQuestions(@PathVariable UUID quizId) {
+    public ResponseEntity<Page<QuestionResponseDTO>> getQuestions(
+            @PathVariable UUID quizId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size
+    ) {
         try {
-            List<QuestionResponseDTO> questions = questionService.getQuestionsByQuizId(quizId);
+            if (page < 0 || size <= 0) {
+                return ResponseEntity.badRequest().build();
+            }
+            Pageable pageable = PageRequest.of(page, size);
+            Page<QuestionResponseDTO> questions = questionService.getQuestionsByQuizId(quizId, pageable);
             return ResponseEntity.ok(questions);
         } catch (Exception e) {
             return ResponseEntity.notFound().build();
@@ -205,6 +213,22 @@ public class QuizController {
             return ResponseEntity.ok(quizDto);
         } catch (Exception e) {
             // Optional: rollback quiz creation on failure
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(null);
+        }
+    }
+
+    @PostMapping("/{quizId}/save-for-me")
+    public ResponseEntity<QuizResponseDTO> saveForCurrentUser(
+            HttpServletRequest request,
+            @PathVariable UUID quizId) {
+        try {
+            QuizResponseDTO saved = quizService.saveForCurrentUser(request, quizId);
+            return ResponseEntity.ok(saved);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(null);
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(null);
+        } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(null);
         }
     }
