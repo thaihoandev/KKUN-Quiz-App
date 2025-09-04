@@ -14,7 +14,6 @@ import com.kkunquizapp.QuizAppBackend.service.JwtService;
 import jakarta.annotation.PostConstruct;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
-import org.apache.commons.lang3.RandomStringUtils;
 import org.modelmapper.Converter;
 import org.modelmapper.ModelMapper;
 import org.springframework.http.HttpStatus;
@@ -25,16 +24,12 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.stream.Collectors;
+import java.util.*;
 
 import static com.kkunquizapp.QuizAppBackend.helper.validateHelper.isEmailFormat;
 
@@ -46,6 +41,7 @@ public class AuthServiceImpl implements AuthService {
     private final AuthenticationManager authManager;
     private final ModelMapper modelMapper;
     private final CustomUserDetailsService customUserDetailsService;
+    private final PasswordEncoder passwordEncoder;   // ✅ Thêm PasswordEncoder
 
     @PostConstruct
     public void initModelMapper() {
@@ -73,7 +69,8 @@ public class AuthServiceImpl implements AuthService {
         }
 
         User user = modelMapper.map(userRequestDTO, User.class);
-        user.setPassword(modelMapper.map(userRequestDTO.getPassword(), String.class)); // Password will be encoded in User entity
+        // ✅ Encode password
+        user.setPassword(passwordEncoder.encode(userRequestDTO.getPassword()));
         user.setRole(UserRole.USER);
         user.setActive(true);
         User savedUser = userRepo.save(user);
@@ -91,7 +88,6 @@ public class AuthServiceImpl implements AuthService {
             UserPrincipal userPrincipal = (UserPrincipal) authentication.getPrincipal();
             Map<String, String> tokens = jwtService.generateTokens(userPrincipal);
 
-            // Fetch user from database and map to UserResponseDTO
             Optional<User> userOpt = userRepo.findByUsername(userPrincipal.getUsername());
             if (userOpt.isEmpty()) {
                 throw new IllegalStateException("User not found after authentication");
@@ -99,7 +95,6 @@ public class AuthServiceImpl implements AuthService {
 
             UserResponseDTO userResponse = modelMapper.map(userOpt.get(), UserResponseDTO.class);
 
-            // Return tokens and user data
             Map<String, Object> result = new HashMap<>();
             result.put("accessToken", tokens.get("accessToken"));
             result.put("refreshToken", tokens.get("refreshToken"));
@@ -128,7 +123,6 @@ public class AuthServiceImpl implements AuthService {
             String email   = (String) userInfo.get("email");
             String name    = (String) userInfo.get("name");
             String picture = (String) userInfo.get("picture");
-            // String sub  = (String) userInfo.get("id"); // nếu muốn lưu Google ID
 
             if (email == null || email.isBlank()) {
                 throw new IllegalArgumentException("Google account has no email");
@@ -137,11 +131,9 @@ public class AuthServiceImpl implements AuthService {
             User user = userRepo.findByEmail(email).orElse(null);
 
             if (user == null) {
-                // Chưa có → tạo mới từ Google (seed dữ liệu ban đầu)
                 user = new User();
                 user.setEmail(email);
 
-                // Tạo username duy nhất từ local-part của email
                 String uniqueUsername = generateUniqueUsernameFromEmail(email);
                 user.setUsername(uniqueUsername);
 
@@ -150,21 +142,18 @@ public class AuthServiceImpl implements AuthService {
                 user.setAvatar(picture);
                 user.setActive(true);
 
-                // Đặt mật khẩu ngẫu nhiên (đã encode trong setter của entity)
+                // ✅ Encode random password
                 String randomPassword = org.apache.commons.lang3.RandomStringUtils.randomAlphanumeric(12);
-                user.setPassword(randomPassword);
+                user.setPassword(passwordEncoder.encode(randomPassword));
 
                 user = userRepo.save(user);
             } else {
-                // ĐÃ CÓ user trong DB → KHÔNG override dữ liệu từ Google
-                // (tuỳ chọn) chỉ set avatar nếu đang trống
                 if ((user.getAvatar() == null || user.getAvatar().isBlank()) && picture != null && !picture.isBlank()) {
                     user.setAvatar(picture);
                     userRepo.save(user);
                 }
             }
 
-            // Map từ DB → DTO, sinh token từ DB user
             UserResponseDTO userResponse = modelMapper.map(user, UserResponseDTO.class);
             UserPrincipal principal = new UserPrincipal(user);
             Map<String, String> tokens = jwtService.generateTokens(principal);
@@ -172,7 +161,7 @@ public class AuthServiceImpl implements AuthService {
             Map<String, Object> result = new HashMap<>();
             result.put("accessToken", tokens.get("accessToken"));
             result.put("refreshToken", tokens.get("refreshToken"));
-            result.put("userData", userResponse); // <<< LUÔN là dữ liệu từ DB
+            result.put("userData", userResponse);
             return result;
 
         } catch (Exception e) {
@@ -180,7 +169,6 @@ public class AuthServiceImpl implements AuthService {
         }
     }
 
-    /** Tạo username duy nhất từ email, tránh dạng email đầy đủ */
     private String generateUniqueUsernameFromEmail(String email) {
         String base = email.substring(0, email.indexOf('@')).replaceAll("[^a-zA-Z0-9._-]", "");
         if (base.isBlank()) base = "user";

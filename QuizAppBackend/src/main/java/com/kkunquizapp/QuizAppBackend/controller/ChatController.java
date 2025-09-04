@@ -1,20 +1,20 @@
 package com.kkunquizapp.QuizAppBackend.controller;
 
-// chat/controller/ChatController.java
-
 import com.kkunquizapp.QuizAppBackend.dto.ConversationDTO;
 import com.kkunquizapp.QuizAppBackend.dto.MessageDTO;
 import com.kkunquizapp.QuizAppBackend.dto.SendMessageRequest;
+import com.kkunquizapp.QuizAppBackend.service.ChatAppService;
 import com.kkunquizapp.QuizAppBackend.service.ConversationService;
 import com.kkunquizapp.QuizAppBackend.service.MessageService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.web.PageableDefault;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.*;
+import java.util.List;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/chat")
@@ -22,10 +22,14 @@ public class ChatController {
 
     private final ConversationService convService;
     private final MessageService msgService;
+    private final ChatAppService chatAppService;
 
-    public ChatController(ConversationService convService, MessageService msgService) {
+    public ChatController(ConversationService convService,
+                          MessageService msgService,
+                          ChatAppService chatAppService) {
         this.convService = convService;
         this.msgService = msgService;
+        this.chatAppService = chatAppService;
     }
 
     @PostMapping("/conversations/direct")
@@ -47,10 +51,23 @@ public class ChatController {
         return convService.listMyConversations(me, pageable);
     }
 
+    /**
+     * Gửi tin nhắn theo cơ chế bất đồng bộ:
+     * - Validate nhẹ & publish command lên Kafka thông qua ChatAppService
+     * - Trả về 202 Accepted; client nhận MessageDTO qua kênh realtime (WebSocket/SSE) khi consumer xử lý xong.
+     */
     @PostMapping("/messages")
-    public MessageDTO send(@RequestParam UUID senderId, @RequestBody SendMessageRequest req) {
-        return msgService.sendMessage(senderId, req.getConversationId(), req.getContent(),
-                req.getMediaIds(), req.getReplyToId(), req.getClientId());
+    public ResponseEntity<Void> send(@RequestParam UUID senderId,
+                                     @RequestBody SendMessageRequest req) {
+        chatAppService.sendMessageAsync(
+                senderId,
+                req.getConversationId(),
+                req.getContent(),
+                req.getMediaIds(),
+                req.getReplyToId(),
+                req.getClientId()
+        );
+        return ResponseEntity.accepted().build(); // 202 Accepted (async)
     }
 
     @GetMapping("/messages")
