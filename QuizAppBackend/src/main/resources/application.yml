@@ -61,6 +61,24 @@ spring:
       mail.smtp.auth: true
       mail.smtp.starttls.enable: true
 
+  kafka:
+    bootstrap-servers: localhost:9092
+
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+
+    consumer:
+      group-id: chat-writer
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "com.kkunquizapp.QuizAppBackend.*"
+
+    listener:
+      ack-mode: record  # xử lý từng record
+
 server:
   port: 8080
 
@@ -100,3 +118,8 @@ app:
     # Luồng OTP
     otpTTLMinutes: 10
     otpMaxAttempts: 5
+
+  kafka:
+    topics:
+      chatSend: chat.message.send
+      chatCreated: chat.message.created

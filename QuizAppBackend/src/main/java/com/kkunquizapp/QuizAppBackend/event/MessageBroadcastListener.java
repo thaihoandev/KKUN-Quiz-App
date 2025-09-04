@@ -1,4 +1,4 @@
-package com.kkunquizapp.QuizAppBackend.events;
+package com.kkunquizapp.QuizAppBackend.event;
 
 import com.kkunquizapp.QuizAppBackend.event.MessageCreatedEvent;
 import lombok.RequiredArgsConstructor;

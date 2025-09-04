@@ -1,6 +1,6 @@
 // src/services/chatService.ts
 import { PageResponse } from "@/interfaces";
-import axiosInstance from "@/services/axiosInstance"; // đổi cho khớp project của bạn
+import axiosInstance from "@/services/axiosInstance";
 
 // ==== Types (khớp DTO backend) ====
 
@@ -28,7 +28,7 @@ export interface MessageDTO {
   sender: UserBriefDTO;
   content?: string;
   replyToId?: string;
-  createdAt: string;     // ISO
+  createdAt: string; // ISO
   editedAt?: string;
   deleted?: boolean;
   attachments: MediaBriefDTO[];
@@ -48,8 +48,8 @@ export interface ConversationDTO {
   id: string;
   type: "DIRECT" | "GROUP";
   title?: string;
-    createdAt: string;
-    avatarUrl?: string;
+  createdAt: string;
+  avatarUrl?: string;
   participants: ParticipantDTO[];
   lastMessage?: MessageDTO | null;
   unreadCount: number;
@@ -65,6 +65,7 @@ export interface SendMessageRequest {
 
 // ==== API ====
 
+// Khớp với @RequestMapping("/api/chat") trong backend controller
 const BASE = "/chat";
 
 export async function getMyConversations(me: string, page = 0, size = 20) {
@@ -78,8 +79,8 @@ export async function getMessages(params: {
   conversationId: string;
   me: string;
   beforeMessageId?: string;
-  page?: number;      // mặc định 0
-  size?: number;      // mặc định 30
+  page?: number; // mặc định 0
+  size?: number; // mặc định 30
 }) {
   const { conversationId, me, beforeMessageId, page = 0, size = 30 } = params;
   const res = await axiosInstance.get<PageResponse<MessageDTO>>(`${BASE}/messages`, {
@@ -95,11 +96,22 @@ export async function getMessages(params: {
   return res.data;
 }
 
-export async function sendMessage(senderId: string, body: SendMessageRequest) {
-  const res = await axiosInstance.post<MessageDTO>(`${BASE}/messages`, body, {
+/**
+ * Gửi tin nhắn theo cơ chế async:
+ * - Backend trả 202 Accepted, không body.
+ * - UI sẽ nhận MessageDTO qua kênh realtime (STOMP) để thay temp-message bằng bản thật.
+ */
+export async function sendMessage(senderId: string, body: SendMessageRequest): Promise<void> {
+  const res = await axiosInstance.post(`${BASE}/messages`, body, {
     params: { senderId },
+    // Không cần data trả về; cho chắc thì nhận text
+    responseType: "text",
+    // (tuỳ chọn) chấp nhận cả 202 (chuẩn) và 200 (nếu có proxy/ingress chỉnh)
+    validateStatus: (s) => (s >= 200 && s < 300),
   });
-  return res.data;
+
+  // Không dùng res.data nữa. Nếu cần kiểm tra chặt:
+  // if (res.status !== 202) { /* vẫn coi là ok nếu 2xx */ }
 }
 
 export async function markReadUpTo(conversationId: string, lastMessageId: string, readerId: string) {

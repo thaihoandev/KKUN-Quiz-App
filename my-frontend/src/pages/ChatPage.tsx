@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { Client, IMessage, IFrame } from "@stomp/stompjs";
 import SockJS from "sockjs-client";
-import * as bootstrap from "bootstrap";
 import {
   ConversationDTO,
   MessageDTO,
@@ -16,6 +15,7 @@ import {
 import { PageResponse, UserDto, UserResponseDTO } from "@/interfaces";
 import { useAuthStore } from "@/store/authStore";
 import { getMyFriends } from "@/services/userService";
+import Tooltip from 'bootstrap/js/dist/tooltip';  // chỉ import Tooltip
 
 const PAGE_SIZE_CONV = 20;
 const PAGE_SIZE_MSG = 30;
@@ -130,16 +130,14 @@ const ChatPage: React.FC = () => {
 
   // Initialize Bootstrap tooltips
   useEffect(() => {
-    const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
-    const tooltipList = [...tooltipTriggerList].map(tooltipTriggerEl => 
-      new bootstrap.Tooltip(tooltipTriggerEl, {
-        container: 'body', // Attach to body to avoid clipping
-        offset: [0, 8], // Adjust offset for better positioning
+    const els = document.querySelectorAll('[data-bs-toggle="tooltip"]');
+    const tooltips = Array.from(els).map(el =>
+      new Tooltip(el as Element, {
+        container: 'body',
+        offset: [0, 8],
       })
     );
-    return () => {
-      tooltipList.forEach(tooltip => tooltip.dispose());
-    };
+    return () => { tooltips.forEach(t => t.dispose()); };
   }, [messages]);
 
   const scrollToBottom = () => {
@@ -407,6 +405,7 @@ const ChatPage: React.FC = () => {
 
     const clientId = `c_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
+    // 1) Optimistic UI
     const tempMsg: Msg = {
       id: `temp:${clientId}` as any,
       clientId,
@@ -425,22 +424,31 @@ const ChatPage: React.FC = () => {
     scrollToBottomSmooth();
 
     try {
-      const dto = await sendMessage(currentUserId, { conversationId: selectedConv.id, content: text, clientId });
-      setMessages(prev => upsertMessage(prev, dto as Msg));
-
-      setConvs(prev => {
-        const idx = prev.findIndex(c => c.id === selectedConv.id);
-        if (idx < 0) return prev;
-        const updated = { ...prev[idx], lastMessage: dto } as ConversationDTO;
-        const rest = [...prev.slice(0, idx), ...prev.slice(idx + 1)];
-        return [updated, ...rest];
+      // 2) Gọi API (async, 202 Accepted)
+      await sendMessage(currentUserId, {
+        conversationId: selectedConv.id,
+        content: text,
+        clientId,
       });
+
+      // 3) KHÔNG upsert từ dto trả về nữa.
+      //    Chờ event realtime từ:
+      //    - /user/queue/inbox (payload.type === "NEW_MESSAGE")
+      //      hoặc
+      //    - /topic/conv.{conversationId}
+      //    Event sẽ mang MessageDTO có cùng clientId → upsertMessage() đã xử lý.
+
+      // 4) Có thể cập nhật tạm convs (tuỳ thích), nhưng tốt nhất cũng đợi event.
+      // setConvs(...)  // bỏ qua
+
     } catch (e) {
       console.error("[SEND] error", e);
+      // Rollback optimistic nếu fail enqueue
       setMessages(prev => prev.filter(m => m.clientId !== clientId));
       showToast("danger", "Gửi tin nhắn thất bại");
     }
   };
+
 
   const startDirectChat = async (friendId: string) => {
     if (!currentUserId) return;

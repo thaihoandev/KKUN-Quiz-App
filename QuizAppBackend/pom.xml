@@ -210,6 +210,12 @@
 			<artifactId>bucket4j_jdk8-core</artifactId>
 			<version>8.10.1</version>
 		</dependency>
+
+		<!-- Spring for Apache Kafka -->
+		<dependency>
+			<groupId>org.springframework.kafka</groupId>
+			<artifactId>spring-kafka</artifactId>
+		</dependency>
 	</dependencies>
 
 	<build>
