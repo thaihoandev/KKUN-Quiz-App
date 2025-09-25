@@ -36,7 +36,7 @@ const SingleLayout = () => {
               id="app-main"
       >
         <div className="h-100">            {/* h-100 để cột cao đầy */}
-          <div className="h-100" style={{ paddingTop: "70px" }}>
+          <div className="h-100" style={{ paddingTop: "50px" }}>
             <Outlet />
           </div>
         </div>
