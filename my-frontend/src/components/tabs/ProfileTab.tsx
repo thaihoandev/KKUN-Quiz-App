@@ -5,6 +5,7 @@ import PostList from "../layouts/post/PostList";
 import { PostDTO } from "@/services/postService";
 import PostComposer from "../layouts/post/PostComposer";
 import unknownAvatar from "@/assets/img/avatars/unknown.jpg";
+import SelfPostList from "../layouts/post/SelfPostList";
 
 interface ProfileTabProps {
   profile: UserResponseDTO | null;
@@ -105,7 +106,7 @@ const ProfileTab = ({ profile, onEditProfile }: ProfileTabProps) => {
 
           {/* Post List */}
           {profile?.userId ? (
-            <PostList
+            <SelfPostList
               profile={profile}
               onUpdate={handlePostUpdate}
               userId={profile.userId}

@@ -3,6 +3,7 @@ import { UserResponseDTO } from "@/interfaces";
 import PostList from "../layouts/post/PostList";
 import { useCallback, useState } from "react";
 import { PostDTO } from "@/services/postService";
+import SelfPostList from "../layouts/post/SelfPostList";
 
 interface ViewProfileTabProps {
   profile: UserResponseDTO | null;
@@ -78,7 +79,7 @@ const ViewProfileTab = ({ profile }: ViewProfileTabProps) => {
 
         <div className="col-lg-8">
           {profile?.userId ? (
-            <PostList
+            <SelfPostList
               profile={profile}
               onUpdate={handlePostUpdate}
               userId={profile.userId}
