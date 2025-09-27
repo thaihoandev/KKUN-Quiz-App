@@ -79,7 +79,6 @@ const AiSuggestionModal: React.FC<Props> = ({
         <Space wrap>
           <Button onClick={selectAll} disabled={loading || total === 0}>Chọn tất cả</Button>
           <Button onClick={clearAll} disabled={loading || selected.size === 0}>Bỏ chọn tất cả</Button>
-          <Button onClick={() => onAccept(questions ?? [])} disabled={loading || total === 0}>Thêm tất cả</Button>
           <Button type="primary" onClick={acceptSelected} disabled={loading || selected.size === 0}>
             Thêm các câu đã chọn ({selected.size})
           </Button>

@@ -193,13 +193,14 @@ export const useAuthStore = create<AuthState>()(
             throw new Error("Google login failed. No access token received.");
           }
           const response = await loginGoogleApi(tokenResponse.access_token);
+          
           const userData: User = {
-            userId: response.userId,
-            username: response.username,
-            email: response.email,
-            avatar: response.avatar || "",
-            name: response.name || "",
-            roles: response.roles || [],
+            userId: response.userData.userId,
+            username: response.userData.username,
+            email: response.userData.email,
+            avatar: response.userData.avatar || "",
+            name: response.userData.name || "",
+            roles: response.userData.roles || [],
           };
           set({ user: userData, lastFetchedAt: Date.now(), etag: null });
         } catch (error) {

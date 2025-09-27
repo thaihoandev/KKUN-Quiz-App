@@ -210,7 +210,7 @@ const QuizEditorPage: React.FC = () => {
           topic: topicSeed,
           count: 5,           // server clamp tối đa 10
           questionType: "AUTO",
-          timeLimit: 60,      // default 60s
+          timeLimit: 10,      // default 60s
           points: 1000,
           language: "vi",
         }}

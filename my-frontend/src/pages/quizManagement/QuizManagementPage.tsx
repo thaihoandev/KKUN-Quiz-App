@@ -42,6 +42,8 @@ const QuizManagementPage: React.FC = () => {
 
   const isOwner = Boolean(currentUserId && quizOwnerId && currentUserId === quizOwnerId);
 
+  console.log({ quizOwnerId, currentUserId, isOwner });
+  
   const fetchQuestions = useCallback(async () => {
     if (!quizId) return;
     setLoading(true);
