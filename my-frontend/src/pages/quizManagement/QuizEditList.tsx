@@ -3,24 +3,25 @@ import { Pagination } from "antd";
 import QuestionEditorCard from "@/components/cards/QuestionEditorCard";
 import { Question } from "@/interfaces";
 
+type QuestionWithClientKey = Question & { clientKey: string };
+
 type Props = {
   quizId: string;
-  questions: Question[];                  // items of current page
+  questions: QuestionWithClientKey[];   // ép luôn phải có clientKey
   loading: boolean;
 
-  // pagination
-  page: number;                           // 0-based
-  size: number;                           // page size
-  total: number;                          // totalElements
+  page: number; size: number; total: number;
   onPageChange: (page0Based: number, size: number) => void;
 
-  // controls
   onAddQuestion: () => void;
-  onTimeChange: (quizId: string, questionId: string, time: number) => void;
-  onPointsChange: (quizId: string, questionId: string, points: number) => void;
+  onTimeChange: (quizId: string, questionIdOrClientKey: string, time: number) => void;
+  onPointsChange: (quizId: string, questionIdOrClientKey: string, points: number) => void;
+
+  onAddSimilar: () => void;
+  aiLoading?: boolean;
 };
 
-const QuestionEditList: React.FC<Props> = ({
+const QuizEditList: React.FC<Props> = ({
   quizId,
   questions,
   loading,
@@ -31,6 +32,8 @@ const QuestionEditList: React.FC<Props> = ({
   onAddQuestion,
   onTimeChange,
   onPointsChange,
+  onAddSimilar,
+  aiLoading = false,
 }) => {
   const start = total === 0 ? 0 : page * size + 1;
   const end = Math.min(total, page * size + questions.length);
@@ -38,21 +41,19 @@ const QuestionEditList: React.FC<Props> = ({
 
   const handleChange = (uiPage: number, pageSize?: number) => {
     const newSize = pageSize ?? size;
-    if (newSize !== size) {
-      onPageChange(0, newSize);           // reset to first page when size changes
-    } else {
-      onPageChange(uiPage - 1, newSize);  // convert 1-based -> 0-based
-    }
+    if (newSize !== size) onPageChange(0, newSize);
+    else onPageChange(uiPage - 1, newSize);
   };
 
   return (
     <div className="col-8">
-      {/* Header tools */}
+      {/* Header tools (tránh text node trần) */}
       <div className="d-flex justify-content-between align-items-center mb-4">
-        <span className="fw-bold fs-5">
-          {start}-{end} of {total} questions{" "}
-          <span className="text-muted small">({totalPoints} points on this page)</span>
-        </span>
+        <div className="d-flex align-items-baseline gap-2">
+          <div className="fw-bold fs-5">{start}-{end}</div>
+          <div className="fw-bold fs-6">of {total} questions</div>
+          <div className="text-muted small">({totalPoints} points on this page)</div>
+        </div>
         <button className="btn btn-outline-secondary btn-sm me-2" onClick={onAddQuestion}>
           <i className="bx bx-plus-circle"></i> Thêm câu hỏi
         </button>
@@ -69,10 +70,10 @@ const QuestionEditList: React.FC<Props> = ({
       ) : questions.length > 0 ? (
         questions.map((q, idx) => (
           <QuestionEditorCard
-            key={q.questionId}
+            key={q.clientKey}                
             quizId={quizId}
             question={q}
-            index={page * size + idx} // global index
+            index={page * size + idx}
             onTimeChange={onTimeChange}
             onPointsChange={onPointsChange}
           />
@@ -89,30 +90,45 @@ const QuestionEditList: React.FC<Props> = ({
       )}
 
       {/* Bottom controls */}
-        <div className="d-flex justify-content-between align-items-center mt-4">
-            <div>
-            <button className="btn btn-outline-primary me-2" onClick={onAddQuestion}>
-                <i className="bx bx-plus-circle"></i> Thêm câu hỏi
-            </button>
-            <button className="btn btn-outline-secondary">
+      <div className="d-flex justify-content-between align-items-center mt-4">
+        <div>
+          <button className="btn btn-outline-primary me-2" onClick={onAddQuestion}>
+            <i className="bx bx-plus-circle"></i> Thêm câu hỏi
+          </button>
+
+          <button
+            className="btn btn-outline-secondary"
+            onClick={onAddSimilar}
+            disabled={aiLoading}
+            title="AI sẽ gợi ý câu hỏi tương tự"
+          >
+            {aiLoading ? (
+              <>
+                <span className="spinner-border spinner-border-sm me-2"></span>
+                Đang sinh (AI)...
+              </>
+            ) : (
+              <>
                 <i className="bx bx-bulb"></i> Thêm tương tự (AI)
-            </button>
-            </div> 
-          </div>
-          <div className="d-flex justify-content-end align-items-center mt-4">
-        <Pagination
-            current={page + 1}
-            pageSize={size}
-            total={total}
-            onChange={handleChange}
-            showSizeChanger
-            pageSizeOptions={[5, 10, 20, 50]}
-            showTotal={(t, range) => `${range[0]}-${range[1]} of ${t} items`}
-          />
+              </>
+            )}
+          </button>
         </div>
-          
+      </div>
+
+      <div className="d-flex justify-content-end align-items-center mt-4">
+        <Pagination
+          current={page + 1}
+          pageSize={size}
+          total={total}
+          onChange={handleChange}
+          showSizeChanger
+          pageSizeOptions={[5, 10, 20, 50]}
+          showTotal={(t, range) => `${range[0]}-${range[1]} of ${t} items`}
+        />
+      </div>
     </div>
   );
 };
 
-export default QuestionEditList;
+export default QuizEditList;

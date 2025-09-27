@@ -111,11 +111,8 @@ app:
   name: KKUN Quiz
   supportEmail: no-reply@kkun-quiz.local
   emailChange:
-    # Luồng confirm-link (nếu dùng)
     confirmBaseUrl: http://localhost:3000/api/users/me/confirm-email-change
     ttlMinutes: 30
-
-    # Luồng OTP
     otpTTLMinutes: 10
     otpMaxAttempts: 5
 
@@ -123,3 +120,28 @@ app:
     topics:
       chatSend: chat.message.send
       chatCreated: chat.message.created
+
+gemini:
+  api:
+    key: ${GEMINI_API_KEY:}
+    model: ${GEMINI_MODEL:gemini-2.0-flash}
+    max-output-tokens: ${GEMINI_MAX_OUTPUT_TOKENS:4096}
+    temperature: ${GEMINI_TEMPERATURE:0.2}
+    top-p: ${GEMINI_TOP_P:0.8}
+    candidate-count: ${GEMINI_CANDIDATE_COUNT:1}
+    stop-sequences: ${GEMINI_STOP_SEQUENCES:```,\n\nEND}
+    retry:
+      max-attempts: ${GEMINI_RETRY_MAX_ATTEMPTS:4}
+      initial-backoff-ms: ${GEMINI_RETRY_INITIAL_MS:400}
+      max-backoff-ms: ${GEMINI_RETRY_MAX_MS:4000}
+      jitter: ${GEMINI_RETRY_JITTER:true}
+
+limits:
+  max-questions: ${MAX_QUESTIONS:10}
+  max-topic-chars: ${MAX_TOPIC_CHARS:300}
+
+  http:
+    connect-timeout-ms: ${HTTP_CONNECT_TIMEOUT_MS:10000}
+    read-timeout-ms: ${HTTP_READ_TIMEOUT_MS:100000}
+    write-timeout-ms: ${HTTP_WRITE_TIMEOUT_MS:100000}
+    max-in-memory-size: ${HTTP_MAX_IN_MEMORY_SIZE:8388608} # 8MB
