@@ -115,7 +115,6 @@ const GamePlayPage: React.FC = () => {
     }
     const randomAvatar = availableAvatars[Math.floor(Math.random() * availableAvatars.length)] || unknownAvatar;
     setUsedAvatars((prev) => new Set(prev).add(randomAvatar.toString()));
-    console.log("Assigned avatar:", randomAvatar); // Debug log
     return randomAvatar.toString();
   };
 
@@ -153,7 +152,6 @@ const GamePlayPage: React.FC = () => {
       reconnectDelay: 5000,
       heartbeatIncoming: 4000,
       heartbeatOutgoing: 4000,
-      debug: (msg) => console.log("[STOMP]", msg),
     });
 
     client.onConnect = () => {
@@ -230,8 +228,6 @@ const GamePlayPage: React.FC = () => {
             questionId: string;
             correctOptions: Option[];
           };
-          console.log("[DEBUG] incoming correct-answer payload:", payload);
-          console.log("[DEBUG] currentQuestionRef before merge:", currentQuestionRef.current);
 
           if (currentQuestionRef.current?.questionId === payload.questionId) {
             setCurrentQuestion((prev) => {
@@ -245,7 +241,6 @@ const GamePlayPage: React.FC = () => {
                 };
               });
               const updated = { ...prev, options: updatedOptions };
-              console.log("[DEBUG] after merge updatedQuestion:", updated);
               return updated;
             });
 
@@ -340,7 +335,6 @@ const GamePlayPage: React.FC = () => {
             if (timeLeftSec <= 0) {
                 clearInterval(timer);
                 setIsShowingCorrectAnswer(true);
-                console.log("Time up, waiting for correct answer from WebSocket");
             }
         }, 100); // Cập nhật mỗi 100ms để mượt mà hơn
 

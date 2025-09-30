@@ -89,9 +89,6 @@ const QRCode: React.FC<{ value: string; size?: number }> = ({ value, size = 150 
       return;
     }
 
-    // Log the value for debugging
-    console.log("QR Code Value:", value);
-
     // Generate QR code using Google Charts API
     const qrUrl = `https://chart.googleapis.com/chart?chs=${size}x${size}&cht=qr&chl=${encodeURIComponent(value)}`;
     setQrCodeUrl(qrUrl);

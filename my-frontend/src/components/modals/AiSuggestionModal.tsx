@@ -362,7 +362,6 @@ const AiSuggestionModal: React.FC<Props> = ({
                     }
                     onError={(err) => {
                       console.error(`Error rendering question #${i}:`, err);
-                      console.log("Question data:", q);
                     }}
                   >
                     <QuestionCard 

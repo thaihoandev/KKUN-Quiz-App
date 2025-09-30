@@ -84,7 +84,6 @@ axiosInstance.interceptors.response.use(
 
       const ok = await refreshToken();
       if (ok) {
-        console.log("Token refreshed, retrying:", originalRequest.url);
         return axiosInstance(originalRequest);
       } else {
         useAuthStore.getState().logout();

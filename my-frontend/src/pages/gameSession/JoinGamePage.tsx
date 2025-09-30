@@ -20,7 +20,6 @@ const JoinGamePage: React.FC = () => {
       // Lấy token từ cookie "accessToken"
       const token = getCookie('accessToken');
       const player = await joinGame(pinCode, nickname, token || undefined);
-      console.log("Player joined:", player);
 
       // Navigate to WaitingRoomSessionPage với state
       navigate(`/waiting-room/${player.gameId}`, {

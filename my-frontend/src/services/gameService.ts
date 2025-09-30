@@ -49,14 +49,12 @@ export const createGameSession = async (
   quizId: string
 ): Promise<CreateGameSessionResponse> => {
   try {
-    console.log("Creating game session for quizId:", quizId);
     const response = await axiosInstance.post<CreateGameSessionResponse>(
       `/games/create`,
       {
         quizId,
       }
     );
-    console.log("Create game session response:", response.data);
     return response.data;
   } catch (error) {
     console.error("Error creating game session:", error);
@@ -68,10 +66,7 @@ export const createGameSession = async (
 // Hàm hủy game
 export const cancelGame = async (gameId: string): Promise<void> => {
   try {
-    console.log("Canceling game:", gameId);
     const response = await axiosInstance.post(`/games/${gameId}/end`, {});
-    console.log("Cancel game response status:", response.status);
-    console.log("Game canceled successfully:", response.data);
   } catch (error) {
     console.error("Error canceling game:", error);
     const errorMessage =
@@ -83,10 +78,7 @@ export const cancelGame = async (gameId: string): Promise<void> => {
 // Hàm bắt đầu game
 export const startGame = async (gameId: string): Promise<void> => {
   try {
-    console.log("Starting game:", gameId);
     const response = await axiosInstance.post(`/games/${gameId}/start`, {});
-    console.log("Start game response status:", response.status);
-    console.log("Game started successfully:", response.data);
   } catch (error) {
     console.error("Error starting game:", error);
     const errorMessage =
@@ -108,11 +100,6 @@ export const submitAnswer = async (
 ): Promise<ApiResponseDTO> => {
   try {
     const response = await axiosInstance.post(`/games/${gameId}/answer`, payload);
-    console.log("Raw answer submission response:", {
-      status: response.status,
-      headers: response.headers,
-      data: response.data,
-    });
     if (typeof response.data !== 'object' || response.data === null) {
       throw new Error("Invalid response format: expected JSON object");
     }
@@ -134,11 +121,6 @@ export const submitAnswer = async (
 export const fetchLeaderboard = async (gameId: string): Promise<PlayerResponseDTO[]> => {
   try {
     const response = await axiosInstance.get(`/games/${gameId}/leaderboard`);
-    console.log("Raw leaderboard response:", {
-      status: response.status,
-      headers: response.headers,
-      data: response.data,
-    });
     return response.data as PlayerResponseDTO[];
   } catch (error: any) {
     console.error("Raw error response:", {
@@ -153,11 +135,6 @@ export const fetchLeaderboard = async (gameId: string): Promise<PlayerResponseDT
 export const fetchGameDetails = async (gameId: string): Promise<GameDetailsResponseDTO> => {
   try {
     const response = await axiosInstance.get(`/games/${gameId}/details`);
-    console.log("Raw game details response:", {
-      status: response.status,
-      headers: response.headers,
-      data: response.data,
-    });
     return response.data as GameDetailsResponseDTO;
   } catch (error: any) {
     console.error("Raw error response:", {
@@ -172,11 +149,6 @@ export const fetchGameDetails = async (gameId: string): Promise<GameDetailsRespo
 export const fetchPlayers = async (gameId: string): Promise<PlayerResponseDTO[]> => {
   try {
     const response = await axiosInstance.get(`/games/${gameId}/players`);
-    console.log("Raw players response:", {
-      status: response.status,
-      headers: response.headers,
-      data: response.data,
-    });
     return response.data as PlayerResponseDTO[];
   } catch (error: any) {
     console.error("Raw error response:", {

@@ -63,16 +63,6 @@ const QuizEditorPage: React.FC = () => {
   const [showModal, setShowModal] = useState(false);
   const [publishing, setPublishing] = useState(false);
 
-  // ✅ Debug: Log khi questions thay đổi
-  React.useEffect(() => {
-    console.log('📝 Questions state updated:', questions.length);
-    if (questions.length > 0) {
-      console.log('🔑 First 3 keys:', questions.slice(0, 3).map(q => 
-        q.clientKey || q.questionId || 'NO_KEY'
-      ));
-    }
-  }, [questions]);
-
   // pagination
   const [page, setPage] = useState<number>(0);
   const [size, setSize] = useState<number>(10);
@@ -103,7 +93,6 @@ const QuizEditorPage: React.FC = () => {
     try {
       const data = await getPagedQuestionsByQuizId(quizId, page, size);
       
-      // ✅ FIX 3: Validate data trước khi set
       const content = Array.isArray(data?.content) ? data.content : [];
       const processed = withClientKey(content as Question[]);
       
@@ -140,7 +129,6 @@ const QuizEditorPage: React.FC = () => {
         description: "The quiz has been published successfully!" 
       });
     } catch (err) {
-      console.error("Error publishing quiz:", err);
       notification.error({ 
         message: "Error", 
         description: "Failed to publish the quiz!" 
@@ -190,14 +178,8 @@ const QuizEditorPage: React.FC = () => {
       
       const generated = await generateQuestionsByTopic(req);
       
-      // ✅ DEBUG: Log raw response
-      console.log("🔍 AI Raw Response:", generated);
-      console.log("🔍 Response type:", typeof generated);
-      console.log("🔍 Is array:", Array.isArray(generated));
-      
       // Validate response
       if (!Array.isArray(generated)) {
-        console.error("❌ AI response is not an array:", generated);
         throw new Error("Invalid AI response format");
       }
       
@@ -210,14 +192,9 @@ const QuizEditorPage: React.FC = () => {
         return isValid;
       });
       
-      console.log(`✅ Valid questions: ${validQuestions.length}/${generated.length}`);
-      
       if (validQuestions.length === 0) {
         throw { __isEmptyAI: true, message: "No valid questions generated" };
       }
-      
-      // ✅ Log first question structure
-      console.log("📋 Sample question structure:", JSON.stringify(validQuestions[0], null, 2));
       
       setAiQuestions(validQuestions);
       setAiModalVisible(true);
@@ -236,7 +213,6 @@ const QuizEditorPage: React.FC = () => {
       }
       
       notification.error({ message: "Error", description });
-      console.error("[AI] generateQuestionsByTopic error:", e);
     } finally {
       setAiLoading(false);
     }
@@ -246,10 +222,7 @@ const QuizEditorPage: React.FC = () => {
   const handleAcceptAiQuestions = async (selected: Question[]) => {
     if (!quizId) return;
     
-    console.log('🎯 handleAcceptAiQuestions called with:', selected.length, 'questions');
-    
     if (!Array.isArray(selected) || selected.length === 0) {
-      console.log('⚠️ No questions selected, closing modal');
       setAiModalVisible(false);
       // ✅ Clear ngay khi không có gì để thêm
       setTimeout(() => setAiQuestions([]), 300);
@@ -258,9 +231,7 @@ const QuizEditorPage: React.FC = () => {
 
     setSavingAi(true);
     try {
-      console.log('📤 Sending to API:', selected);
       const saved = await addAiQuestionsToQuiz(quizId, selected);
-      console.log('📥 API Response:', saved);
       
       // Validate saved data
       if (!Array.isArray(saved)) {
@@ -268,20 +239,15 @@ const QuizEditorPage: React.FC = () => {
       }
       
       const prepared = withClientKey(saved as Question[]);
-      console.log('✅ Prepared questions:', prepared.length);
-      console.log('🔑 Sample clientKeys:', prepared.slice(0, 3).map(q => q.clientKey));
       
       // ✅ Sử dụng functional update để tránh race condition
       setQuestions(prev => {
-        console.log('📊 Current questions:', prev.length);
         const updated = [...prepared, ...prev];
-        console.log('📊 After merge:', updated.length);
         return updated;
       });
       
       setTotal(prev => {
         const newTotal = prev + prepared.length;
-        console.log('📊 Total: ', prev, '→', newTotal);
         return newTotal;
       });
 
@@ -290,7 +256,6 @@ const QuizEditorPage: React.FC = () => {
         description: `Đã lưu ${prepared.length} câu hỏi vào quiz`,
       });
       
-      console.log('🎉 Success! Closing modal...');
       
       // ✅ Reset state hoàn toàn
       setAiModalVisible(false);
@@ -298,7 +263,6 @@ const QuizEditorPage: React.FC = () => {
       
       // ✅ Delay clear để tránh flash
       setTimeout(() => {
-        console.log('🧹 Clearing AI questions from state');
         setAiQuestions([]);
         setAiLoading(false);
       }, 300);
