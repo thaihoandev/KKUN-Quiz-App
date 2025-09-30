@@ -17,4 +17,6 @@ public interface QuestionService {
     QuestionResponseDTO softDeleteQuestion(UUID questionId);
     void deleteQuestion(UUID questionId);
 
+    // NEW: thêm nhiều câu hỏi cùng lúc
+    List<QuestionResponseDTO> addQuestions(List<QuestionRequestDTO> questionRequestDTOs);
 }

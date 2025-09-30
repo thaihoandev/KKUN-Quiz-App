@@ -5,7 +5,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 
 import {
   getPagedQuestionsByQuizId,
-  getQuizzById,
+  getQuizById,
   publishedQuiz,
   saveQuizForMe,
 } from "@/services/quizService";
@@ -42,6 +42,8 @@ const QuizManagementPage: React.FC = () => {
 
   const isOwner = Boolean(currentUserId && quizOwnerId && currentUserId === quizOwnerId);
 
+  console.log({ quizOwnerId, currentUserId, isOwner });
+  
   const fetchQuestions = useCallback(async () => {
     if (!quizId) return;
     setLoading(true);
@@ -64,7 +66,7 @@ const QuizManagementPage: React.FC = () => {
     if (!quizId) return;
     setLoading(true);
     try {
-      const data = await getQuizzById(quizId);
+      const data = await getQuizById(quizId);
       setQuiz(data);
     } catch (error) {
       console.error("Error fetching quiz info:", error);

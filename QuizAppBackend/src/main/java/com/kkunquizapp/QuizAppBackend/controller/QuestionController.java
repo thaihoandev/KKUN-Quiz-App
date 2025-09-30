@@ -11,6 +11,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -42,6 +43,16 @@ public class QuestionController {
         }
     }
 
+    @PostMapping("/bulk")
+    public ResponseEntity<List<QuestionResponseDTO>> addQuestionsBulk(
+            @PathVariable UUID quizId,
+            @RequestBody List<QuestionRequestDTO> questionDTOs
+    ) {
+        // đảm bảo quizId đồng nhất theo path param
+        questionDTOs.forEach(dto -> dto.setQuizId(quizId));
+        List<QuestionResponseDTO> result = questionService.addQuestions(questionDTOs);
+        return ResponseEntity.ok(result);
+    }
 
     // Lấy thông tin câu hỏi theo ID
     @GetMapping("/{questionId}")

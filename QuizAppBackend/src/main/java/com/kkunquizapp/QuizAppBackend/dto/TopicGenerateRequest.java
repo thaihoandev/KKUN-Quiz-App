@@ -5,6 +5,8 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Size;
 import lombok.*;
 
+import java.util.UUID;
+
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -53,6 +55,10 @@ public class TopicGenerateRequest {
      */
     @Builder.Default
     private String language = "vi";
+
+    // Dedupe
+    private UUID quizId;            // quiz dùng để lọc trùng (nếu có)
+    private Boolean dedupe;         // true -> bật lọc trùng
 
     /**
      * Chuẩn hóa: trim chuỗi, default khi null/blank, cắt topic quá dài phòng trường hợp bỏ qua validation.
