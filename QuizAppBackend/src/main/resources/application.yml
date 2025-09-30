@@ -126,10 +126,9 @@ gemini:
     key: ${GEMINI_API_KEY:}
     model: ${GEMINI_MODEL:gemini-2.0-flash}
     max-output-tokens: ${GEMINI_MAX_OUTPUT_TOKENS:4096}
-    temperature: ${GEMINI_TEMPERATURE:0.2}
+    temperature: ${GEMINI_TEMPERATURE:0.1}
     top-p: ${GEMINI_TOP_P:0.8}
     candidate-count: ${GEMINI_CANDIDATE_COUNT:1}
-    stop-sequences: ${GEMINI_STOP_SEQUENCES:```,\n\nEND}
     retry:
       max-attempts: ${GEMINI_RETRY_MAX_ATTEMPTS:4}
       initial-backoff-ms: ${GEMINI_RETRY_INITIAL_MS:400}

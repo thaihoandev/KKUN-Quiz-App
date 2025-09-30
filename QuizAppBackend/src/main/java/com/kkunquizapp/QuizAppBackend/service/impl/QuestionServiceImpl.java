@@ -84,6 +84,76 @@ public class QuestionServiceImpl implements QuestionService {
     }
 
     @Override
+    @Transactional
+    public List<QuestionResponseDTO> addQuestions(List<QuestionRequestDTO> questionRequestDTOs) {
+        if (questionRequestDTOs == null || questionRequestDTOs.isEmpty()) {
+            throw new IllegalArgumentException("Question list cannot be empty");
+        }
+
+        // Lấy quizId từ phần tử đầu (ưu tiên path param ở Controller sẽ set đồng nhất)
+        UUID quizId = questionRequestDTOs.get(0).getQuizId();
+        if (quizId == null) {
+            throw new IllegalArgumentException("QuizId must be provided");
+        }
+
+        // Đảm bảo tất cả cùng 1 quizId
+        for (QuestionRequestDTO dto : questionRequestDTOs) {
+            if (dto.getQuizId() == null) {
+                dto.setQuizId(quizId);
+            } else if (!quizId.equals(dto.getQuizId())) {
+                throw new IllegalArgumentException("All questions in bulk must target the same quiz");
+            }
+        }
+
+        // Fetch quiz 1 lần
+        Quiz quiz = quizRepository.findById(quizId)
+                .orElseThrow(() -> new IllegalArgumentException("Quiz not found with ID: " + quizId));
+
+        List<QuestionResponseDTO> responses = new ArrayList<>();
+
+        // Lặp và xử lý giống addQuestion nhưng tái sử dụng các helper hiện có
+        for (QuestionRequestDTO dto : questionRequestDTOs) {
+            QuestionType questionType = QuestionType.valueOf(dto.getQuestionType());
+            validateQuestionRequest(dto, questionType);
+
+            // Map question
+            Question question = modelMapper.map(dto, Question.class);
+            question.setQuiz(quiz);
+
+            // Ảnh: ưu tiên upload nếu có file; nếu không thì dùng sẵn imageUrl nếu có
+            MultipartFile image = dto.getImage();
+            if (image != null && !image.isEmpty()) {
+                try {
+                    String imageUrl = fileUploadService.uploadImageToCloudinary(image);
+                    question.setImageUrl(imageUrl);
+                } catch (RuntimeException e) {
+                    throw new IllegalArgumentException("Failed to upload image: " + e.getMessage());
+                }
+            } else if (dto.getImageUrl() != null && !dto.getImageUrl().isBlank()) {
+                question.setImageUrl(dto.getImageUrl());
+            }
+
+            // Lưu question
+            Question savedQuestion = questionRepository.save(question);
+
+            // Lưu options
+            List<Option> options = dto.getOptions().stream()
+                    .map(opt -> createOptionForQuestionType(opt, questionType, savedQuestion))
+                    .collect(Collectors.toList());
+
+            // Map response
+            QuestionResponseDTO responseDTO = modelMapper.map(savedQuestion, QuestionResponseDTO.class);
+            responseDTO.setOptions(options.stream()
+                    .map(this::mapOptionToResponseDTO)
+                    .collect(Collectors.toList()));
+
+            responses.add(responseDTO);
+        }
+
+        return responses;
+    }
+
+    @Override
     public QuestionResponseDTO getQuestionById(UUID questionId) {
         // Tìm câu hỏi theo ID
         Question question = questionRepository.findById(questionId).orElseThrow(

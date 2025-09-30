@@ -1,6 +1,11 @@
 import { handleApiError } from "@/utils/apiErrorHandler";
 import axiosInstance from "./axiosInstance";
-import { Option, PageResponse, Question, Quiz, QuizStatus } from "@/interfaces";
+import { PageResponse, Question, Quiz, QuizStatus } from "@/interfaces";
+import {
+  addQuestionsToQuiz,
+  mapAiListToCreatePayload,
+  QuestionCreatePayload,
+} from "./questionService";
 
 interface QuizCreatePayload {
   title: string;
@@ -22,7 +27,7 @@ export const getQuizzesByUser = async (
     const response = await axiosInstance.get(`/quizzes/users/${userId}`, {
       params: { page, size, status },
     });
-    return response.data; // { content: Quiz[], totalPages, totalElements, ... }
+    return response.data;
   } catch (error) {
     handleApiError(error, "Failed to fetch user quizzes");
     throw error;
@@ -38,9 +43,6 @@ export const getQuizById = async (quizId: string) => {
     throw error;
   }
 };
-
-// Giữ alias cũ để tránh vỡ import hiện có
-export const getQuizzById = getQuizById;
 
 /* =========================
  * Questions (paging by quiz)
@@ -76,7 +78,6 @@ export const createQuiz = async (quiz: QuizCreatePayload) => {
 
 export const createQuizFromFile = async (formData: FormData) => {
   try {
-    // đảm bảo field "quiz" là JSON blob đúng content-type
     const quizJson = formData.get("quiz");
     if (quizJson instanceof Blob) {
       const quizText = await quizJson.text();
@@ -124,7 +125,7 @@ export const getPublishedQuizzes = async (
     const response = await axiosInstance.get(`/quizzes/published`, {
       params: { page, size, sort },
     });
-    return response.data; // { content, totalPages, totalElements, ... }
+    return response.data;
   } catch (error) {
     handleApiError(error, "Failed to fetch published quizzes");
     throw error;
@@ -134,7 +135,7 @@ export const getPublishedQuizzes = async (
 export const saveQuizForMe = async (quizId: string) => {
   try {
     const response = await axiosInstance.post(`/quizzes/${quizId}/save-for-me`);
-    return response.data as Quiz; // quiz đã clone
+    return response.data as Quiz;
   } catch (error) {
     handleApiError(error, "Failed to save quiz for current user");
     throw error;
@@ -145,51 +146,42 @@ export const saveQuizForMe = async (quizId: string) => {
  * AI endpoints
  * ========================= */
 
-// Request body đồng bộ với backend
+// ✅ mở rộng type để gửi kèm quizId + dedupe
 export type TopicGenerateRequest = {
   topic: string;
-  count?: number;            // default 5, server clamp tối đa 10
+  count?: number;
   questionType?: "AUTO" | "TRUE_FALSE" | "SINGLE_CHOICE" | "MULTIPLE_CHOICE";
-  timeLimit?: number;        // default 60 (5..300)
-  points?: number;           // default 1000
-  language?: "vi" | "en";    // default "vi"
+  timeLimit?: number;
+  points?: number;
+  language?: "vi" | "en";
+  quizId?: string;     // ✅ để BE lọc trùng theo quiz
+  dedupe?: boolean;    // ✅ bật lọc trùng
 };
 
-/**
- * Sinh câu hỏi theo chủ đề
- * POST /ai/questions/generate-by-topic
- */
 export async function generateQuestionsByTopic(req: TopicGenerateRequest): Promise<Question[]> {
   try {
-    // client-side normalize (không tin hoàn toàn vào UI form)
     const payload: TopicGenerateRequest = {
       topic: (req.topic ?? "").trim(),
-      count: Math.max(1, Math.min(req.count ?? 5, 10)),     // clamp 1..10
+      count: Math.max(1, Math.min(req.count ?? 5, 10)),
       questionType: (req.questionType ?? "AUTO") as any,
       timeLimit: Math.max(5, Math.min(req.timeLimit ?? 60, 300)),
       points: Math.max(1, Math.min(req.points ?? 1000, 100000)),
       language: (req.language ?? "vi"),
+      // giữ nguyên các field mở rộng nếu được truyền từ page
+      quizId: req.quizId,
+      dedupe: req.dedupe,
     };
-    if (!payload.topic) {
-      throw new Error("TOPIC_EMPTY");
-    }
+    if (!payload.topic) throw new Error("TOPIC_EMPTY");
 
     const res = await axiosInstance.post(`/ai/questions/generate-by-topic`, payload, {
       headers: { "Content-Type": "application/json" },
-      // tùy chọn: tăng timeout nếu axiosInstance cho phép override
       timeout: 100000,
     });
 
     const data = res?.data;
-    // Chuẩn hóa mọi kiểu trả về về Question[]
-    const list: any[] = Array.isArray(data)
-      ? data
-      : Array.isArray(data?.questions)
-      ? data.questions
-      : [];
+    const list: any[] = Array.isArray(data) ? data : Array.isArray(data?.questions) ? data.questions : [];
 
     if (!Array.isArray(list) || list.length === 0) {
-      // ném lỗi có ngữ cảnh để UI hiện toast tử tế
       const reason = data?.error || data?.message || "AI trả về rỗng";
       const err = new Error(typeof reason === "string" ? reason : JSON.stringify(reason));
       (err as any).__isEmptyAI = true;
@@ -198,16 +190,9 @@ export async function generateQuestionsByTopic(req: TopicGenerateRequest): Promi
 
     return list as Question[];
   } catch (error: any) {
-    // bắt 503/429 để UI biết hiển thị retry message
     const status = error?.response?.status;
     const body = error?.response?.data;
-    const msg =
-      body?.message ||
-      body?.error ||
-      error?.message ||
-      "Failed to generate questions by topic (AI)";
-
-    // bọc lại lỗi với metadata cho UI
+    const msg = body?.message || body?.error || error?.message || "Failed to generate questions by topic (AI)";
     const wrapped = new Error(msg);
     (wrapped as any).__status = status;
     (wrapped as any).__retryAfter = error?.response?.headers?.["retry-after"];
@@ -218,11 +203,6 @@ export async function generateQuestionsByTopic(req: TopicGenerateRequest): Promi
   }
 }
 
-
-/**
- * Sinh câu hỏi tương tự theo quiz (hiển thị ở modal)
- * POST /quizzes/{quizId}/questions/ai-similar?count=&lang=
- */
 export async function generateSimilarQuestions(
   quizId: string,
   count: number = 3,
@@ -237,6 +217,20 @@ export async function generateSimilarQuestions(
     return res.data as Question[];
   } catch (error) {
     handleApiError(error, "Failed to generate similar questions (AI)");
+    throw error;
+  }
+}
+
+/* =========================
+ * NEW: bulk add AI questions vào quiz
+ * ========================= */
+
+export async function addAiQuestionsToQuiz(quizId: string, aiQuestions: any[]): Promise<Question[]> {
+  try {
+    const payload: QuestionCreatePayload[] = mapAiListToCreatePayload(aiQuestions);
+    return await addQuestionsToQuiz(quizId, payload);
+  } catch (error) {
+    handleApiError(error, "Failed to add AI questions to quiz");
     throw error;
   }
 }

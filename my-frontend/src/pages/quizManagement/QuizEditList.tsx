@@ -1,5 +1,5 @@
 import React from "react";
-import { Pagination } from "antd";
+import { Pagination, Alert } from "antd";
 import QuestionEditorCard from "@/components/cards/QuestionEditorCard";
 import { Question } from "@/interfaces";
 
@@ -7,10 +7,12 @@ type QuestionWithClientKey = Question & { clientKey: string };
 
 type Props = {
   quizId: string;
-  questions: QuestionWithClientKey[];   // ép luôn phải có clientKey
+  questions: QuestionWithClientKey[];
   loading: boolean;
 
-  page: number; size: number; total: number;
+  page: number; 
+  size: number; 
+  total: number;
   onPageChange: (page0Based: number, size: number) => void;
 
   onAddQuestion: () => void;
@@ -41,21 +43,34 @@ const QuizEditList: React.FC<Props> = ({
 
   const handleChange = (uiPage: number, pageSize?: number) => {
     const newSize = pageSize ?? size;
-    if (newSize !== size) onPageChange(0, newSize);
-    else onPageChange(uiPage - 1, newSize);
+    if (newSize !== size) {
+      onPageChange(0, newSize);
+    } else {
+      onPageChange(uiPage - 1, newSize);
+    }
   };
 
   return (
     <div className="col-8">
-      {/* Header tools (tránh text node trần) */}
+      {/* Header tools */}
       <div className="d-flex justify-content-between align-items-center mb-4">
         <div className="d-flex align-items-baseline gap-2">
-          <div className="fw-bold fs-5">{start}-{end}</div>
-          <div className="fw-bold fs-6">of {total} questions</div>
-          <div className="text-muted small">({totalPoints} points on this page)</div>
+          <div className="fw-bold fs-5">
+            {start}-{end}
+          </div>
+          <div className="fw-bold fs-6">
+            of {total} questions
+          </div>
+          <div className="text-muted small">
+            ({totalPoints} points on this page)
+          </div>
         </div>
-        <button className="btn btn-outline-secondary btn-sm me-2" onClick={onAddQuestion}>
-          <i className="bx bx-plus-circle"></i> Thêm câu hỏi
+        <button 
+          className="btn btn-outline-secondary btn-sm me-2" 
+          onClick={onAddQuestion}
+        >
+          <i className="bx bx-plus-circle"></i>
+          <span className="ms-1">Thêm câu hỏi</span>
         </button>
       </div>
 
@@ -68,22 +83,31 @@ const QuizEditList: React.FC<Props> = ({
           <p className="mt-2">Đang tải câu hỏi...</p>
         </div>
       ) : questions.length > 0 ? (
-        questions.map((q, idx) => (
-          <QuestionEditorCard
-            key={q.clientKey}                
-            quizId={quizId}
-            question={q}
-            index={page * size + idx}
-            onTimeChange={onTimeChange}
-            onPointsChange={onPointsChange}
-          />
-        ))
+        <div>
+          {questions.map((q, idx) => {
+            // ✅ Đảm bảo key ổn định
+            const key = q.clientKey || q.questionId || `q-${idx}`;
+            const globalIndex = page * size + idx;
+            
+            return (
+              <QuestionEditorCard
+                key={key}
+                quizId={quizId}
+                question={q}
+                index={globalIndex}
+                onTimeChange={onTimeChange}
+                onPointsChange={onPointsChange}
+              />
+            );
+          })}
+        </div>
       ) : (
         <div className="text-center py-4 card shadow-sm">
           <div className="card-body">
             <p className="mb-3">Chưa có câu hỏi nào. Hãy thêm câu hỏi đầu tiên!</p>
             <button className="btn btn-primary" onClick={onAddQuestion}>
-              <i className="bx bx-plus-circle me-1"></i> Thêm câu hỏi
+              <i className="bx bx-plus-circle me-1"></i>
+              <span>Thêm câu hỏi</span>
             </button>
           </div>
         </div>
@@ -93,7 +117,8 @@ const QuizEditList: React.FC<Props> = ({
       <div className="d-flex justify-content-between align-items-center mt-4">
         <div>
           <button className="btn btn-outline-primary me-2" onClick={onAddQuestion}>
-            <i className="bx bx-plus-circle"></i> Thêm câu hỏi
+            <i className="bx bx-plus-circle"></i>
+            <span className="ms-1">Thêm câu hỏi</span>
           </button>
 
           <button
@@ -105,17 +130,19 @@ const QuizEditList: React.FC<Props> = ({
             {aiLoading ? (
               <>
                 <span className="spinner-border spinner-border-sm me-2"></span>
-                Đang sinh (AI)...
+                <span>Đang sinh (AI)...</span>
               </>
             ) : (
               <>
-                <i className="bx bx-bulb"></i> Thêm tương tự (AI)
+                <i className="bx bx-bulb"></i>
+                <span className="ms-1">Thêm tương tự (AI)</span>
               </>
             )}
           </button>
         </div>
       </div>
 
+      {/* Pagination */}
       <div className="d-flex justify-content-end align-items-center mt-4">
         <Pagination
           current={page + 1}
