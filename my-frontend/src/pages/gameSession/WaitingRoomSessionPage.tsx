@@ -23,8 +23,9 @@ import avatar13 from "@/assets/img/avatars/13.png";
 import avatar14 from "@/assets/img/avatars/14.png";
 import avatar15 from "@/assets/img/avatars/15.png";
 import { useAuth } from "@/hooks/useAuth";
+import { GameDetailsResponseDTO, GameResponseDTO } from "@/interfaces";
 
-// Avatar list
+// ========= Avatar pool =========
 const AVATAR_LIST = [
   avatar1,
   avatar2,
@@ -43,17 +44,7 @@ const AVATAR_LIST = [
   avatar15,
 ];
 
-// Define types
-interface GameResponseDTO {
-  gameId: string;
-  quizId: string;
-  hostId: string;
-  pinCode: string;
-  status: "WAITING" | "IN_PROGRESS" | "COMPLETED" | "CANCELED";
-  startTime: string;
-  endTime: string | null;
-}
-
+// ========= Local DTOs nếu cần tách biệt =========
 interface PlayerResponseDTO {
   playerId: string;
   nickname: string;
@@ -64,12 +55,6 @@ interface PlayerResponseDTO {
   isAnonymous: boolean;
 }
 
-interface GameDetailsResponseDTO {
-  game: GameResponseDTO;
-  players: PlayerResponseDTO[];
-  title: string;
-}
-
 interface Player {
   playerId: string;
   nickname: string;
@@ -78,7 +63,7 @@ interface Player {
   userId?: string;
 }
 
-// QR Code Component
+// ========= QR Code nho gọn sử dụng Google Charts =========
 const QRCode: React.FC<{ value: string; size?: number }> = ({ value, size = 150 }) => {
   const [qrCodeUrl, setQrCodeUrl] = useState<string>("");
   const [qrError, setQrError] = useState<string | null>(null);
@@ -88,9 +73,9 @@ const QRCode: React.FC<{ value: string; size?: number }> = ({ value, size = 150 
       setQrError("No PIN code provided for QR code");
       return;
     }
-
-    // Generate QR code using Google Charts API
-    const qrUrl = `https://chart.googleapis.com/chart?chs=${size}x${size}&cht=qr&chl=${encodeURIComponent(value)}`;
+    const qrUrl = `https://chart.googleapis.com/chart?chs=${size}x${size}&cht=qr&chl=${encodeURIComponent(
+      value
+    )}`;
     setQrCodeUrl(qrUrl);
   }, [value, size]);
 
@@ -109,15 +94,12 @@ const QRCode: React.FC<{ value: string; size?: number }> = ({ value, size = 150 
       <div className="bg-white p-3 rounded-lg shadow-sm border">
         <img
           src={qrCodeUrl}
-          alt={`QR Code for ${value}`}
+          alt={`QR Code`}
           className="d-block"
           width={size}
           height={size}
           style={{ imageRendering: "pixelated" }}
-          onError={(e) => {
-            setQrError("Failed to load QR code");
-            console.error("QR code image failed to load:", qrCodeUrl);
-          }}
+          onError={() => setQrError("Failed to load QR code")}
         />
       </div>
       <small className="text-muted mt-2 text-center">Scan to join</small>
@@ -145,9 +127,28 @@ const WaitingRoomSessionPage: React.FC = () => {
   }, [user, gameData]);
 
   const currentPlayer = useMemo(() => {
-    return players.find((player) => player.userId === user?.userId);
+    return players.find((p) => p.userId === user?.userId);
   }, [players, user?.userId]);
 
+  // ========= Helpers =========
+  const assignRandomAvatar = (): string => {
+    const available = AVATAR_LIST.filter((a) => !usedAvatars.has(a.toString()));
+    if (available.length === 0) {
+      setUsedAvatars(new Set());
+      const randomAvatar = AVATAR_LIST[Math.floor(Math.random() * AVATAR_LIST.length)] || unknownAvatar;
+      return randomAvatar.toString();
+    }
+    const pick = available[Math.floor(Math.random() * available.length)] || unknownAvatar;
+    setUsedAvatars((prev) => new Set(prev).add(pick.toString()));
+    return pick.toString();
+  };
+
+  const arraysEqual = (arr1: Player[], arr2: Player[]): boolean => {
+    if (arr1.length !== arr2.length) return false;
+    return arr1.every((item, idx) => JSON.stringify(item) === JSON.stringify(arr2[idx]));
+  };
+
+  // ========= Initial fetch + GUARD deep-link =========
   useEffect(() => {
     if (!gameId) {
       setError("No game ID provided");
@@ -155,32 +156,73 @@ const WaitingRoomSessionPage: React.FC = () => {
       return;
     }
 
-    const fetchData = async () => {
+    const load = async () => {
       try {
-        const data = await fetchGameData(gameId);
+        const data: GameDetailsResponseDTO = await fetchGameData(gameId);
+
+        // Map players đang inGame
+        const mappedPlayers: Player[] = data.players
+          .filter((p) => p.inGame)
+          .map((p) => ({
+            playerId: p.playerId,
+            nickname: p.nickname || "Unknown Player",
+            avatar: assignRandomAvatar(),
+            joinedAt: new Date().toISOString(),
+            userId: p.userId ?? undefined,
+          }));
+
         setGameData(data.game);
-        setPlayers(
-          data.players
-            .filter((p) => p.inGame)
-            .map((p) => ({
-              playerId: p.playerId,
-              nickname: p.nickname || "Unknown Player",
-              avatar: assignRandomAvatar(),
-              joinedAt: new Date().toISOString(),
-              userId: p.userId ?? undefined,
-            }))
-        );
         setQuizTitle(data.title || "Quiz Game");
+        setPlayers(mappedPlayers);
+
+        // ---- Deep-link guard ----
+        const playerSession = localStorage.getItem("playerSession");
+        const isCurrentUserHost =
+          user?.userId && data.game?.hostId ? user.userId === data.game.hostId : false;
+
+        const isInThisGame = playerSession
+          ? data.players.some((p) => p.playerId === playerSession)
+          : false;
+
+        // Nếu không phải host: yêu cầu đã join (có playerSession và thuộc game này)
+        if (!isCurrentUserHost) {
+          if (!playerSession || !isInThisGame) {
+            if (data.game.status === "WAITING" && data.game.pinCode) {
+              navigate(`/join-game/${data.game.pinCode}`, {
+                replace: true,
+                state: { from: "waiting-room", gameId: data.game.gameId },
+              });
+              return; // dừng render trang này
+            }
+          }
+        }
+
+        // Chuyển hướng theo status
+        if (data.game.status === "IN_PROGRESS") {
+          navigate(`/game-play/${data.game.gameId}`, { replace: true });
+          return;
+        }
+        if (data.game.status === "COMPLETED" || data.game.status === "CANCELED") {
+          localStorage.removeItem("playerSession");
+          localStorage.removeItem("gameId");
+          if (!isCurrentUserHost) toast.info("The game has been canceled by the host.");
+          navigate("/", { replace: true });
+          return;
+        }
+
         setIsLoading(false);
       } catch (err) {
+        console.error(err);
         setError("Failed to load game data");
         setIsLoading(false);
       }
     };
 
-    fetchData();
-  }, [gameId]);
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gameId, navigate, user?.userId]);
 
+  // ========= WebSocket subscriptions =========
   useEffect(() => {
     if (!gameId) return;
 
@@ -191,31 +233,33 @@ const WaitingRoomSessionPage: React.FC = () => {
       heartbeatOutgoing: 4000,
     });
 
-    client.onConnect = (frame) => {
+    client.onConnect = () => {
+      // Players topic
       client.subscribe(`/topic/game/${gameId}/players`, (message) => {
         try {
-          const parsedData = JSON.parse(message.body);
-          if (Array.isArray(parsedData)) {
-            const newPlayers: Player[] = parsedData
-              .filter((p: PlayerResponseDTO) => p.inGame)
-              .map((p: PlayerResponseDTO) => ({
+          const parsed: PlayerResponseDTO[] | unknown = JSON.parse(message.body);
+          if (Array.isArray(parsed)) {
+            const newPlayers: Player[] = (parsed as PlayerResponseDTO[])
+              .filter((p) => p.inGame)
+              .map((p) => ({
                 playerId: p.playerId,
                 nickname: p.nickname || "Unknown Player",
                 avatar: assignRandomAvatar(),
                 joinedAt: new Date().toISOString(),
                 userId: p.userId,
               }));
-            setPlayers((prevPlayers) => {
-              const playersChanged = !arraysEqual(prevPlayers, newPlayers);
-              if (playersChanged) return newPlayers;
-              return prevPlayers;
+
+            setPlayers((prev) => {
+              if (!arraysEqual(prev, newPlayers)) return newPlayers;
+              return prev;
             });
           }
-        } catch (error) {
-          console.error("Error parsing player message:", error);
+        } catch (e) {
+          console.error("Error parsing player message:", e);
         }
       });
 
+      // Status topic
       client.subscribe(`/topic/game/${gameId}/status`, (message) => {
         try {
           const statusUpdate: GameResponseDTO = JSON.parse(message.body);
@@ -224,29 +268,17 @@ const WaitingRoomSessionPage: React.FC = () => {
           } else if (statusUpdate.status === "COMPLETED" || statusUpdate.status === "CANCELED") {
             localStorage.removeItem("playerSession");
             localStorage.removeItem("gameId");
-            if (!isHost) {
-              toast.info("The game has been canceled by the host.");
-            }
+            if (!isHost) toast.info("The game has been canceled by the host.");
             navigate("/", { replace: true });
           }
-        } catch (error) {
-          console.error("Error parsing status message:", error);
+        } catch (e) {
+          console.error("Error parsing status message:", e);
         }
       });
     };
 
-    client.onStompError = (error) => {
-      console.error("WebSocket STOMP error:", error);
-    };
-
-    client.onWebSocketError = (error) => {
-      console.error("WebSocket connection error:", error);
-    };
-
-    client.onDisconnect = () => {
-      console.log("WebSocket disconnected");
-    };
-
+    client.onStompError = (err) => console.error("STOMP error:", err);
+    client.onWebSocketError = (err) => console.error("WS error:", err);
     client.activate();
     setStompClient(client);
 
@@ -254,77 +286,59 @@ const WaitingRoomSessionPage: React.FC = () => {
       if (client.active) client.deactivate();
       setStompClient(null);
     };
-  }, [gameId, navigate, isHost]);
+  }, [WS_ENDPOINT, gameId, navigate, isHost]);
 
+  // ========= Polling an toàn (fallback) =========
   useEffect(() => {
     if (!gameId) return;
 
-    const pollGameStatus = setInterval(async () => {
+    const t = setInterval(async () => {
       try {
         const data = await fetchGameData(gameId);
+
         if (data.game.status === "COMPLETED" || data.game.status === "CANCELED") {
           localStorage.removeItem("playerSession");
           localStorage.removeItem("gameId");
-          if (!isHost) {
-            toast.info("The game has been canceled by the host.");
-          }
+          if (!isHost) toast.info("The game has been canceled by the host.");
           navigate("/", { replace: true });
         } else if (data.game.status === "IN_PROGRESS") {
           navigate(`/game-play/${gameId}`, { replace: true });
         }
-      } catch (err) {
-        console.error("Error polling game status:", err);
+      } catch (e) {
+        console.error("Polling error:", e);
       }
     }, 10000);
 
-    return () => clearInterval(pollGameStatus);
+    return () => clearInterval(t);
   }, [gameId, navigate, isHost]);
 
-  const assignRandomAvatar = (): string => {
-    const availableAvatars = AVATAR_LIST.filter((avatar) => !usedAvatars.has(avatar.toString()));
-    if (availableAvatars.length === 0) {
-      setUsedAvatars(new Set());
-      const randomAvatar = AVATAR_LIST[Math.floor(Math.random() * AVATAR_LIST.length)] || unknownAvatar;
-      return randomAvatar.toString();
-    }
-    const randomAvatar = availableAvatars[Math.floor(Math.random() * availableAvatars.length)] || unknownAvatar;
-    setUsedAvatars((prev) => new Set(prev).add(randomAvatar.toString()));
-    return randomAvatar.toString();
-  };
-
-  const arraysEqual = (arr1: Player[], arr2: Player[]): boolean => {
-    if (arr1.length !== arr2.length) return false;
-    return arr1.every((item, index) => JSON.stringify(item) === JSON.stringify(arr2[index]));
-  };
-
+  // ========= Actions =========
   const handleCancelGame = async () => {
-    if (!gameData || !gameId) {
+    if (!gameData) {
       toast.error("Cannot cancel game: missing game data");
       return;
     }
-
     try {
       await cancelGame(gameData.gameId);
       localStorage.removeItem("playerSession");
       localStorage.removeItem("gameId");
       navigate("/quizzes", { replace: true });
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
-      toast.error(`Failed to cancel game: ${errorMessage}`);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Unknown error occurred";
+      toast.error(`Failed to cancel game: ${msg}`);
     }
   };
 
   const handleStartGame = async () => {
-    if (!gameData || !gameId) {
+    if (!gameData) {
       toast.error("Cannot start game: missing game data");
       return;
     }
-
     try {
       await startGame(gameData.gameId);
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
-      toast.error(`Failed to start game: ${errorMessage}`);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Unknown error occurred";
+      toast.error(`Failed to start game: ${msg}`);
     }
   };
 
@@ -333,43 +347,41 @@ const WaitingRoomSessionPage: React.FC = () => {
       toast.error("Cannot copy PIN code: missing game data");
       return;
     }
-
     try {
       await navigator.clipboard.writeText(gameData.pinCode);
       toast.success("PIN code copied successfully!");
-    } catch (err) {
-      const textArea = document.createElement("textarea");
-      textArea.value = gameData.pinCode;
-      document.body.appendChild(textArea);
-      textArea.select();
+    } catch {
+      // Fallback cho môi trường không hỗ trợ clipboard
+      const ta = document.createElement("textarea");
+      ta.value = gameData.pinCode;
+      document.body.appendChild(ta);
+      ta.select();
       try {
         document.execCommand("copy");
         toast.success("PIN code copied successfully!");
-      } catch (fallbackErr) {
+      } catch {
         toast.error(`Failed to copy PIN code: ${gameData.pinCode}`);
       }
-      document.body.removeChild(textArea);
+      document.body.removeChild(ta);
     }
   };
 
-  const joinUrl = gameData?.pinCode ? `${window.location.origin}/join?pin=${gameData.pinCode}` : "";
+  // Link QR mới về trang join-game
+  const joinUrl = gameData?.pinCode
+    ? `${window.location.origin}/join-game/${gameData.pinCode}`
+    : "";
 
   const memoizedPlayers = useMemo(() => players, [players]);
 
+  // ========= Renders =========
   if (isLoading) {
     return (
       <div
         className="d-flex justify-content-center align-items-center min-vh-100"
-        style={{
-          background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-        }}
+        style={{ background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)" }}
       >
         <div className="text-center p-4">
-          <div
-            className="spinner-border text-white mb-3"
-            role="status"
-            style={{ width: "3rem", height: "3rem" }}
-          >
+          <div className="spinner-border text-white mb-3" role="status" style={{ width: "3rem", height: "3rem" }}>
             <span className="visually-hidden">Loading...</span>
           </div>
           <p className="text-white fs-5 fw-medium">Loading waiting room...</p>
@@ -382,27 +394,19 @@ const WaitingRoomSessionPage: React.FC = () => {
     return (
       <div
         className="d-flex justify-content-center align-items-center min-vh-100 w-100"
-        style={{
-          background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-        }}
+        style={{ background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)" }}
       >
         <div className="card shadow-lg rounded-4 p-5 text-center w-100">
-          <i className="bx bx-error-circle text-danger mb-3" style={{ fontSize: "4rem" }}></i>
+          <i className="bx bx-error-circle text-danger mb-3" style={{ fontSize: "4rem" }} />
           <h4 className="text-dark fw-bold mb-3">An error occurred</h4>
           <p className="text-muted mb-4">{error}</p>
           <div className="d-flex gap-3 justify-content-center">
-            <button
-              className="btn btn-primary rounded-pill px-4 py-2"
-              onClick={() => navigate(-1)}
-            >
-              <i className="bx bx-refresh me-2"></i>
+            <button className="btn btn-primary rounded-pill px-4 py-2" onClick={() => navigate(-1)}>
+              <i className="bx bx-refresh me-2" />
               Try Again
             </button>
-            <button
-              className="btn btn-outline-secondary rounded-pill px-4 py-2"
-              onClick={() => navigate("/")}
-            >
-              <i className="bx bx-home me-2"></i>
+            <button className="btn btn-outline-secondary rounded-pill px-4 py-2" onClick={() => navigate("/")}>
+              <i className="bx bx-home me-2" />
               Home
             </button>
           </div>
@@ -415,19 +419,14 @@ const WaitingRoomSessionPage: React.FC = () => {
     return (
       <div
         className="d-flex justify-content-center align-items-center min-vh-100"
-        style={{
-          background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-        }}
+        style={{ background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)" }}
       >
         <div className="card shadow-lg rounded-4 p-5 text-center w-100">
-          <i className="bx bx-info-circle text-warning mb-3" style={{ fontSize: "4rem" }}></i>
+          <i className="bx bx-info-circle text-warning mb-3" style={{ fontSize: "4rem" }} />
           <h4 className="text-dark fw-bold mb-3">Game not found</h4>
           <p className="text-muted mb-4">This game session could not be found.</p>
-          <button
-            className="btn btn-primary rounded-pill px-4 py-2"
-            onClick={() => navigate("/")}
-          >
-            <i className="bx bx-home me-2"></i>
+          <button className="btn btn-primary rounded-pill px-4 py-2" onClick={() => navigate("/")}>
+            <i className="bx bx-home me-2" />
             Home
           </button>
         </div>
@@ -438,9 +437,7 @@ const WaitingRoomSessionPage: React.FC = () => {
   return (
     <div
       className="min-vh-100 py-4 w-100"
-      style={{
-        background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-      }}
+      style={{ background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)" }}
     >
       <div className="container">
         <div className="row justify-content-center">
@@ -449,14 +446,11 @@ const WaitingRoomSessionPage: React.FC = () => {
               {/* Header */}
               <div
                 className="position-relative"
-                style={{
-                  background: "linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)",
-                  padding: "2rem 1rem",
-                }}
+                style={{ background: "linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)", padding: "2rem 1rem" }}
               >
                 <div className="text-center text-white">
                   <h1 className="mb-2 fw-bold" style={{ fontSize: "2.2rem" }}>
-                    <i className="bx bx-game me-3"></i>
+                    <i className="bx bx-game me-3" />
                     {quizTitle}
                   </h1>
                   <p className="mb-0 opacity-75" style={{ fontSize: "1.1rem" }}>
@@ -471,7 +465,7 @@ const WaitingRoomSessionPage: React.FC = () => {
                   <div className="col-lg-8">
                     <div className="text-center text-lg-start">
                       <h3 className="mb-3 fw-bold text-primary" style={{ fontSize: "1.8rem" }}>
-                        <i className="bx bx-key me-2"></i>
+                        <i className="bx bx-key me-2" />
                         Join PIN
                       </h3>
 
@@ -492,21 +486,17 @@ const WaitingRoomSessionPage: React.FC = () => {
                         </div>
 
                         <div className="d-flex gap-2">
-                          <button
-                            className="btn btn-outline-primary rounded-circle p-2"
-                            onClick={copyPinCode}
-                            title="Copy PIN code"
-                          >
-                            <i className="bx bx-copy" style={{ fontSize: "1.3rem" }}></i>
+                          <button className="btn btn-outline-primary rounded-circle p-2" onClick={copyPinCode} title="Copy PIN code">
+                            <i className="bx bx-copy" style={{ fontSize: "1.3rem" }} />
                           </button>
 
                           {isHost && (
                             <button
                               className="btn btn-outline-info rounded-circle p-2"
-                              onClick={() => setShowQR(!showQR)}
+                              onClick={() => setShowQR((s) => !s)}
                               title="Show/Hide QR Code"
                             >
-                              <i className="bx bx-qr" style={{ fontSize: "1.3rem" }}></i>
+                              <i className="bx bx-qr" style={{ fontSize: "1.3rem" }} />
                             </button>
                           )}
                         </div>
@@ -533,18 +523,12 @@ const WaitingRoomSessionPage: React.FC = () => {
                 {/* Players Section */}
                 <div className="mb-4">
                   <div className="d-flex justify-content-between align-items-center mb-4">
-                    <h3
-                      className="mb-0 fw-bold text-dark d-flex align-items-center"
-                      style={{ fontSize: "1.8rem" }}
-                    >
-                      <i className="bx bx-group me-2 text-primary"></i>
+                    <h3 className="mb-0 fw-bold text-dark d-flex align-items-center" style={{ fontSize: "1.8rem" }}>
+                      <i className="bx bx-group me-2 text-primary" />
                       Players ({memoizedPlayers.length})
                     </h3>
                     <div className="d-flex align-items-center gap-2">
-                      <div
-                        className="pulse-dot bg-success rounded-circle"
-                        style={{ width: "12px", height: "12px" }}
-                      ></div>
+                      <div className="pulse-dot bg-success rounded-circle" style={{ width: "12px", height: "12px" }} />
                       <span className="badge bg-success-soft text-success py-2 px-3 rounded-pill fw-medium">
                         {isHost ? "🎯 Waiting for players..." : "⏱️ Waiting for host to start..."}
                       </span>
@@ -559,14 +543,9 @@ const WaitingRoomSessionPage: React.FC = () => {
                         border: "2px dashed #2196f3",
                       }}
                     >
-                      <i
-                        className="bx bx-user-plus text-primary mb-3"
-                        style={{ fontSize: "4rem" }}
-                      ></i>
+                      <i className="bx bx-user-plus text-primary mb-3" style={{ fontSize: "4rem" }} />
                       <h5 className="text-primary fw-bold mb-2">No players yet</h5>
-                      <p className="text-muted mb-0">
-                        Share the PIN code or QR code to invite friends to join!
-                      </p>
+                      <p className="text-muted mb-0">Share the PIN code or QR code to invite friends to join!</p>
                     </div>
                   ) : (
                     <div className="row g-3">
@@ -576,9 +555,7 @@ const WaitingRoomSessionPage: React.FC = () => {
                           <div key={player.playerId} className="col-md-6 col-lg-4">
                             <div
                               className={`card border-0 rounded-3 p-3 h-100 position-relative transition-all ${
-                                isCurrentUser
-                                  ? "bg-primary-soft border-primary shadow-lg transform-scale-105"
-                                  : "bg-white shadow-sm hover-lift"
+                                isCurrentUser ? "bg-primary-soft border-primary shadow-lg transform-scale-105" : "bg-white shadow-sm hover-lift"
                               }`}
                               style={{
                                 border: isCurrentUser ? "2px solid #4facfe" : "1px solid #e9ecef",
@@ -589,7 +566,7 @@ const WaitingRoomSessionPage: React.FC = () => {
                               {isCurrentUser && (
                                 <div className="position-absolute top-0 end-0 translate-middle">
                                   <span className="badge bg-primary rounded-pill px-2 py-1">
-                                    <i className="bx bx-user-check me-1"></i>
+                                    <i className="bx bx-user-check me-1" />
                                     You
                                   </span>
                                 </div>
@@ -603,22 +580,17 @@ const WaitingRoomSessionPage: React.FC = () => {
                                     className={`rounded-circle border ${
                                       isCurrentUser ? "border-primary border-3" : "border-light border-2"
                                     }`}
-                                    width={isCurrentUser ? "56" : "48"}
-                                    height={isCurrentUser ? "56" : "48"}
+                                    width={isCurrentUser ? 56 : 48}
+                                    height={isCurrentUser ? 56 : 48}
                                     style={{ objectFit: "cover" }}
                                     onError={(e) => {
                                       const target = e.target as HTMLImageElement;
-                                      if (target.src !== unknownAvatar) {
-                                        target.src = unknownAvatar;
-                                      }
+                                      if (target.src !== unknownAvatar) target.src = unknownAvatar;
                                     }}
                                   />
                                   {isCurrentUser && (
                                     <div className="position-absolute bottom-0 end-0">
-                                      <i
-                                        className="bx bx-crown text-warning bg-white rounded-circle p-1"
-                                        style={{ fontSize: "1rem" }}
-                                      ></i>
+                                      <i className="bx bx-crown text-warning bg-white rounded-circle p-1" style={{ fontSize: "1rem" }} />
                                     </div>
                                   )}
                                 </div>
@@ -626,27 +598,20 @@ const WaitingRoomSessionPage: React.FC = () => {
                                 <div className="ms-3 flex-grow-1">
                                   <h5
                                     className={`mb-1 fw-bold ${isCurrentUser ? "text-primary" : "text-dark"}`}
-                                    style={{
-                                      fontSize: isCurrentUser ? "1.3rem" : "1.1rem",
-                                    }}
+                                    style={{ fontSize: isCurrentUser ? "1.3rem" : "1.1rem" }}
                                   >
                                     {player.nickname}
-                                    {isCurrentUser && (
-                                      <i className="bx bx-star text-warning ms-2"></i>
-                                    )}
+                                    {isCurrentUser && <i className="bx bx-star text-warning ms-2" />}
                                   </h5>
                                   <div className="d-flex align-items-center gap-2">
                                     <small className="text-muted d-flex align-items-center">
-                                      <i className="bx bx-time me-1"></i>
+                                      <i className="bx bx-time me-1" />
                                       {new Date(player.joinedAt).toLocaleTimeString("en-US", {
                                         hour: "2-digit",
                                         minute: "2-digit",
                                       })}
                                     </small>
-                                    <span
-                                      className="badge bg-success-soft text-success rounded-pill px-2 py-1"
-                                      style={{ fontSize: "0.7rem" }}
-                                    >
+                                    <span className="badge bg-success-soft text-success rounded-pill px-2 py-1" style={{ fontSize: "0.7rem" }}>
                                       #{index + 1}
                                     </span>
                                   </div>
@@ -664,16 +629,14 @@ const WaitingRoomSessionPage: React.FC = () => {
                 {isHost && (
                   <div
                     className="d-flex flex-column flex-sm-row justify-content-between gap-3 mt-5 p-4 rounded-3"
-                    style={{
-                      background: "linear-gradient(135deg, #f8f9ff 0%, #e8f5e8 100%)",
-                    }}
+                    style={{ background: "linear-gradient(135deg, #f8f9ff 0%, #e8f5e8 100%)" }}
                   >
                     <button
                       className="btn btn-outline-danger rounded-pill px-4 py-2 fw-medium"
                       onClick={handleCancelGame}
                       style={{ minWidth: "140px" }}
                     >
-                      <i className="bx bx-x me-2"></i>
+                      <i className="bx bx-x me-2" />
                       Cancel Game
                     </button>
 
@@ -683,7 +646,7 @@ const WaitingRoomSessionPage: React.FC = () => {
                       disabled={memoizedPlayers.length === 0}
                       style={{ minWidth: "140px" }}
                     >
-                      <i className="bx bx-play me-2"></i>
+                      <i className="bx bx-play me-2" />
                       Start Game
                       {memoizedPlayers.length === 0 && (
                         <span className="position-absolute top-0 start-100 translate-middle badge bg-warning text-dark rounded-pill">
@@ -695,14 +658,9 @@ const WaitingRoomSessionPage: React.FC = () => {
                 )}
 
                 {!isHost && (
-                  <div
-                    className="text-center mt-4 p-4 rounded-3"
-                    style={{
-                      background: "linear-gradient(135deg, #fff3e0 0%, #e8f5e8 100%)",
-                    }}
-                  >
+                  <div className="text-center mt-4 p-4 rounded-3" style={{ background: "linear-gradient(135deg, #fff3e0 0%, #e8f5e8 100%)" }}>
                     <div className="d-flex align-items-center justify-content-center gap-2 mb-2">
-                      <div className="spinner-grow spinner-grow-sm text-primary"></div>
+                      <div className="spinner-grow spinner-grow-sm text-primary" />
                       <h5 className="mb-0 text-primary fw-bold">Waiting for host to start the game...</h5>
                     </div>
                     <p className="text-muted mb-0">Please be patient, the game will start soon! 🎮</p>

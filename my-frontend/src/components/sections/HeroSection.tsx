@@ -1,6 +1,7 @@
 import { useState } from "react";
 import bulbLight from "@/assets/img/illustrations/bulb-light.png";
 import superRocket from "@/assets/img/illustrations/rocket.png";
+import { JoinRoomHero } from "../boxes/JoinRoomBox";
 
 const HeroSection = () => {
   // nếu bạn có theme, có thể thay autoDetect bằng context. Tạm thời dùng light.
@@ -11,8 +12,7 @@ const HeroSection = () => {
       <div
         className="position-relative"
         style={{
-          background:
-            "linear-gradient(135deg, rgba(13,110,253,.12), rgba(32,201,151,.12))",
+          background: "linear-gradient(135deg, rgba(13,110,253,.12), rgba(32,201,151,.12))",
         }}
       >
         <div className="row g-0 align-items-center">
@@ -36,24 +36,8 @@ const HeroSection = () => {
               marketing, IT, programming, and data science.
             </p>
 
-            <div
-              className="d-flex align-items-center justify-content-center gap-2 mt-4"
-              style={{ maxWidth: 560, margin: "0 auto" }}
-            >
-              <input
-                type="search"
-                placeholder="Find your quiz"
-                className="form-control form-control-lg rounded-3"
-                aria-label="Search quizzes"
-              />
-              <button
-                type="button"
-                className="btn btn-primary btn-lg rounded-3"
-                aria-label="Search"
-              >
-                <i className="icon-base bx bx-search icon-md" />
-              </button>
-            </div>
+            {/* ✅ Thay form cũ bằng JoinRoomHero */}
+            <JoinRoomHero />
           </div>
 
           <div className="col-12 col-md-3 d-none d-md-flex justify-content-center py-5 pe-5">

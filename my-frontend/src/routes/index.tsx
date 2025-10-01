@@ -63,6 +63,7 @@ const AppRoutes: React.FC = () => (
         <Route path="/" element={<SingleLayout />}>
           <Route path="game-session/:gameId" element={<WaitingRoomSessionPage />} />
           <Route path="game-play/:gameId" element={<GamePlayPage />} />
+          <Route path="join-game" element={<JoinGamePage />} />
           <Route path="join-game/:pinCode" element={<JoinGamePage />} />
           <Route path="quizzes/:quizId/edit" element={<QuizEditorPage />} />
           <Route path="quizzes/:quizId/questions/create" element={<QuestionCreatePage />} />
