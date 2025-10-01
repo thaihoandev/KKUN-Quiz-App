@@ -322,7 +322,7 @@ const WaitingRoomSessionPage: React.FC = () => {
       await cancelGame(gameData.gameId);
       localStorage.removeItem("playerSession");
       localStorage.removeItem("gameId");
-      navigate("/quizzes", { replace: true });
+      navigate("/", { replace: true });
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Unknown error occurred";
       toast.error(`Failed to cancel game: ${msg}`);
