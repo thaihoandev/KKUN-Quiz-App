@@ -26,15 +26,6 @@ spring:
     database-platform: org.hibernate.dialect.PostgreSQLDialect
     hibernate.ddl-auto: update
 
-  data:
-    redis:
-      timeout: 6000ms
-      lettuce:
-        pool:
-          max-active: 10
-          max-idle: 5
-          min-idle: 2
-
   mail:
     host: smtp.gmail.com
     port: 587
