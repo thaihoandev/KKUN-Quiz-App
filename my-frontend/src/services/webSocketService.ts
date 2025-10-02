@@ -58,7 +58,6 @@ export class WebSocketService {
       heartbeatIncoming: 4000,
       heartbeatOutgoing: 4000,
       connectHeaders: this.accessToken ? { Authorization: `Bearer ${this.accessToken}` } : {},
-      debug: (str) => DEBUG && console.log(`${tag} [stomp]`, str),
     });
 
     this.client.onConnect = (frame) => {

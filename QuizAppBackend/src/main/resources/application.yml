@@ -1,6 +1,6 @@
 spring:
   application:
-    name: ${SPRING_APPLICATION_NAME}
+    name: ${SPRING_APPLICATION_NAME:kkun-quiz}
   servlet:
     multipart:
       enabled: true
@@ -9,42 +9,25 @@ spring:
 
   security:
     oauth2:
-      resourceServer:
+      resource-server:
         jwt:
           issuer-uri: https://accounts.google.com
       client:
         registration:
           google:
-            client-id: ${GOOGLE_CLIENT_ID}
-            client-secret: ${GOOGLE_CLIENT_SECRET}
-            scope:
-              - openid
-              - profile
-              - email
-              - offline_access
+            client-id: ${GOOGLE_CLIENT_ID:}
+            client-secret: ${GOOGLE_CLIENT_SECRET:}
+            scope: openid,profile,email,offline_access
         provider:
           google:
             issuer-uri: https://accounts.google.com
 
-  jwt:
-    secret: ${JWT_SECRET_KEY}
-
-  datasource:
-    url: ${SPRING_DATASOURCE_URL}
-    username: ${SPRING_DATASOURCE_USERNAME}
-    password: ${SPRING_DATASOURCE_PASSWORD}
-    driver-class-name: org.postgresql.Driver
-
   jpa:
     database-platform: org.hibernate.dialect.PostgreSQLDialect
-    show-sql: true
-    hibernate:
-      ddl-auto: update
+    hibernate.ddl-auto: update
 
   data:
     redis:
-      host: ${REDIS_HOST}
-      port: 6379
       timeout: 6000ms
       lettuce:
         pool:
@@ -55,92 +38,56 @@ spring:
   mail:
     host: smtp.gmail.com
     port: 587
-    username: ${MAIL_USERNAME}         # ví dụ: your@gmail.com
-    password: ${MAIL_APP_PASSWORD}     # App Password của Gmail hoặc SMTP khác
-    properties:
-      mail.smtp.auth: true
-      mail.smtp.starttls.enable: true
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_APP_PASSWORD:}
+    properties.mail.smtp:
+      auth: true
+      starttls.enable: true
 
-  kafka:
-    bootstrap-servers: localhost:9092
 
-    producer:
-      key-serializer: org.apache.kafka.common.serialization.StringSerializer
-      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
-
-    consumer:
-      group-id: chat-writer
-      auto-offset-reset: earliest
-      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
-      properties:
-        spring.json.trusted.packages: "com.kkunquizapp.QuizAppBackend.*"
-
-    listener:
-      ack-mode: record  # xử lý từng record
 
 server:
-  port: 8080
+  port: ${PORT:8080}
 
-logging:
-  level:
-    org:
-      org.springframework.web.multipart: DEBUG
-      hibernate:
-        SQL: DEBUG
-        type:
-          descriptor:
-            sql: TRACE
-        tool:
-          schema: DEBUG
-      springframework:
-        security: DEBUG
-        web:
-          socket: DEBUG
+logging.level:
+  org.springframework.security: INFO
+  org.hibernate.SQL: INFO
 
 jwt:
-  public-key-path: ${JWT_PUBLIC_KEY_PATH}
-  private-key-path: ${JWT_PRIVATE_KEY_PATH}
+  public-key-path: ${JWT_PUBLIC_KEY_PATH:classpath:keys/public_key.pem}
+  private-key-path: ${JWT_PRIVATE_KEY_PATH:classpath:keys/private_key.pem}
 
 cloudinary:
-  cloud-name: ${CLOUDINARY_NAME}
-  api-key: ${CLOUDINARY_API_KEY}
-  api-secret: ${CLOUDINARY_API_SECRET}
+  cloud-name: ${CLOUDINARY_NAME:}
+  api-key: ${CLOUDINARY_API_KEY:}
+  api-secret: ${CLOUDINARY_API_SECRET:}
 
 app:
-  name: KKUN Quiz
+  cors.allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
   supportEmail: no-reply@kkun-quiz.local
-  emailChange:
-    confirmBaseUrl: http://localhost:3000/api/users/me/confirm-email-change
-    ttlMinutes: 30
-    otpTTLMinutes: 10
-    otpMaxAttempts: 5
+  kafka.topics:
+    chatSend: chat.message.send
+    chatCreated: chat.message.created
 
-  kafka:
-    topics:
-      chatSend: chat.message.send
-      chatCreated: chat.message.created
-
-gemini:
-  api:
-    key: ${GEMINI_API_KEY:}
-    model: ${GEMINI_MODEL:gemini-2.0-flash}
-    max-output-tokens: ${GEMINI_MAX_OUTPUT_TOKENS:4096}
-    temperature: ${GEMINI_TEMPERATURE:0.1}
-    top-p: ${GEMINI_TOP_P:0.8}
-    candidate-count: ${GEMINI_CANDIDATE_COUNT:1}
-    retry:
-      max-attempts: ${GEMINI_RETRY_MAX_ATTEMPTS:4}
-      initial-backoff-ms: ${GEMINI_RETRY_INITIAL_MS:400}
-      max-backoff-ms: ${GEMINI_RETRY_MAX_MS:4000}
-      jitter: ${GEMINI_RETRY_JITTER:true}
+gemini.api:
+  key: ${GEMINI_API_KEY:}
+  model: ${GEMINI_MODEL:gemini-2.0-flash}
+  max-output-tokens: ${GEMINI_MAX_OUTPUT_TOKENS:4096}
+  temperature: ${GEMINI_TEMPERATURE:0.1}
+  top-p: ${GEMINI_TOP_P:0.8}
+  candidate-count: ${GEMINI_CANDIDATE_COUNT:1}
+  retry:
+    max-attempts: ${GEMINI_RETRY_MAX_ATTEMPTS:4}
+    initial-backoff-ms: ${GEMINI_RETRY_INITIAL_MS:400}
+    max-backoff-ms: ${GEMINI_RETRY_MAX_MS:4000}
+    jitter: ${GEMINI_RETRY_JITTER:true}
 
 limits:
   max-questions: ${MAX_QUESTIONS:10}
   max-topic-chars: ${MAX_TOPIC_CHARS:300}
 
-  http:
-    connect-timeout-ms: ${HTTP_CONNECT_TIMEOUT_MS:10000}
-    read-timeout-ms: ${HTTP_READ_TIMEOUT_MS:100000}
-    write-timeout-ms: ${HTTP_WRITE_TIMEOUT_MS:100000}
-    max-in-memory-size: ${HTTP_MAX_IN_MEMORY_SIZE:8388608} # 8MB
+http:
+  connect-timeout-ms: ${HTTP_CONNECT_TIMEOUT_MS:10000}
+  read-timeout-ms: ${HTTP_READ_TIMEOUT_MS:100000}
+  write-timeout-ms: ${HTTP_WRITE_TIMEOUT_MS:100000}
+  max-in-memory-size: ${HTTP_MAX_IN_MEMORY_SIZE:8388608}

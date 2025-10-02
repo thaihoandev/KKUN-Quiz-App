@@ -771,25 +771,25 @@ public class UserServiceImpl implements UserService {
                         + " đã chấp nhận lời mời kết bạn của bạn"
         );
 
-        notificationService.createNotification(
-                receiver.getUserId(),
-                requester.getUserId(),
-                "FRIEND_ADDED",
-                "FRIEND",
-                requester.getUserId(),
-                "Bạn và " + (requester.getName() != null ? requester.getName() : requester.getUsername())
-                        + " đã trở thành bạn bè"
-        );
-
-        notificationService.createNotification(
-                requester.getUserId(),
-                receiver.getUserId(),
-                "FRIEND_ADDED",
-                "FRIEND",
-                receiver.getUserId(),
-                "Bạn và " + (receiver.getName() != null ? receiver.getName() : receiver.getUsername())
-                        + " đã trở thành bạn bè"
-        );
+//        notificationService.createNotification(
+//                receiver.getUserId(),
+//                requester.getUserId(),
+//                "FRIEND_ADDED",
+//                "FRIEND",
+//                requester.getUserId(),
+//                "Bạn và " + (requester.getName() != null ? requester.getName() : requester.getUsername())
+//                        + " đã trở thành bạn bè"
+//        );
+//
+//        notificationService.createNotification(
+//                requester.getUserId(),
+//                receiver.getUserId(),
+//                "FRIEND_ADDED",
+//                "FRIEND",
+//                receiver.getUserId(),
+//                "Bạn và " + (receiver.getName() != null ? receiver.getName() : receiver.getUsername())
+//                        + " đã trở thành bạn bè"
+//        );
     }
 
     @Override
@@ -804,14 +804,14 @@ public class UserServiceImpl implements UserService {
         fr.setStatus(FriendRequest.Status.DECLINED);
         fr.setUpdatedAt(LocalDateTime.now());
         friendRequestRepo.save(fr);
-        notificationService.createNotification(
-                fr.getRequester().getUserId(),
-                fr.getReceiver().getUserId(),
-                "FRIEND_REQUEST_DECLINED",
-                "FRIEND_REQUEST",
-                fr.getId(),
-                fr.getReceiver().getName() + " đã từ chối lời mời kết bạn của bạn"
-        );
+//        notificationService.createNotification(
+//                fr.getRequester().getUserId(),
+//                fr.getReceiver().getUserId(),
+//                "FRIEND_REQUEST_DECLINED",
+//                "FRIEND_REQUEST",
+//                fr.getId(),
+//                fr.getReceiver().getName() + " đã từ chối lời mời kết bạn của bạn"
+//        );
     }
 
     @Override
@@ -827,14 +827,14 @@ public class UserServiceImpl implements UserService {
         fr.setStatus(FriendRequest.Status.CANCELED);
         fr.setUpdatedAt(LocalDateTime.now());
         friendRequestRepo.save(fr);
-        notificationService.createNotification(
-                fr.getReceiver().getUserId(),
-                fr.getRequester().getUserId(),
-                "FRIEND_REQUEST_CANCELED",
-                "FRIEND_REQUEST",
-                fr.getId(),
-                fr.getRequester().getName() + " đã hủy lời mời kết bạn"
-        );
+//        notificationService.createNotification(
+//                fr.getReceiver().getUserId(),
+//                fr.getRequester().getUserId(),
+//                "FRIEND_REQUEST_CANCELED",
+//                "FRIEND_REQUEST",
+//                fr.getId(),
+//                fr.getRequester().getName() + " đã hủy lời mời kết bạn"
+//        );
     }
 
     @Override

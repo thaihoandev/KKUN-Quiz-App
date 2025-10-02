@@ -152,9 +152,6 @@ const QuestionForm: React.FC<QuestionFormProps> = ({
                     DEFAULT_QUESTION_TYPE,
             };
         }
-        // Sử dụng initialQuestionType nếu có, nếu không thì dùng DEFAULT_QUESTION_TYPE
-        console.log("createDefaultQuestion", initialQuestionType);
-
         return createDefaultQuestion(
             initialQuestionType || DEFAULT_QUESTION_TYPE,
         );

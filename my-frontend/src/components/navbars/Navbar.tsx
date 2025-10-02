@@ -1,3 +1,4 @@
+import JoinRoomBox from "../boxes/JoinRoomBox";
 import UserDropdown from "../dropdowns/UserDropdown";
 import NotificationHeader from "../NotificationHeader";
 import SearchBar from "../SearchBar";
@@ -19,9 +20,12 @@ const Navbar: React.FC<NavbarProps> = ({ profile }) => {
         <div className="search-container me-auto w-50">
           <SearchBar />
         </div>
-
+        
         {/* 🔔 Notifications & 👤 User - Căn phải */}
         <ul className="navbar-nav flex-row align-items-center ms-auto">
+          <div className="join-room">
+            <JoinRoomBox />
+          </div>
           {profile ? (
             <>
               <NotificationHeader profile={profile} />

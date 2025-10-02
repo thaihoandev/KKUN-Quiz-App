@@ -92,6 +92,7 @@ const GamePlayPage: React.FC = () => {
   const [showCorrectAnswer, setShowCorrectAnswer] = useState<boolean>(false);
   const [isShowingCorrectAnswer, setIsShowingCorrectAnswer] = useState<boolean>(false);
   const [usedAvatars, setUsedAvatars] = useState<Set<string>>(new Set());
+  const [canProceed, setCanProceed] = useState<boolean>(false); // ✅ chỉ bật WS & gameplay khi qua guard
 
   const playersRef = useRef<ExtendedPlayerResponseDTO[]>([]);
   useEffect(() => {
@@ -115,10 +116,10 @@ const GamePlayPage: React.FC = () => {
     }
     const randomAvatar = availableAvatars[Math.floor(Math.random() * availableAvatars.length)] || unknownAvatar;
     setUsedAvatars((prev) => new Set(prev).add(randomAvatar.toString()));
-    console.log("Assigned avatar:", randomAvatar); // Debug log
     return randomAvatar.toString();
   };
 
+  // ===== 1) Initial fetch + DEEP-LINK GUARD =====
   useEffect(() => {
     if (!gameId) {
       setError("No game ID provided");
@@ -126,34 +127,86 @@ const GamePlayPage: React.FC = () => {
       return;
     }
 
+    let cancelled = false;
+
     (async () => {
       try {
         const gameDetails = await fetchGameDetails(gameId);
+        if (cancelled) return;
+
         setHostId(gameDetails.game.hostId);
+
+        // — Guard theo status
+        if (gameDetails.game.status === "WAITING") {
+          navigate(`/game-session/${gameId}`, { replace: true });
+          return;
+        }
+        if (gameDetails.game.status === "COMPLETED" || gameDetails.game.status === "CANCELED") {
+          setGameEnded(true);
+          localStorage.removeItem("playerSession");
+          localStorage.removeItem("gameId");
+          toast.info(
+            gameDetails.game.status === "CANCELED" ? "The game has been canceled by the host." : "The game has finished."
+          );
+          navigate("/", { replace: true });
+          return;
+        }
+
+        // — Guard theo session (người chơi)
+        const isCurrentUserHost = user?.userId && gameDetails.game.hostId ? user.userId === gameDetails.game.hostId : false;
+        const sessionId = localStorage.getItem("playerSession");
+        const isInThisGame = sessionId ? gameDetails.players.some((p) => p.playerId === sessionId) : false;
+
+        if (!isCurrentUserHost && (!sessionId || !isInThisGame)) {
+          // Chưa join hợp lệ → về trang join-game kèm PIN
+          navigate(`/join-game/${gameDetails.game.pinCode}`, {
+            replace: true,
+            state: { from: "game-play", gameId: gameDetails.game.gameId },
+          });
+          return;
+        }
+
+        // — Nếu qua guard: hydrate dữ liệu ban đầu
         setPlayers(
           gameDetails.players.map((p) => ({
             ...p,
             avatar: assignRandomAvatar(),
           }))
         );
+
         const initialLeaderboard = await fetchLeaderboard(gameId);
+        if (cancelled) return;
+
         setLeaderboard(
           initialLeaderboard.map((p) => ({
             ...p,
             avatar: assignRandomAvatar(),
           }))
         );
+
+        setCanProceed(true); // ✅ Cho phép setup WS & render gameplay
       } catch {
-        toast.error("Failed to load game details");
+        if (!cancelled) {
+          toast.error("Failed to load game details");
+          setError("Failed to load game details");
+        }
       }
     })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [gameId, navigate, user?.userId]);
+
+  // ===== 2) WebSocket subscriptions (chỉ khi canProceed) =====
+  useEffect(() => {
+    if (!gameId || !canProceed) return;
 
     const client = new Client({
       webSocketFactory: () => new SockJS(WS_ENDPOINT),
       reconnectDelay: 5000,
       heartbeatIncoming: 4000,
       heartbeatOutgoing: 4000,
-      debug: (msg) => console.log("[STOMP]", msg),
     });
 
     client.onConnect = () => {
@@ -214,6 +267,18 @@ const GamePlayPage: React.FC = () => {
       client.subscribe(`/topic/game/${gameId}/status`, (msg) => {
         try {
           const status: GameResponseDTO = JSON.parse(msg.body);
+
+          if (status.status === "WAITING") {
+            // Nếu host lỡ mở gameplay trước, quay lại waiting
+            navigate(`/game-session/${gameId}`, { replace: true });
+            return;
+          }
+
+          if (status.status === "IN_PROGRESS") {
+            // đảm bảo người chơi ở trang gameplay
+            return;
+          }
+
           if (status.status === "COMPLETED" || status.status === "CANCELED") {
             setGameEnded(true);
             localStorage.removeItem("playerSession");
@@ -230,8 +295,6 @@ const GamePlayPage: React.FC = () => {
             questionId: string;
             correctOptions: Option[];
           };
-          console.log("[DEBUG] incoming correct-answer payload:", payload);
-          console.log("[DEBUG] currentQuestionRef before merge:", currentQuestionRef.current);
 
           if (currentQuestionRef.current?.questionId === payload.questionId) {
             setCurrentQuestion((prev) => {
@@ -244,9 +307,7 @@ const GamePlayPage: React.FC = () => {
                   correctAnswer: correctOpt?.correctAnswer ?? opt.correctAnswer,
                 };
               });
-              const updated = { ...prev, options: updatedOptions };
-              console.log("[DEBUG] after merge updatedQuestion:", updated);
-              return updated;
+              return { ...prev, options: updatedOptions };
             });
 
             setShowCorrectAnswer(true);
@@ -271,15 +332,12 @@ const GamePlayPage: React.FC = () => {
                 setPendingLeaderboard(null);
               }
             }, 2000);
-          } else {
-            console.warn("Received correct-answer for non-current question:", payload.questionId);
           }
         } catch (e) {
           console.error("[DEBUG] correct-answer handler error:", e);
           toast.error("Failed to load correct answer");
         }
       });
-
     };
 
     client.onStompError = () => {
@@ -304,10 +362,11 @@ const GamePlayPage: React.FC = () => {
       setWsConnected(false);
       setStompClient(null);
     };
-  }, [gameId]);
+  }, [WS_ENDPOINT, gameId, canProceed, isHost, isShowingCorrectAnswer, navigate, pendingLeaderboard, pendingQuestion]);
 
+  // ===== 3) Polling fallback (chỉ khi canProceed & WS chưa kết nối) =====
   useEffect(() => {
-    if (!gameId || wsConnected) return;
+    if (!gameId || !canProceed || wsConnected) return;
     const interval = setInterval(async () => {
       try {
         const data = await fetchLeaderboard(gameId);
@@ -322,32 +381,31 @@ const GamePlayPage: React.FC = () => {
       }
     }, 10000);
     return () => clearInterval(interval);
-  }, [gameId, wsConnected]);
+  }, [gameId, canProceed, wsConnected]);
 
+  // ===== 4) Local timers cho câu hỏi =====
   useEffect(() => {
     if (currentQuestion && !isHost) {
-        const startTime = Date.now(); // Thời gian bắt đầu khi nhận câu hỏi
-        const timeLimit = currentQuestion.timeLimit || 5; // Thời hạn câu hỏi
-        const endTime = startTime + timeLimit * 1000; // Thời gian kết thúc
+      const startTime = Date.now();
+      const timeLimit = currentQuestion.timeLimit || 5;
+      const endTime = startTime + timeLimit * 1000;
 
-        const timer = setInterval(() => {
-            const now = Date.now();
-            const timeLeftMs = endTime - now; // Tính thời gian còn lại (ms)
-            const timeLeftSec = Math.max(0, Math.ceil(timeLeftMs / 1000)); // Chuyển sang giây
+      const timer = setInterval(() => {
+        const now = Date.now();
+        const timeLeftMs = endTime - now;
+        const timeLeftSec = Math.max(0, Math.ceil(timeLeftMs / 1000));
+        setTimeLeft(timeLeftSec);
+        if (timeLeftSec <= 0) {
+          clearInterval(timer);
+          setIsShowingCorrectAnswer(true);
+        }
+      }, 100);
 
-            setTimeLeft(timeLeftSec);
-
-            if (timeLeftSec <= 0) {
-                clearInterval(timer);
-                setIsShowingCorrectAnswer(true);
-                console.log("Time up, waiting for correct answer from WebSocket");
-            }
-        }, 100); // Cập nhật mỗi 100ms để mượt mà hơn
-
-        return () => clearInterval(timer);
+      return () => clearInterval(timer);
     }
   }, [currentQuestion, isHost]);
 
+  // ===== Handlers =====
   const handleMultipleChoiceSelect = async (optionId: string) => {
     if (hasAnswered || timeLeft === 0 || isHost) return;
     let newSelectedOptionIds: string[] = [];
@@ -360,7 +418,7 @@ const GamePlayPage: React.FC = () => {
     }
     setSelectedOptionIds(newSelectedOptionIds);
 
-    // Auto-submit for MULTIPLE_CHOICE
+    // Auto-submit for MULTIPLE_CHOICE/SINGLE_CHOICE
     if (!gameId || !currentQuestion || newSelectedOptionIds.length === 0 || isSubmitting || hasAnswered) return;
     setIsSubmitting(true);
     try {
@@ -433,6 +491,7 @@ const GamePlayPage: React.FC = () => {
     }
   };
 
+  // ===== Renders =====
   if (error) {
     return (
       <div className={`min-vh-100 d-flex justify-content-center align-items-center ${styles.errorContainer}`}>
@@ -441,17 +500,11 @@ const GamePlayPage: React.FC = () => {
           <h4 className="text-dark fw-bold mb-3">An Error Occurred</h4>
           <p className="text-muted mb-4">{error}</p>
           <div className="d-flex gap-3 justify-content-center">
-            <button
-              className="btn btn-primary rounded-pill px-4 py-2"
-              onClick={() => navigate(-1)}
-            >
+            <button className="btn btn-primary rounded-pill px-4 py-2" onClick={() => navigate(-1)}>
               <i className="bx bx-refresh me-2"></i>
               Try Again
             </button>
-            <button
-              className="btn btn-outline-secondary rounded-pill px-4 py-2"
-              onClick={() => navigate("/")}
-            >
+            <button className="btn btn-outline-secondary rounded-pill px-4 py-2" onClick={() => navigate("/")}>
               <i className="bx bx-home me-2"></i>
               Home
             </button>
@@ -477,43 +530,52 @@ const GamePlayPage: React.FC = () => {
             <p className="mb-0 text-white opacity-75">Final Leaderboard</p>
           </div>
           <div className="card-body p-4">
-            {leaderboard.sort((a, b) => b.score - a.score).map((player, index) => (
-              <div
-                key={player.playerId}
-                className={`card mb-2 ${getRankBackground(index)} text-white p-3 d-flex justify-content-between align-items-center ${styles.leaderboardItem}`}
-              >
-                <div className="d-flex align-items-center">
-                  <img
-                    src={player.avatar || unknownAvatar}
-                    alt={player.nickname}
-                    className="rounded-circle border border-light border-2 me-3"
-                    width="48"
-                    height="48"
-                    style={{ objectFit: "cover" }}
-                    onError={(e) => {
-                      const target = e.target as HTMLImageElement;
-                      console.error("Failed to load avatar:", target.src);
-                      if (target.src !== unknownAvatar) {
-                        target.src = unknownAvatar;
-                      }
-                    }}
-                  />
-                  <span className="me-3">{getRankIcon(index)}</span>
-                  <span className="fw-bold">{player.nickname}</span>
+            {leaderboard
+              .slice()
+              .sort((a, b) => b.score - a.score)
+              .map((player, index) => (
+                <div
+                  key={player.playerId}
+                  className={`card mb-2 ${getRankBackground(index)} text-white p-3 d-flex justify-content-between align-items-center ${styles.leaderboardItem}`}
+                >
+                  <div className="d-flex align-items-center">
+                    <img
+                      src={player.avatar || unknownAvatar}
+                      alt={player.nickname}
+                      className="rounded-circle border border-light border-2 me-3"
+                      width="48"
+                      height="48"
+                      style={{ objectFit: "cover" }}
+                      onError={(e) => {
+                        const target = e.target as HTMLImageElement;
+                        if (target.src !== unknownAvatar) target.src = unknownAvatar;
+                      }}
+                    />
+                    <span className="me-3">{getRankIcon(index)}</span>
+                    <span className="fw-bold">{player.nickname}</span>
+                  </div>
+                  <span className="badge bg-light text-dark p-2">{player.score} pts</span>
                 </div>
-                <span className="badge bg-light text-dark p-2">{player.score} pts</span>
-              </div>
-            ))}
+              ))}
           </div>
           <div className="card-footer p-3">
-            <button
-              className="btn btn-primary rounded-pill px-4 py-2 w-100"
-              onClick={() => navigate("/")}
-            >
+            <button className="btn btn-primary rounded-pill px-4 py-2 w-100" onClick={() => navigate("/")}>
               <i className="bx bx-home me-2"></i>
               Back to Home
             </button>
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Nếu chưa qua guard xong thì đừng render gameplay (tránh flicker)
+  if (!canProceed) {
+    return (
+      <div className={`min-vh-100 d-flex justify-content-center align-items-center ${styles.container}`}>
+        <div className="text-center p-4">
+          <div className="spinner-border mb-3" role="status" />
+          <p className="text-muted mb-0">Preparing game...</p>
         </div>
       </div>
     );
@@ -557,36 +619,36 @@ const GamePlayPage: React.FC = () => {
                         Live Leaderboard
                       </h3>
                       <div className="row g-3">
-                        {leaderboard.sort((a, b) => b.score - a.score).map((player, index) => (
-                          <div key={player.playerId} className="col-md-6 col-lg-4">
-                            <div
-                              className={`card border-0 rounded-3 p-3 h-100 ${getRankBackground(index)} text-white ${styles.leaderboardItem}`}
-                            >
-                              <div className="d-flex align-items-center">
-                                <img
-                                  src={player.avatar || unknownAvatar}
-                                  alt={player.nickname}
-                                  className="rounded-circle border border-light border-2 me-3"
-                                  width="48"
-                                  height="48"
-                                  style={{ objectFit: "cover" }}
-                                  onError={(e) => {
-                                    const target = e.target as HTMLImageElement;
-                                    console.error("Failed to load avatar:", target.src);
-                                    if (target.src !== unknownAvatar) {
-                                      target.src = unknownAvatar;
-                                    }
-                                  }}
-                                />
-                                <span className="me-3">{getRankIcon(index)}</span>
-                                <div>
-                                  <h5 className="mb-1 fw-bold">{player.nickname}</h5>
-                                  <span className="badge bg-light text-dark p-2">{player.score} pts</span>
+                        {leaderboard
+                          .slice()
+                          .sort((a, b) => b.score - a.score)
+                          .map((player, index) => (
+                            <div key={player.playerId} className="col-md-6 col-lg-4">
+                              <div
+                                className={`card border-0 rounded-3 p-3 h-100 ${getRankBackground(index)} text-white ${styles.leaderboardItem}`}
+                              >
+                                <div className="d-flex align-items-center">
+                                  <img
+                                    src={player.avatar || unknownAvatar}
+                                    alt={player.nickname}
+                                    className="rounded-circle border border-light border-2 me-3"
+                                    width="48"
+                                    height="48"
+                                    style={{ objectFit: "cover" }}
+                                    onError={(e) => {
+                                      const target = e.target as HTMLImageElement;
+                                      if (target.src !== unknownAvatar) target.src = unknownAvatar;
+                                    }}
+                                  />
+                                  <span className="me-3">{getRankIcon(index)}</span>
+                                  <div>
+                                    <h5 className="mb-1 fw-bold">{player.nickname}</h5>
+                                    <span className="badge bg-light text-dark p-2">{player.score} pts</span>
+                                  </div>
                                 </div>
                               </div>
                             </div>
-                          </div>
-                        ))}
+                          ))}
                       </div>
                       <p className="text-center mt-4 text-muted">📡 Monitoring game progress...</p>
                     </div>
@@ -613,14 +675,9 @@ const GamePlayPage: React.FC = () => {
                               src={imageUrl}
                               alt="Question image"
                               className="rounded-3 shadow-sm"
-                              style={{
-                                maxWidth: "100%",
-                                maxHeight: "300px",
-                                objectFit: "contain",
-                              }}
+                              style={{ maxWidth: "100%", maxHeight: "300px", objectFit: "contain" }}
                               onError={(e) => {
                                 const target = e.target as HTMLImageElement;
-                                console.error("Failed to load question image:", target.src);
                                 target.style.display = "none";
                               }}
                             />
@@ -650,7 +707,8 @@ const GamePlayPage: React.FC = () => {
                             <input
                               type="text"
                               className={`form-control mb-3 rounded-pill px-4 py-2 ${
-                                showCorrectAnswer && currentQuestion.options.some((opt) => opt.correctAnswer === fillInAnswer.trim())
+                                showCorrectAnswer &&
+                                currentQuestion.options.some((opt) => opt.correctAnswer === fillInAnswer.trim())
                                   ? styles.correctInput
                                   : showCorrectAnswer && fillInAnswer.trim()
                                   ? styles.wrongInput
@@ -702,36 +760,36 @@ const GamePlayPage: React.FC = () => {
                           Current Standings
                         </h3>
                         <div className="row g-3">
-                          {leaderboard.sort((a, b) => b.score - a.score).map((player, index) => (
-                            <div key={player.playerId} className="col-md-6 col-lg-4">
-                              <div
-                                className={`card border-0 rounded-3 p-3 h-100 ${getRankBackground(index)} text-white ${styles.leaderboardItem}`}
-                              >
-                                <div className="d-flex align-items-center">
-                                  <img
-                                    src={player.avatar || unknownAvatar}
-                                    alt={player.nickname}
-                                    className="rounded-circle border border-light border-2 me-3"
-                                    width="48"
-                                    height="48"
-                                    style={{ objectFit: "cover" }}
-                                    onError={(e) => {
-                                      const target = e.target as HTMLImageElement;
-                                      console.error("Failed to load avatar:", target.src);
-                                      if (target.src !== unknownAvatar) {
-                                        target.src = unknownAvatar;
-                                      }
-                                    }}
-                                  />
-                                  <span className="me-3">{getRankIcon(index)}</span>
-                                  <div>
-                                    <h5 className="mb-1 fw-bold">{player.nickname}</h5>
-                                    <span className="badge bg-light text-dark p-2">{player.score} pts</span>
+                          {leaderboard
+                            .slice()
+                            .sort((a, b) => b.score - a.score)
+                            .map((player, index) => (
+                              <div key={player.playerId} className="col-md-6 col-lg-4">
+                                <div
+                                  className={`card border-0 rounded-3 p-3 h-100 ${getRankBackground(index)} text-white ${styles.leaderboardItem}`}
+                                >
+                                  <div className="d-flex align-items-center">
+                                    <img
+                                      src={player.avatar || unknownAvatar}
+                                      alt={player.nickname}
+                                      className="rounded-circle border border-light border-2 me-3"
+                                      width="48"
+                                      height="48"
+                                      style={{ objectFit: "cover" }}
+                                      onError={(e) => {
+                                        const target = e.target as HTMLImageElement;
+                                        if (target.src !== unknownAvatar) target.src = unknownAvatar;
+                                      }}
+                                    />
+                                    <span className="me-3">{getRankIcon(index)}</span>
+                                    <div>
+                                      <h5 className="mb-1 fw-bold">{player.nickname}</h5>
+                                      <span className="badge bg-light text-dark p-2">{player.score} pts</span>
+                                    </div>
                                   </div>
                                 </div>
                               </div>
-                            </div>
-                          ))}
+                            ))}
                         </div>
                         <p className="text-center mt-4 text-muted">
                           <i className="bx bx-time me-2"></i>

@@ -1,7 +1,7 @@
 import UserDropdown from "../dropdowns/UserDropdown";
 import NotificationHeader from "../NotificationHeader";
 import { useNavigate } from "react-router-dom";
-import logo from "@/assets/img/logo/logo192.png";
+import logo from "@/assets/img/logo/kkun-quiz-logo.png";
 
 interface NavbarProps {
   profile: { userId: string; name?: string; avatar?: string } | null;
@@ -27,7 +27,7 @@ const HeaderMain: React.FC<NavbarProps> = ({ profile }) => {
               className="me-2"
               style={{ height: 28 }}
             />
-            <span className="fw-semibold">KKUN</span>
+            <span className="fw-semibold">System</span>
           </button>
 
           {/* 🔔 Notifications & 👤 User - nằm bên phải */}

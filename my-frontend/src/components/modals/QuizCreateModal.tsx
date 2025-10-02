@@ -88,14 +88,8 @@ const QuizCreateModal: React.FC<QuizCreateModalProps> = ({
           new Blob([JSON.stringify(quizMeta)], { type: "application/json" })
         );
 
-        console.log("Submitting FormData:", {
-          quiz: quizMeta,
-          file: { name: file.name, type: file.type },
-        });
-
         createdQuiz = await createQuizFromFile(formData);
       } else {
-        console.log("Submitting Quiz:", quizMeta);
         createdQuiz = await createQuiz(quizMeta);
       }
 

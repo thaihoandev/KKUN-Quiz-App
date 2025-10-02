@@ -223,7 +223,6 @@ const ChatPage: React.FC = () => {
       heartbeatOutgoing: 10000,
     });
 
-    client.debug = (str: string) => { if (!/PING|PONG/.test(str)) console.log("[STOMP]", str); };
 
     client.onConnect = (_frame: IFrame) => {
       try { inboxSubRef.current?.unsubscribe?.(); } catch {}
