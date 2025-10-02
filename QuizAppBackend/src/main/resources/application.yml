@@ -56,6 +56,8 @@ logging.level:
 jwt:
   public-key-path: ${JWT_PUBLIC_KEY_PATH:classpath:keys/public_key.pem}
   private-key-path: ${JWT_PRIVATE_KEY_PATH:classpath:keys/private_key.pem}
+  public-key: ${JWT_PUBLIC_KEY}
+  private-key: ${JWT_PRIVATE_KEY}
 
 cloudinary:
   cloud-name: ${CLOUDINARY_NAME:}
