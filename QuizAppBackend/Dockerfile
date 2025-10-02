@@ -7,12 +7,16 @@ COPY src ./src
 RUN mvn -q -DskipTests package
 
 # --- Runtime stage ---
-FROM eclipse-temurin:21-jre
+FROM eclipse-temurin:21-jdk
 WORKDIR /app
-# copy file jar xây dựng xong (điều chỉnh tên theo thực tế)
-COPY --from=build /app/target/*.jar app.jar
+COPY --from=build /app/target/*-SNAPSHOT.jar app.jar
 ENV JAVA_OPTS="-Xms256m -Xmx512m"
 EXPOSE 8080
+
+# install curl for healthcheck
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+
 HEALTHCHECK --interval=30s --timeout=3s --retries=3 \
   CMD curl -f http://localhost:8080/actuator/health || exit 1
+
 ENTRYPOINT ["sh","-c","java $JAVA_OPTS -jar app.jar"]

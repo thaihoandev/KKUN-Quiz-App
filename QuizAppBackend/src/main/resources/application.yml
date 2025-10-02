@@ -91,3 +91,12 @@ http:
   read-timeout-ms: ${HTTP_READ_TIMEOUT_MS:100000}
   write-timeout-ms: ${HTTP_WRITE_TIMEOUT_MS:100000}
   max-in-memory-size: ${HTTP_MAX_IN_MEMORY_SIZE:8388608}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
