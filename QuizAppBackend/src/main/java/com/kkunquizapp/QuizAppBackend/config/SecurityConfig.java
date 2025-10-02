@@ -48,19 +48,22 @@ import java.security.interfaces.RSAPrivateKey;
 import java.security.interfaces.RSAPublicKey;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
-import java.util.Arrays;
-import java.util.Base64;
-import java.util.Collections;
-import java.util.List;
+import java.util.*;
 
 @Configuration
 @EnableWebSecurity
 public class SecurityConfig {
 
-    @Value("${jwt.public-key-path}")
+    @Value("${jwt.public-key:}")
+    private String publicKeyBase64;
+
+    @Value("${jwt.private-key:}")
+    private String privateKeyBase64;
+
+    @Value("${jwt.public-key-path:}")
     private Resource publicKeyPath;
 
-    @Value("${jwt.private-key-path}")
+    @Value("${jwt.private-key-path:}")
     private Resource privateKeyPath;
 
     @Value("${app.cors.allowed-origins:}")
@@ -77,9 +80,7 @@ public class SecurityConfig {
         http
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(cs -> cs.disable())
-                .sessionManagement(sm -> sm
-                        .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
-                )
+                .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/ws/**").permitAll()
                         .requestMatchers(
@@ -92,10 +93,8 @@ public class SecurityConfig {
                         ).permitAll()
                         .requestMatchers("/api/quizzes/**", "/api/questions/**", "/api/files/upload/**")
                         .hasAnyAuthority(UserRole.USER.name(), UserRole.ADMIN.name())
-                        .requestMatchers("/api/admin/**")
-                        .hasAuthority(UserRole.ADMIN.name())
-                        .requestMatchers("/api/profile/**")
-                        .hasAuthority(UserRole.USER.name())
+                        .requestMatchers("/api/admin/**").hasAuthority(UserRole.ADMIN.name())
+                        .requestMatchers("/api/profile/**").hasAuthority(UserRole.USER.name())
                         .requestMatchers(
                                 "/api/users/**",
                                 "/api/users/me",
@@ -184,15 +183,15 @@ public class SecurityConfig {
         }
 
         @Override
-        public java.util.Enumeration<String> getHeaders(String name) {
+        public Enumeration<String> getHeaders(String name) {
             if ("Authorization".equalsIgnoreCase(name)) {
-                return Collections.enumeration(Arrays.asList(authHeader));
+                return Collections.enumeration(List.of(authHeader));
             }
             return super.getHeaders(name);
         }
 
         @Override
-        public java.util.Enumeration<String> getHeaderNames() {
+        public Enumeration<String> getHeaderNames() {
             List<String> names = Collections.list(super.getHeaderNames());
             names.add("Authorization");
             return Collections.enumeration(names);
@@ -201,29 +200,72 @@ public class SecurityConfig {
 
     @Bean
     public RSAPublicKey publicKey() throws Exception {
-        try (InputStream is = publicKeyPath.getInputStream()) {
-            String pem = new String(is.readAllBytes(), StandardCharsets.UTF_8)
-                    .replace("-----BEGIN PUBLIC KEY-----", "")
-                    .replace("-----END PUBLIC KEY-----", "")
-                    .replaceAll("\\s", "");
-            byte[] bytes = Base64.getDecoder().decode(pem);
-            X509EncodedKeySpec spec = new X509EncodedKeySpec(bytes);
-            return (RSAPublicKey) KeyFactory.getInstance("RSA").generatePublic(spec);
+        if (publicKeyBase64 != null && !publicKeyBase64.isBlank()) {
+            // ✅ Fix: thay \n trong ENV thành newline thật
+            String key = publicKeyBase64.trim().replace("\\n", "\n");
+
+            if (key.contains("BEGIN PUBLIC KEY")) {
+                // Trường hợp PEM đầy đủ
+                String pem = key
+                        .replace("-----BEGIN PUBLIC KEY-----", "")
+                        .replace("-----END PUBLIC KEY-----", "")
+                        .replaceAll("\\s", "");
+                byte[] decoded = Base64.getDecoder().decode(pem);
+                X509EncodedKeySpec spec = new X509EncodedKeySpec(decoded);
+                return (RSAPublicKey) KeyFactory.getInstance("RSA").generatePublic(spec);
+            } else {
+                // Trường hợp DER base64
+                byte[] decoded = Base64.getDecoder().decode(key);
+                X509EncodedKeySpec spec = new X509EncodedKeySpec(decoded);
+                return (RSAPublicKey) KeyFactory.getInstance("RSA").generatePublic(spec);
+            }
+        } else if (publicKeyPath != null && publicKeyPath.exists()) {
+            try (InputStream is = publicKeyPath.getInputStream()) {
+                String pem = new String(is.readAllBytes(), StandardCharsets.UTF_8)
+                        .replace("-----BEGIN PUBLIC KEY-----", "")
+                        .replace("-----END PUBLIC KEY-----", "")
+                        .replaceAll("\\s", "");
+                byte[] decoded = Base64.getDecoder().decode(pem);
+                return (RSAPublicKey) KeyFactory.getInstance("RSA")
+                        .generatePublic(new X509EncodedKeySpec(decoded));
+            }
         }
+        throw new IllegalStateException("No public key configured!");
     }
 
     @Bean
     public RSAPrivateKey privateKey() throws Exception {
-        try (InputStream is = privateKeyPath.getInputStream()) {
-            String pem = new String(is.readAllBytes(), StandardCharsets.UTF_8)
-                    .replace("-----BEGIN PRIVATE KEY-----", "")
-                    .replace("-----END PRIVATE KEY-----", "")
-                    .replaceAll("\\s", "");
-            byte[] bytes = Base64.getDecoder().decode(pem);
-            PKCS8EncodedKeySpec spec = new PKCS8EncodedKeySpec(bytes);
-            return (RSAPrivateKey) KeyFactory.getInstance("RSA").generatePrivate(spec);
+        if (privateKeyBase64 != null && !privateKeyBase64.isBlank()) {
+            // ✅ Fix: thay \n trong ENV thành newline thật
+            String key = privateKeyBase64.trim().replace("\\n", "\n");
+
+            if (key.contains("BEGIN PRIVATE KEY")) {
+                String pem = key
+                        .replace("-----BEGIN PRIVATE KEY-----", "")
+                        .replace("-----END PRIVATE KEY-----", "")
+                        .replaceAll("\\s", "");
+                byte[] decoded = Base64.getDecoder().decode(pem);
+                PKCS8EncodedKeySpec spec = new PKCS8EncodedKeySpec(decoded);
+                return (RSAPrivateKey) KeyFactory.getInstance("RSA").generatePrivate(spec);
+            } else {
+                byte[] decoded = Base64.getDecoder().decode(key);
+                PKCS8EncodedKeySpec spec = new PKCS8EncodedKeySpec(decoded);
+                return (RSAPrivateKey) KeyFactory.getInstance("RSA").generatePrivate(spec);
+            }
+        } else if (privateKeyPath != null && privateKeyPath.exists()) {
+            try (InputStream is = privateKeyPath.getInputStream()) {
+                String pem = new String(is.readAllBytes(), StandardCharsets.UTF_8)
+                        .replace("-----BEGIN PRIVATE KEY-----", "")
+                        .replace("-----END PRIVATE KEY-----", "")
+                        .replaceAll("\\s", "");
+                byte[] decoded = Base64.getDecoder().decode(pem);
+                return (RSAPrivateKey) KeyFactory.getInstance("RSA")
+                        .generatePrivate(new PKCS8EncodedKeySpec(decoded));
+            }
         }
+        throw new IllegalStateException("No private key configured!");
     }
+
 
     @Bean
     public JwtDecoder jwtDecoder(RSAPublicKey publicKey) {
@@ -232,9 +274,7 @@ public class SecurityConfig {
 
     @Bean
     public JwtEncoder jwtEncoder(RSAPublicKey publicKey, RSAPrivateKey privateKey) {
-        JWK jwk = new RSAKey.Builder(publicKey)
-                .privateKey(privateKey)
-                .build();
+        JWK jwk = new RSAKey.Builder(publicKey).privateKey(privateKey).build();
         JWKSource<SecurityContext> jwkSrc = new ImmutableJWKSet<>(new JWKSet(jwk));
         return new NimbusJwtEncoder(jwkSrc);
     }
@@ -270,14 +310,12 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration cfg = new CorsConfiguration();
-
         if (!originsCsv.isBlank()) {
             cfg.setAllowedOriginPatterns(Arrays.stream(originsCsv.split(","))
                     .map(String::trim).toList());
         } else {
             cfg.setAllowedOriginPatterns(List.of("http://localhost:*", "https://*.vercel.app"));
         }
-
         cfg.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         cfg.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"));
         cfg.setExposedHeaders(List.of("Authorization"));
