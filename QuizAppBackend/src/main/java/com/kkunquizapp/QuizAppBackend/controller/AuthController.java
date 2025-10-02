@@ -31,10 +31,10 @@ public class AuthController {
     private void writeCookie(HttpServletResponse resp, String name, String value, int maxAgeSeconds, boolean httpOnly) {
         ResponseCookie cookie = ResponseCookie.from(name, value == null ? "" : value)
                 .httpOnly(httpOnly)
-                .secure(false)                 // TODO: prod => true (HTTPS)
+                .secure(true)                    // 🔑 BẮT BUỘC khi SameSite=None
                 .path("/")
                 .maxAge(Duration.ofSeconds(Math.max(0, maxAgeSeconds)))
-                .sameSite("Lax")               // nếu SPA khác domain -> dùng "None" + secure=true
+                .sameSite("None")                // 🔑 Cho phép cross-site (FE khác domain)
                 .build();
         resp.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
     }
@@ -49,7 +49,7 @@ public class AuthController {
             writeCookie(response, "accessToken", tokens.get("accessToken"), 60 * 60, true);
             writeCookie(response, "refreshToken", tokens.get("refreshToken"), 7 * 24 * 60 * 60, true);
 
-            return ResponseEntity.ok(userResponse); // FE nhận đúng DTO từ DB
+            return ResponseEntity.ok(userResponse);
         } catch (InvalidRequestException | DuplicateEntityException e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body(new ErrorResponse(LocalDateTime.now(), "Registration failed", e.getMessage()));
@@ -68,7 +68,6 @@ public class AuthController {
             writeCookie(response, "accessToken", (String) authResult.get("accessToken"), 60 * 60, true);
             writeCookie(response, "refreshToken", (String) authResult.get("refreshToken"), 7 * 24 * 60 * 60, true);
 
-            // FE của bạn hiện đang đọc response.userData.*, nên trả cả map như cũ
             return ResponseEntity.ok(authResult);
         } catch (InvalidRequestException | IllegalArgumentException e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
@@ -79,6 +78,7 @@ public class AuthController {
         }
     }
 
+    // ================= Google login =================
     @PostMapping(value = "/google", consumes = "application/json")
     public ResponseEntity<?> googleLogin(@RequestBody Map<String, String> request, HttpServletResponse response) {
         try {
@@ -93,11 +93,7 @@ public class AuthController {
             writeCookie(response, "accessToken", (String) authResult.get("accessToken"), 60 * 60, true);
             writeCookie(response, "refreshToken", (String) authResult.get("refreshToken"), 7 * 24 * 60 * 60, true);
 
-            // Trả đúng dữ liệu DB cho FE:
-//            return ResponseEntity.ok(authResult.get("userData"));
-
-            // Hoặc nếu FE muốn giống /login (có cả accessToken/refreshToken trong body)
-             return ResponseEntity.ok(authResult);
+            return ResponseEntity.ok(authResult);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body(new ErrorResponse(LocalDateTime.now(), "Google login failed", e.getMessage()));
@@ -106,7 +102,6 @@ public class AuthController {
                     .body(new ErrorResponse(LocalDateTime.now(), "Error with Google login", e.getMessage()));
         }
     }
-
 
     // ================= Refresh access token =================
     @PostMapping("/refresh-token")
@@ -132,7 +127,6 @@ public class AuthController {
     // ================= Logout =================
     @PostMapping("/logout")
     public ResponseEntity<?> logout(HttpServletResponse response) {
-        // Xoá cookie bằng cách set Max-Age=0
         writeCookie(response, "accessToken", null, 0, true);
         writeCookie(response, "refreshToken", null, 0, true);
         return ResponseEntity.ok(Map.of("message", "Logged out successfully"));
