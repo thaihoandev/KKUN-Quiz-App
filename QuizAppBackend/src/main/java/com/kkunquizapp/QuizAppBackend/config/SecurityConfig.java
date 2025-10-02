@@ -30,6 +30,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.oauth2.jwt.*;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.AccessDeniedHandlerImpl;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
@@ -61,6 +62,9 @@ public class SecurityConfig {
 
     @Value("${jwt.private-key-path}")
     private Resource privateKeyPath;
+
+    @Value("${app.cors.allowed-origins:}")
+    private String originsCsv;
 
     private final UserDetailsService userDetailsService;
 
@@ -116,18 +120,12 @@ public class SecurityConfig {
                         .loginPage("/oauth2/authorization/google")
                         .defaultSuccessUrl("/api/auth/login-success", true)
                 )
-                .oauth2ResourceServer(rs -> rs
-                        .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter()))
-                )
-                .addFilterBefore(new CookieJwtFilter(),
-                        AbstractPreAuthenticatedProcessingFilter.class);
+                .oauth2ResourceServer(rs -> rs.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())))
+                .addFilterBefore(new CookieJwtFilter(), BearerTokenAuthenticationFilter.class);
 
         return http.build();
     }
 
-    /**
-     * Filter để lấy accessToken từ cookie và gắn vào header Authorization
-     */
     public static class CookieJwtFilter extends AbstractPreAuthenticatedProcessingFilter {
         @Override
         public void doFilter(jakarta.servlet.ServletRequest request, jakarta.servlet.ServletResponse response, FilterChain filterChain)
@@ -135,7 +133,6 @@ public class SecurityConfig {
             HttpServletRequest httpRequest = (HttpServletRequest) request;
             HttpServletResponse httpResponse = (HttpServletResponse) response;
 
-            // Bỏ qua bộ lọc cho /ws/**
             if (httpRequest.getRequestURI().startsWith("/ws/")) {
                 filterChain.doFilter(request, response);
                 return;
@@ -170,9 +167,6 @@ public class SecurityConfig {
         }
     }
 
-    /**
-     * Wrapper để trả về header Authorization từ cookie
-     */
     private static class AuthHeaderRequestWrapper extends HttpServletRequestWrapper {
         private final String authHeader;
 
@@ -276,11 +270,20 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration cfg = new CorsConfiguration();
-        cfg.setAllowedOrigins(List.of("http://localhost:3000"));
-        cfg.setAllowedMethods(List.of("GET","POST","PUT","PATCH","DELETE","OPTIONS"));
-        cfg.setAllowedHeaders(List.of("*"));
+
+        if (!originsCsv.isBlank()) {
+            cfg.setAllowedOriginPatterns(Arrays.stream(originsCsv.split(","))
+                    .map(String::trim).toList());
+        } else {
+            cfg.setAllowedOriginPatterns(List.of("http://localhost:*", "https://*.vercel.app"));
+        }
+
+        cfg.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+        cfg.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"));
         cfg.setExposedHeaders(List.of("Authorization"));
         cfg.setAllowCredentials(true);
+        cfg.setMaxAge(3600L);
+
         UrlBasedCorsConfigurationSource src = new UrlBasedCorsConfigurationSource();
         src.registerCorsConfiguration("/**", cfg);
         return src;
