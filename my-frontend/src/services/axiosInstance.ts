@@ -73,7 +73,7 @@ axiosInstance.interceptors.response.use(
     const isRefreshCall = originalRequest.url?.endsWith("/auth/refresh-token");
 
     // Lấy cookie refresh-token
-    const hasRefreshCookie = Boolean(Cookies.get("refresh-token"));
+    const hasRefreshCookie = Boolean(Cookies.get("refreshToken"));
 
     // Chỉ thử refresh nếu:
     // - Lần đầu gặp 401
@@ -87,14 +87,14 @@ axiosInstance.interceptors.response.use(
         return axiosInstance(originalRequest);
       } else {
         useAuthStore.getState().logout();
-        window.location.replace("/login");
+        // window.location.replace("/login");
       }
     }
 
     // Nếu không còn cookie refresh-token, logout luôn
     if (is401 && !isRefreshCall && !hasRefreshCookie) {
       useAuthStore.getState().logout();
-      window.location.replace("/login");
+      // window.location.replace("/login");
       return; // ngăn axios tiếp tục retry
     }
 

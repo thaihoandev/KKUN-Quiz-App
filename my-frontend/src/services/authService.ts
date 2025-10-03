@@ -11,6 +11,7 @@ export const loginApi = async (username: string, password: string) => {
             username,
             password,
         });
+        console.log("Login response:", response);
         
         return response.data;
     } catch (error) {
