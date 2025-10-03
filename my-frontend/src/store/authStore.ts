@@ -1,9 +1,8 @@
 // src/store/authStore.ts
 import { create } from "zustand";
-import { persist, createJSONStorage, StateStorage } from "zustand/middleware";
+import { persist, createJSONStorage } from "zustand/middleware";
 import { loginApi, loginGoogleApi, registerApi } from "@/services/authService";
 import axios from "axios";
-import Cookies from "js-cookie";
 import { TokenResponse } from "@react-oauth/google";
 import { handleApiError } from "@/utils/apiErrorHandler";
 import axiosInstance from "@/services/axiosInstance";
@@ -41,16 +40,8 @@ interface AuthState {
   register: (name: string, username: string, email: string, password: string) => Promise<void>;
   loginWithGoogle: (tokenResponse: TokenResponse) => Promise<void>;
   refreshAccessToken: () => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
 }
-
-const cookieStorage: StateStorage = {
-  getItem: (name) => Cookies.get(name) || null,
-  setItem: (name, value) => {
-    Cookies.set(name, value, { expires: 7, secure: false, sameSite: "Strict", path: "/" });
-  },
-  removeItem: (name) => Cookies.remove(name, { path: "/" }),
-};
 
 const mapMeDtoToUser = (dto: any): User => ({
   userId: dto.userId,
@@ -89,44 +80,40 @@ export const useAuthStore = create<AuthState>()(
           return { user: patched };
         }),
 
-      // authStore.ts
-        refreshMe: async () => {
+      refreshMe: async () => {
         const { inFlightMe } = get();
         if (inFlightMe) return inFlightMe; // dedupe
 
         const p = (async () => {
-            set({ isFetchingMe: true });
-            try {
-            // ❌ Bỏ pre-emptive refresh-token ở đây
-            // Gọi thẳng /users/me, interceptor sẽ lo 401 -> refresh 1 lần
+          set({ isFetchingMe: true });
+          try {
             const headers: Record<string, string> = {};
             const etag = get().etag;
             if (etag) headers["If-None-Match"] = etag;
 
             const resp = await axiosInstance.get("/users/me", {
-                headers,
-                validateStatus: (s) => s === 200 || s === 304 || s === 401
+              headers,
+              validateStatus: (s) => s === 200 || s === 304 || s === 401
             });
 
             if (resp.status === 200) {
-                const mapped = mapMeDtoToUser(resp.data);
-                const newEtag = resp.headers?.etag || resp.headers?.ETag || null;
-                set({ user: mapped, lastFetchedAt: Date.now(), etag: newEtag });
+              const mapped = mapMeDtoToUser(resp.data);
+              const newEtag = resp.headers?.etag || resp.headers?.ETag || null;
+              set({ user: mapped, lastFetchedAt: Date.now(), etag: newEtag });
             } else if (resp.status === 304) {
-                set({ lastFetchedAt: Date.now() });
+              set({ lastFetchedAt: Date.now() });
             } else if (resp.status === 401) {
-                // Không có phiên đăng nhập → đánh dấu đã fetch để tránh spam
-                set({ lastFetchedAt: Date.now() });
+              // Không có phiên đăng nhập → đánh dấu đã fetch để tránh spam
+              set({ lastFetchedAt: Date.now() });
             }
-            } finally {
+          } finally {
             set({ isFetchingMe: false, inFlightMe: null });
-            }
+          }
         })();
 
         set({ inFlightMe: p });
         return p;
-        },
-
+      },
 
       refreshMeIfStale: async () => {
         const { lastFetchedAt, staleTime, user } = get();
@@ -233,21 +220,26 @@ export const useAuthStore = create<AuthState>()(
           console.warn("Logout API failed:", e);
         }
 
+        // Clear state
         set({ user: null, lastFetchedAt: null, etag: null, inFlightMe: null });
 
-        Cookies.remove("auth-storage", { path: "/" });
-        Cookies.remove("access-token", { path: "/" });
-        Cookies.remove("refresh-token", { path: "/" });
+        // Clear localStorage (persist storage)
+        localStorage.removeItem("auth-storage");
+        
+        // Clear any leftover tokens (nếu có)
         localStorage.removeItem("access-token");
         localStorage.removeItem("refresh-token");
+        
+        // Clear axios default headers
         delete axios.defaults.headers.common["Authorization"];
       },
     }),
     {
       name: "auth-storage",
-      storage: createJSONStorage(() => cookieStorage),
+      storage: createJSONStorage(() => localStorage), // ✅ Dùng localStorage thay vì cookieStorage
     }
   )
 );
 
+// ✅ Enable credentials cho tất cả axios requests
 axios.defaults.withCredentials = true;
