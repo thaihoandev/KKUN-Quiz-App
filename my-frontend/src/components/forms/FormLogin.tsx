@@ -117,7 +117,11 @@ const FormLogin: React.FC = () => {
             disabled={loading}
           >
             {loading ? (
-              <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+              <span
+                className="spinner-border spinner-border-sm"
+                role="status"
+                aria-hidden="true"
+              ></span>
             ) : (
               "Sign in"
             )}
@@ -137,6 +141,7 @@ const FormLogin: React.FC = () => {
 
         <div className="d-flex justify-content-center">
           <button
+            type="button" // ✅ tránh reload
             onClick={() => googleLogin()}
             className="btn btn-outline-primary btn-lg d-flex align-items-center"
           >
