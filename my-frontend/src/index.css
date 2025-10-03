@@ -1,0 +1,182 @@
+/* Customizing basic HTML elements with Bootstrap-inspired styles */
+
+/* Reset default margins and paddings for consistency */
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--bs-font-sans-serif);
+  font-size: var(--bs-body-font-size);
+  font-weight: var(--bs-body-font-weight);
+  line-height: var(--bs-body-line-height);
+  color: var(--bs-body-color);
+  background-color: var(--bs-body-bg);
+}
+
+/* Headings */
+h1, h2, h3, h4, h5, h6 {
+  color: var(--bs-heading-color);
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+/* Specific heading sizes */
+h1 {
+  font-size: calc(var(--bs-body-font-size) * 2.5);
+}
+h2 {
+  font-size: calc(var(--bs-body-font-size) * 2);
+}
+h3 {
+  font-size: calc(var(--bs-body-font-size) * 1.75);
+}
+h4 {
+  font-size: calc(var(--bs-body-font-size) * 1.5);
+}
+h5 {
+  font-size: calc(var(--bs-body-font-size) * 1.25);
+}
+h6 {
+  font-size: var(--bs-body-font-size);
+}
+
+/* Paragraphs */
+p {
+  margin-bottom: 1rem;
+  color: var(--bs-body-color);
+}
+
+/* Links */
+a {
+  color: var(--bs-link-color);
+  text-decoration: none;
+  transition: color 0.2s ease-in-out;
+}
+
+a:hover {
+  color: var(--bs-link-hover-color);
+  text-decoration: none;
+}
+
+/* Buttons */
+button, input[type="button"], input[type="submit"] {
+  display: inline-block;
+  padding: 0.5rem 1rem;
+  font-size: var(--bs-body-font-size);
+  font-weight: 500;
+  line-height: 1.5;
+  text-align: center;
+  text-decoration: none;
+  vertical-align: middle;
+  cursor: pointer;
+  border: var(--bs-border-width) var(--bs-border-style) var(--bs-border-color);
+  border-radius: var(--bs-border-radius);
+  background-color: var(--bs-primary);
+  color: var(--bs-white);
+  transition: background-color 0.2s ease-in-out, border-color 0.2s ease-in-out, color 0.2s ease-in-out;
+}
+
+button:hover, input[type="button"]:hover, input[type="submit"]:hover {
+  background-color: var(--bs-primary-text-emphasis);
+  border-color: var(--bs-primary-border-subtle);
+}
+
+/* Inputs and form elements */
+input, textarea, select {
+  display: block;
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  font-size: var(--bs-body-font-size);
+  line-height: 1.5;
+  color: var(--bs-body-color);
+  background-color: var(--bs-white);
+  border: var(--bs-border-width) var(--bs-border-style) var(--bs-border-color);
+  border-radius: var(--bs-border-radius);
+  transition: border-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+}
+
+input:focus, textarea:focus, select:focus {
+  outline: 0;
+  border-color: var(--bs-primary);
+  box-shadow: 0 0 0 var(--bs-focus-ring-width) var(--bs-focus-ring-color);
+}
+
+/* Lists */
+ul, ol {
+  margin-bottom: 1rem;
+  padding-left: 2rem;
+}
+
+li {
+  margin-bottom: 0.25rem;
+}
+
+/* Blockquotes */
+blockquote {
+  margin: 1rem 0;
+  padding: 1rem;
+  border-left: 4px solid var(--bs-primary);
+  background-color: var(--bs-primary-bg-subtle);
+  border-radius: var(--bs-border-radius);
+}
+
+/* Code */
+code {
+  font-family: var(--bs-font-monospace);
+  color: var(--bs-code-color);
+  background-color: var(--bs-highlight-bg);
+  padding: 0.2rem 0.4rem;
+  border-radius: var(--bs-border-radius-sm);
+}
+
+/* Images */
+img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--bs-border-radius);
+}
+
+/* Tables */
+table {
+  width: 100%;
+  margin-bottom: 1rem;
+  border-collapse: collapse;
+  background-color: var(--bs-white);
+}
+
+th, td {
+  padding: 0.75rem;
+  border: var(--bs-border-width) var(--bs-border-style) var(--bs-border-color);
+}
+
+th {
+  font-weight: 600;
+  background-color: var(--bs-light-bg-subtle);
+  color: var(--bs-heading-color);
+}
+
+/* Dark theme overrides */
+[data-bs-theme="dark"] {
+  /* Adjust text and background colors for dark theme */
+  h1, h2, h3, h4, h5, h6 {
+    color: var(--bs-heading-color);
+  }
+
+  p {
+    color: var(--bs-body-color);
+  }
+
+  input, textarea, select {
+    background-color: var(--bs-dark-bg-subtle);
+    color: var(--bs-body-color);
+    border-color: var(--bs-border-color);
+  }
+
+  table {
+    background-color: var(--bs-dark-bg-subtle);
+  }
+
+  th {
+    background-color: var(--bs-dark);
+    color: var(--bs-emphasis-color);
+  }
+}

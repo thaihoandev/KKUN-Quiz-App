@@ -8,7 +8,6 @@ import { useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useGoogleLogin } from "@react-oauth/google";
 
-// Define form data interface
 interface LoginFormData {
   username: string;
   password: string;
@@ -17,8 +16,8 @@ interface LoginFormData {
 
 const FormLogin: React.FC = () => {
   const navigate = useNavigate();
-  const [loading, setLoading] = useState<boolean>(false);
-  const [errorMessage, setErrorMessage] = useState<string>("");
+  const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
 
   const { login, loginWithGoogle } = useAuth();
 
@@ -27,7 +26,7 @@ const FormLogin: React.FC = () => {
     handleSubmit,
     formState: { errors },
   } = useForm<LoginFormData>({
-    resolver: yupResolver<LoginFormData, any, LoginFormData>(loginSchema),
+    resolver: yupResolver(loginSchema),
   });
 
   const onSubmit: SubmitHandler<LoginFormData> = async (data) => {
@@ -46,11 +45,11 @@ const FormLogin: React.FC = () => {
   };
 
   const googleLogin = useGoogleLogin({
-    onSuccess: async (tokenResponse: any) => {
+    onSuccess: async (tokenResponse) => {
       try {
         await loginWithGoogle(tokenResponse);
         navigate("/");
-      } catch (error: unknown) {
+      } catch (error) {
         console.error("Google Login Failed:", error);
       }
     },
@@ -58,10 +57,10 @@ const FormLogin: React.FC = () => {
   });
 
   return (
-    <div className="col-12 col-lg-5 col-xl-4 d-flex align-items-center p-sm-5 p-4">
-      <div className="card shadow-lg w-100 mx-auto p-4">
-        <h4 className="mb-2 text-center fw-bold">Welcome to KKUN QUIZ! 👋</h4>
-        <p className="mb-4 text-center text-muted">
+    <div className="card shadow-lg p-4 border-0">
+      <div className="card-body">
+        <h3 className="text-center mb-3 fw-bold">Welcome to KKUN QUIZ! 👋</h3>
+        <p className="text-center text-muted mb-4">
           Please sign in to start your adventure
         </p>
 
@@ -71,11 +70,7 @@ const FormLogin: React.FC = () => {
           </div>
         )}
 
-        <form
-          id="formAuthentication"
-          className="mb-4"
-          onSubmit={handleSubmit(onSubmit)}
-        >
+        <form id="formAuthentication" className="mb-4" onSubmit={handleSubmit(onSubmit)}>
           <InputField
             label="Email or Username"
             id="username"
@@ -89,7 +84,7 @@ const FormLogin: React.FC = () => {
             label="Password"
             id="password"
             name="password"
-            placeholder="••••••••••"
+            placeholder="••••••••"
             register={register}
             error={errors.password?.message}
           />
@@ -113,12 +108,12 @@ const FormLogin: React.FC = () => {
 
           <button
             type="submit"
-            className="btn btn-primary btn-lg d-grid w-100 mb-3"
+            className="btn btn-primary btn-lg w-100 mb-3"
             disabled={loading}
           >
             {loading ? (
               <span
-                className="spinner-border spinner-border-sm"
+                className="spinner-border spinner-border-sm me-2"
                 role="status"
                 aria-hidden="true"
               ></span>
@@ -135,18 +130,19 @@ const FormLogin: React.FC = () => {
           </Link>
         </p>
 
-        <div className="divider mb-4">
-          <div className="divider-text text-muted">or</div>
+        <div className="d-flex align-items-center mb-4">
+          <hr className="flex-grow-1" />
+          <span className="mx-2 text-muted">or</span>
+          <hr className="flex-grow-1" />
         </div>
 
         <div className="d-flex justify-content-center">
           <button
-            type="button" // ✅ tránh reload
+            type="button"
             onClick={() => googleLogin()}
             className="btn btn-outline-primary btn-lg d-flex align-items-center"
           >
-            <i className="bx bxl-google me-2"></i>
-            Sign in with Google
+            <i className="bx bxl-google"></i>
           </button>
         </div>
       </div>
