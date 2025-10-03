@@ -21,7 +21,7 @@ const InputField: React.FC<InputFieldProps> = ({
     error,
 }) => {
     return (
-        <div className="mb-3 form-control-validation position-relative pb-5">
+        <div className="mb-3 form-control-validation position-relative pb-3">
             <label htmlFor={id} className="form-label fw-bold">
                 {label}
             </label>

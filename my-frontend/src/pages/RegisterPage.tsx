@@ -1,30 +1,27 @@
-import FormRegister from "@/components/forms/FormRegister";
 import React from "react";
+import FormRegister from "@/components/forms/FormRegister";
+import backgroundImage from "@/assets/img/backgrounds/window_people.jpg";
 
-import backgroundImage from "@/assets/img/illustrations/girl-with-laptop-light.png";
-const RegisterPage = () => {
-    return (
-        <>
-            <div className="authentication-inner row m-0">
-                {/* <!-- /Left Text --> */}
-                <div className="d-none d-lg-flex col-lg-7 col-xl-8 align-items-center p-5">
-                    <div className="w-100 d-flex justify-content-center">
-                        <img
-                            src={backgroundImage}
-                            className="img-fluid scaleX-n1-rtl"
-                            alt="Login image"
-                            width="700"
-                            data-app-dark-img="illustrations/girl-with-laptop-dark.png"
-                            data-app-light-img="illustrations/girl-with-laptop-light.png"
-                        />
-                    </div>
-                </div>
-                {/* <!-- /Left Text --> */}
+const RegisterPage: React.FC = () => {
+  return (
+    <div className="row ">
+      {/* Left Section */}
+      <div className="d-none d-lg-flex col-lg-6 align-items-center justify-content-center position-relative p-0">
+        <img
+          src={backgroundImage}
+          className="w-100 h-75 object-fit-cover"
+          alt="Register illustration"
+          loading="lazy"
+        />
+        <div className="image-overlay"></div>
+      </div>
 
-                <FormRegister />
-            </div>
-        </>
-    );
+      {/* Right Section */}
+      <div className="col-12 col-lg-6 d-flex align-items-center justify-content-center p-4 bg-light">
+        <FormRegister />
+      </div>
+    </div>
+  );
 };
 
 export default RegisterPage;

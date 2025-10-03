@@ -1,4 +1,4 @@
-import { useForm, SubmitHandler, UseFormRegister } from "react-hook-form";
+import { useForm, SubmitHandler } from "react-hook-form";
 import { yupResolver } from "@hookform/resolvers/yup";
 import { registerSchema } from "@/schemas/authSchema";
 import TextInput from "@/components/formFields/InputField";
@@ -18,8 +18,8 @@ interface RegisterFormData {
 
 const FormRegister: React.FC = () => {
   const navigate = useNavigate();
-  const [loading, setLoading] = useState<boolean>(false);
-  const [errorMessage, setErrorMessage] = useState<string>("");
+  const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
 
   const { register: registerUser, loginWithGoogle } = useAuth();
 
@@ -28,7 +28,7 @@ const FormRegister: React.FC = () => {
     handleSubmit,
     formState: { errors },
   } = useForm<RegisterFormData>({
-    resolver: yupResolver<RegisterFormData, any, RegisterFormData>(registerSchema),
+    resolver: yupResolver(registerSchema),
   });
 
   const onSubmit: SubmitHandler<RegisterFormData> = async (data) => {
@@ -59,114 +59,109 @@ const FormRegister: React.FC = () => {
   });
 
   return (
-    <div className="col-12 col-lg-5 col-xl-4 d-flex align-items-center p-sm-5 p-4">
-      <div className="card shadow-lg w-100 mx-auto p-4">
-        <h4 className="mb-2 text-center fw-bold">Adventure starts here 🚀</h4>
-        <p className="mb-4 text-center text-muted">
-          Make your app management easy and fun!
-        </p>
+    <div className="card shadow-lg w-100 mx-auto p-4 border-0" style={{ maxWidth: "420px" }}>
+      <h4 className="mb-2 text-center fw-bold">Adventure starts here 🚀</h4>
+      <p className="mb-4 text-center text-muted">
+        Make your app management easy and fun!
+      </p>
 
-        {errorMessage && (
-          <div className="alert alert-danger" role="alert">
-            {errorMessage}
+      {errorMessage && (
+        <div className="alert alert-danger" role="alert">
+          {errorMessage}
+        </div>
+      )}
+
+      <form id="formAuthentication" className="mb-4" onSubmit={handleSubmit(onSubmit)}>
+        <TextInput
+          label="Full name"
+          id="name"
+          name="name"
+          placeholder="Enter your full name"
+          register={register}
+          error={errors.name?.message}
+        />
+
+        <TextInput
+          label="Username"
+          id="username"
+          name="username"
+          placeholder="Enter your username"
+          register={register}
+          error={errors.username?.message}
+        />
+
+        <TextInput
+          label="Email"
+          id="email"
+          name="email"
+          type="email"
+          placeholder="Enter your email"
+          register={register}
+          error={errors.email?.message}
+        />
+
+        <PasswordInput
+          label="Password"
+          id="password"
+          name="password"
+          placeholder="••••••••"
+          register={register}
+          error={errors.password?.message}
+        />
+
+        <div className="mb-4">
+          <div className="form-check">
+            <input
+              className="form-check-input"
+              type="checkbox"
+              id="terms-conditions"
+              {...register("terms")}
+            />
+            <label className="form-check-label" htmlFor="terms-conditions">
+              I agree to{" "}
+              <Link to="#" className="text-primary">
+                privacy policy & terms
+              </Link>
+            </label>
           </div>
-        )}
+          {errors.terms?.message && (
+            <div className="invalid-feedback d-block">{errors.terms.message}</div>
+          )}
+        </div>
 
-        <form
-          id="formAuthentication"
-          className="mb-4"
-          onSubmit={handleSubmit(onSubmit)}
+        <button
+          type="submit"
+          className="btn btn-primary btn-lg w-100 mb-3"
+          disabled={loading}
         >
-          <TextInput
-            label="Full name"
-            id="name"
-            name="name"
-            placeholder="Enter your full name"
-            register={register}
-            error={errors.name?.message}
-          />
+          {loading ? (
+            <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+          ) : (
+            "Sign up"
+          )}
+        </button>
+      </form>
 
-          <TextInput
-            label="Username"
-            id="username"
-            name="username"
-            placeholder="Enter your username"
-            register={register}
-            error={errors.username?.message}
-          />
+      <p className="text-center mb-4">
+        <span className="text-muted">Already have an account? </span>
+        <Link to="/login" className="text-primary">
+          Sign in instead
+        </Link>
+      </p>
 
-          <TextInput
-            label="Email"
-            id="email"
-            name="email"
-            type="email"
-            placeholder="Enter your email"
-            register={register}
-            error={errors.email?.message}
-          />
+      <div className="d-flex align-items-center mb-4">
+        <hr className="flex-grow-1" />
+        <span className="mx-2 text-muted">or</span>
+        <hr className="flex-grow-1" />
+      </div>
 
-          <PasswordInput
-            label="Password"
-            id="password"
-            name="password"
-            placeholder="••••••••••"
-            register={register}
-            error={errors.password?.message}
-          />
-
-          <div className="mb-4">
-            <div className="form-check">
-              <input
-                className="form-check-input"
-                type="checkbox"
-                id="terms-conditions"
-                {...register("terms")}
-              />
-              <label className="form-check-label" htmlFor="terms-conditions">
-                I agree to{" "}
-                <Link to="#" className="text-primary">
-                  privacy policy & terms
-                </Link>
-              </label>
-            </div>
-            {errors.terms?.message && (
-              <div className="invalid-feedback d-block">{errors.terms.message}</div>
-            )}
-          </div>
-
-          <button
-            type="submit"
-            className="btn btn-primary btn-lg d-grid w-100 mb-3"
-            disabled={loading}
-          >
-            {loading ? (
-              <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-            ) : (
-              "Sign up"
-            )}
-          </button>
-        </form>
-
-        <p className="text-center mb-4">
-          <span className="text-muted">Already have an account? </span>
-          <Link to="/login" className="text-primary">
-            Sign in instead
-          </Link>
-        </p>
-
-        <div className="divider mb-4">
-          <div className="divider-text text-muted">or</div>
-        </div>
-
-        <div className="d-flex justify-content-center">
-          <button
-            onClick={() => googleLogin()}
-            className="btn btn-outline-primary btn-lg d-flex align-items-center"
-          >
-            <i className="bx bxl-google me-2"></i>
-            Sign in with Google
-          </button>
-        </div>
+      <div className="d-flex justify-content-center">
+        <button
+          onClick={() => googleLogin()}
+          className="btn btn-outline-primary btn-lg d-flex align-items-center"
+        >
+          <i className="bx bxl-google"></i>
+        </button>
       </div>
     </div>
   );

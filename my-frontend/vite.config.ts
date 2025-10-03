@@ -15,6 +15,11 @@ export default defineConfig({
     // đọc thẳng alias từ tsconfig.json, khỏi phải khai lại trong vite.config.ts
     tsconfigPaths()
   ],
+  base: "/", // Adjust if deploying to a subpath (e.g., "/my-app/")
+  build: {
+    outDir: "dist",
+    assetsDir: "assets",
+  },
   server: {
     port: 3000,
     open: true
