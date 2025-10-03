@@ -307,18 +307,24 @@ public class SecurityConfig {
         return cfg.getAuthenticationManager();
     }
 
+    @Value("${app.cors.allowed-origins}")
+    private String allowedOrigins;
+
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration cfg = new CorsConfiguration();
-        if (!originsCsv.isBlank()) {
-            cfg.setAllowedOriginPatterns(Arrays.stream(originsCsv.split(","))
-                    .map(String::trim).toList());
-        } else {
-            cfg.setAllowedOriginPatterns(List.of("http://localhost:*", "https://*.vercel.app"));
-        }
+
+        // ✅ Parse từ environment variable
+        List<String> origins = Arrays.stream(allowedOrigins.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .toList();
+
+        cfg.setAllowedOrigins(origins);
+
         cfg.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         cfg.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"));
-        cfg.setExposedHeaders(List.of("Authorization"));
+        cfg.setExposedHeaders(List.of("Set-Cookie"));
         cfg.setAllowCredentials(true);
         cfg.setMaxAge(3600L);
 

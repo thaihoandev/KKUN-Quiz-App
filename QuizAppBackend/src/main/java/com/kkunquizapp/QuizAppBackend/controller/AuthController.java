@@ -31,10 +31,12 @@ public class AuthController {
     private void writeCookie(HttpServletResponse resp, String name, String value, int maxAgeSeconds, boolean httpOnly) {
         ResponseCookie cookie = ResponseCookie.from(name, value == null ? "" : value)
                 .httpOnly(httpOnly)
-                .secure(true)                    // 🔑 BẮT BUỘC khi SameSite=None
+                .secure(true)
                 .path("/")
                 .maxAge(Duration.ofSeconds(Math.max(0, maxAgeSeconds)))
-                .sameSite("None")                // 🔑 Cho phép cross-site (FE khác domain)
+                .sameSite("None")
+                // ✅ KHÔNG set domain (để browser tự động set)
+                // Hoặc set domain chính xác: .onrender.com
                 .build();
         resp.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
     }
