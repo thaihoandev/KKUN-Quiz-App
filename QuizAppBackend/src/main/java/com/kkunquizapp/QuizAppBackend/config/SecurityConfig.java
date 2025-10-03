@@ -310,18 +310,20 @@ public class SecurityConfig {
     @Value("${app.cors.allowed-origins}")
     private String allowedOrigins;
 
+    @Value("${app.cors.allowed-origins:https://kkun-quiz.vercel.app}")
+    private String allowedOriginsCsv;
+
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration cfg = new CorsConfiguration();
 
-        // ✅ Parse từ environment variable
-        List<String> origins = Arrays.stream(allowedOrigins.split(","))
+        // Parse từ environment variable
+        List<String> origins = Arrays.stream(allowedOriginsCsv.split(","))
                 .map(String::trim)
                 .filter(s -> !s.isEmpty())
                 .toList();
 
         cfg.setAllowedOrigins(origins);
-
         cfg.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         cfg.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"));
         cfg.setExposedHeaders(List.of("Set-Cookie"));
