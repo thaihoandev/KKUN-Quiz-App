@@ -21,7 +21,7 @@ import java.time.Duration;
 import java.util.*;
 import java.util.stream.Collectors;
 
-import static com.kkunquizapp.QuizAppBackend.constants.redisKeys.*;
+import static com.kkunquizapp.QuizAppBackend.common.constants.redisKeys.*;
 
 @Service
 @RequiredArgsConstructor
