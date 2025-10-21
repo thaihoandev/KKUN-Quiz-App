@@ -1,4 +1,5 @@
 package com.kkunquizapp.QuizAppBackend.article.service.impl;
+
 import com.kkunquizapp.QuizAppBackend.article.dto.ArticleDto;
 import com.kkunquizapp.QuizAppBackend.article.dto.SeriesDto;
 import com.kkunquizapp.QuizAppBackend.article.mapper.ArticleMapper;
@@ -7,6 +8,8 @@ import com.kkunquizapp.QuizAppBackend.article.repository.*;
 import com.kkunquizapp.QuizAppBackend.article.service.SeriesService;
 import com.kkunquizapp.QuizAppBackend.common.utils.SlugUtil;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -22,9 +25,16 @@ public class SeriesServiceImpl implements SeriesService {
     private final ArticleMapper mapper;
 
     @Override
+    public Page<SeriesDto> getAll(Pageable pageable) {
+        return seriesRepository.findAll(pageable)
+                .map(this::toDtoWithoutArticles);
+    }
+
+    @Override
     public SeriesDto getBySlug(String slug) {
         Series series = seriesRepository.findBySlug(slug)
                 .orElseThrow(() -> new RuntimeException("Series not found"));
+
         List<ArticleSeries> links = articleSeriesRepository.findBySeriesIdOrderByOrderIndex(series.getId());
         List<ArticleDto> articles = links.stream()
                 .map(link -> articleRepository.findById(link.getArticleId()).orElse(null))
@@ -32,12 +42,7 @@ public class SeriesServiceImpl implements SeriesService {
                 .map(mapper::toDto)
                 .collect(Collectors.toList());
 
-        SeriesDto dto = new SeriesDto();
-        dto.setId(series.getId());
-        dto.setTitle(series.getTitle());
-        dto.setSlug(series.getSlug());
-        dto.setDescription(series.getDescription());
-        dto.setThumbnailUrl(series.getThumbnailUrl());
+        SeriesDto dto = toDtoWithoutArticles(series);
         dto.setArticles(articles);
         return dto;
     }
@@ -50,7 +55,11 @@ public class SeriesServiceImpl implements SeriesService {
         s.setDescription(description);
         s.setThumbnailUrl(thumbnailUrl);
         seriesRepository.save(s);
+        return toDtoWithoutArticles(s);
+    }
 
+    // Helper method: convert Series entity → DTO (không kèm danh sách bài viết)
+    private SeriesDto toDtoWithoutArticles(Series s) {
         SeriesDto dto = new SeriesDto();
         dto.setId(s.getId());
         dto.setTitle(s.getTitle());

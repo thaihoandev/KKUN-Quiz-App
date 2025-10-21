@@ -4,6 +4,7 @@ package com.kkunquizapp.QuizAppBackend.article.dto;
 import com.kkunquizapp.QuizAppBackend.article.model.enums.ArticleDifficulty;
 import lombok.Data;
 import java.time.LocalDateTime;
+import java.util.Set;
 import java.util.UUID;
 
 @Data
@@ -18,6 +19,7 @@ public class ArticleDto {
     private ArticleDifficulty difficulty;
     private UUID authorId;
     private boolean published;
+    private Set<TagDto> tags;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

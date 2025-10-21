@@ -17,6 +17,8 @@
     "@react-oauth/google": "^0.12.2",
     "@simonwep/pickr": "^1.9.1",
     "@stomp/stompjs": "^7.1.1",
+    "@uiw/react-markdown-preview": "^5.1.5",
+    "@uiw/react-md-editor": "^4.0.8",
     "antd": "^5.26.6",
     "axios": "^1.10.0",
     "bootstrap": "^5.3.7",

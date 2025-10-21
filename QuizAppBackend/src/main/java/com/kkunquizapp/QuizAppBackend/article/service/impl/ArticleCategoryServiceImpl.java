@@ -10,6 +10,8 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
 @Service
 @RequiredArgsConstructor
@@ -18,11 +20,9 @@ public class ArticleCategoryServiceImpl implements ArticleCategoryService {
     private final ArticleCategoryRepository repository;
 
     @Override
-    public List<ArticleCategoryDto> getAllActive() {
-        return repository.findAll().stream()
-                .filter(ArticleCategory::isActive)
-                .map(this::toDto)
-                .collect(Collectors.toList());
+    public Page<ArticleCategoryDto> getAllActive(Pageable pageable) {
+        return repository.findByActiveTrue(pageable)
+                .map(this::toDto);
     }
 
     @Override
@@ -30,6 +30,7 @@ public class ArticleCategoryServiceImpl implements ArticleCategoryService {
         ArticleCategory category = new ArticleCategory();
         category.setName(name);
         category.setDescription(description);
+        category.setActive(true);
         repository.save(category);
         return toDto(category);
     }

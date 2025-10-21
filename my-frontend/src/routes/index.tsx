@@ -27,6 +27,9 @@ import UserProfilePage from "@/pages/UserProfilePage";
 import HomePostPage from "@/pages/HomePostPage";
 import FriendConnectionsPage from "@/pages/FriendConnectionsPage";
 import ChatPage from "@/pages/ChatPage";
+import ArticlesPage from "@/pages/article/ArticlesPage";
+import ArticleDetailPage from "@/pages/article/ArticleDetailPage";
+import CreateArticlePage from "@/pages/article/CreateArticlePage";
 
 const AppRoutes: React.FC = () => (
   <>
@@ -69,6 +72,10 @@ const AppRoutes: React.FC = () => (
           <Route path="quizzes/:quizId/questions/create" element={<QuestionCreatePage />} />
           <Route path="quizzes/:quizId/questions/:questionId/edit" element={<QuestionEditorPage />} />
           <Route path="chat" element={<ChatPage />} />
+          
+          <Route path="articles" element={<ArticlesPage />} />
+          <Route path="articles/:slug" element={<ArticleDetailPage />} />
+          <Route path="articles/create" element={<CreateArticlePage />} />
           
         </Route>
 
