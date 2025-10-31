@@ -18,8 +18,12 @@ public class ArticleDto {
     private ArticleCategoryDto category;     // 👈 trả về object category
     private ArticleDifficulty difficulty;
     private UUID authorId;
+    private String authorName;
+    private String authorAvatar;
     private boolean published;
     private Set<TagDto> tags;
+    private int readingTime;
+    private long views;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

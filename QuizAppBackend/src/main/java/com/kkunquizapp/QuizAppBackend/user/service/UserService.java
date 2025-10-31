@@ -15,6 +15,8 @@ public interface UserService {
     // ĐỔI: từ List -> Page
     Page<UserResponseDTO> getAllUsers(String token, Pageable pageable);
 
+    UserSummaryDto getPublicById(UUID userId);
+
     UserResponseDTO getUserById(String userId, String token);
 
     void restoreUser(UUID id);

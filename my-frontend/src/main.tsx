@@ -23,7 +23,6 @@ notification.config({
 });
 
 createRoot(document.getElementById('root')!).render(
-  <StrictMode>
     <GoogleOAuthProvider clientId={import.meta.env.VITE_GOOGLE_CLIENT_ID}>
       <ConfigProvider getPopupContainer={() => document.body}>
         <BrowserRouter>
@@ -33,5 +32,4 @@ createRoot(document.getElementById('root')!).render(
         </BrowserRouter>
       </ConfigProvider>
     </GoogleOAuthProvider>
-  </StrictMode>
 );
