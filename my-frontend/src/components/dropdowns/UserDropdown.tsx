@@ -1,108 +1,185 @@
-import React, {useEffect, useState} from "react";
-import {Link, useNavigate} from "react-router-dom";
+import React, { useEffect, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
+import unknownAvatar from "@/assets/img/avatars/unknown.jpg";
 
-import unknownAvatar from "@/assets/img/avatars/unknown.jpg"; // Default avatar image
-const UserDropdown = ({profile}: {profile: any}) => {
-    const navigate = useNavigate();
-    const {user, logout} = useAuth(); // Lấy thông tin user và hàm logout từ Zustand
+const UserDropdown = ({ profile }: { profile: any }) => {
+  const navigate = useNavigate();
+  const { logout } = useAuth();
 
-    const handleLogout = () => {
-        logout(); // Xóa trạng thái user trong Zustand
-        navigate("/login");
+  // === DARK MODE STATE ===
+  const [darkMode, setDarkMode] = useState<boolean>(() => {
+    // 1. Kiểm tra localStorage
+    const saved = localStorage.getItem("theme");
+    if (saved === "dark" || saved === "light") {
+      return saved === "dark";
+    }
+    // 2. Nếu chưa có → theo hệ thống
+    return window.matchMedia("(prefers-color-scheme: dark)").matches;
+  });
+
+  // === ÁP DỤNG THEME ===
+  useEffect(() => {
+    const root = document.documentElement;
+    const body = document.body;
+
+    if (darkMode) {
+      root.classList.add("dark-mode");
+      body.classList.add("dark-mode");
+      localStorage.setItem("theme", "dark");
+    } else {
+      root.classList.remove("dark-mode");
+      body.classList.remove("dark-mode");
+      localStorage.setItem("theme", "light");
+    }
+  }, [darkMode]);
+
+  // === THEO DÕI THAY ĐỔI HỆ THỐNG (nếu người dùng thay đổi OS theme) ===
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    const handleChange = (e: MediaQueryListEvent) => {
+      // Chỉ áp dụng nếu người dùng chưa tự chọn theme
+      if (!localStorage.getItem("theme")) {
+        setDarkMode(e.matches);
+      }
     };
 
-    return (
-        <li className="nav-item navbar-dropdown dropdown-user dropdown">
-            <a
-                className="nav-link dropdown-toggle hide-arrow p-0"
-                href="javascript:void(0);"
-                data-bs-toggle="dropdown"
-            >
-                <div className="avatar avatar-online">
-                    <img
-                        src={
-                            profile?.avatar && profile.avatar.trim() !== ""
-                                ? profile.avatar
-                                : unknownAvatar
-                        }
-                        className="rounded-circle"
-                        alt={profile?.name}
-                    />
-                </div>
-            </a>
-            <ul className="dropdown-menu dropdown-menu-end">
-                <li>
-                    <div className="dropdown-item">
-                        <div className="d-flex">
-                            <div className="flex-shrink-0 me-3">
-                                <div className="avatar avatar-online">
-                                    <img
-                                        src={
-                                            profile?.avatar &&
-                                            profile.avatar.trim() !== ""
-                                                ? profile.avatar
-                                                : unknownAvatar
-                                        }
-                                        className="w-px-40 h-auto rounded-circle"
-                                        alt={profile?.name || "Unknown"}
-                                    />
-                                </div>
-                            </div>
-                            <div className="flex-grow-1">
-                                <h6 className="mb-0">
-                                    {profile?.name || "Guest"}
-                                </h6>{" "}
-                                {/* ✅ Hiển thị username */}
-                                <small className="text-body-secondary">
-                                    {profile?.username}
-                                </small>
-                            </div>
-                        </div>
-                    </div>
-                </li>
-                <li>
-                    <div className="dropdown-divider my-1"></div>
-                </li>
-                <li>
-                    <Link className="dropdown-item" to={`/profile/${profile?.userId}`}>
-                        <i className="icon-base bx bx-user icon-md me-3"></i>
-                        <span>My Profile</span>
-                    </Link>
-                </li>
-                <li>
-                    <Link className="dropdown-item" to="/billing">
-                        <span className="d-flex align-items-center align-middle">
-                            <i className="flex-shrink-0 icon-base bx bx-credit-card icon-md me-3"></i>
-                            <span className="flex-grow-1 align-middle">
-                                Achivement
-                            </span>
-                            <span className="flex-shrink-0 badge rounded-pill bg-danger">
-                                4
-                            </span>
-                        </span>
-                    </Link>
-                </li>
-                <li>
-                    <Link className="dropdown-item" to="/settings">
-                        <i className="icon-base bx bx-cog icon-md me-3"></i>
-                        <span>Settings</span>
-                    </Link>
-                </li>
+    mediaQuery.addEventListener("change", handleChange);
+    return () => mediaQuery.removeEventListener("change", handleChange);
+  }, []);
 
-                <li>
-                    <div className="dropdown-divider my-1"></div>
-                </li>
-                <li>
-                    {/* ✅ Xử lý logout bằng sự kiện onClick */}
-                    <button className="dropdown-item" onClick={handleLogout}>
-                        <i className="icon-base bx bx-power-off icon-md me-3"></i>
-                        <span>Log Out</span>
-                    </button>
-                </li>
-            </ul>
+  const handleLogout = () => {
+    logout();
+    navigate("/login");
+  };
+
+  return (
+    <div className="nav-item navbar-dropdown dropdown-user dropdown">
+      <a
+        className="nav-link dropdown-toggle hide-arrow p-0"
+        href="#"
+        data-bs-toggle="dropdown"
+      >
+        <div className="avatar avatar-online">
+          <img
+            src={
+              profile?.avatar && profile.avatar.trim() !== ""
+                ? profile.avatar
+                : unknownAvatar
+            }
+            className="rounded-circle"
+            alt={profile?.name}
+          />
+        </div>
+      </a>
+
+      <ul
+        className="dropdown-menu dropdown-menu-end shadow-sm border-0 rounded-3 py-2"
+        style={{ minWidth: 240 }}
+      >
+        {/* === USER INFO === */}
+        <li className="px-3 py-2">
+          <div className="d-flex align-items-center">
+            <div className="flex-shrink-0 me-3">
+              <div className="avatar avatar-online">
+                <img
+                  src={
+                    profile?.avatar && profile.avatar.trim() !== ""
+                      ? profile.avatar
+                      : unknownAvatar
+                  }
+                  className="w-px-40 h-auto rounded-circle"
+                  alt={profile?.name || "Unknown"}
+                />
+              </div>
+            </div>
+            <div className="flex-grow-1">
+              <h6 className="mb-0 fw-semibold">{profile?.name || "Guest"}</h6>
+              <small className="text-body-secondary">
+                {profile?.username || "No username"}
+              </small>
+            </div>
+          </div>
         </li>
-    );
+
+        <li>
+          <div className="dropdown-divider my-2"></div>
+        </li>
+
+        {/* === LINKS === */}
+        <li>
+          <Link className="dropdown-item py-2" to={`/profile/${profile?.userId}`}>
+            <i className="bx bx-user me-3"></i> My Profile
+          </Link>
+        </li>
+
+        <li>
+          <Link className="dropdown-item py-2" to="/achievements">
+            <i className="bx bx-trophy me-3"></i> Achievements
+          </Link>
+        </li>
+
+        <li>
+          <Link className="dropdown-item py-2" to="/settings">
+            <i className="bx bx-cog me-3"></i> Settings
+          </Link>
+        </li>
+
+        <li>
+          <div className="dropdown-divider my-2"></div>
+        </li>
+
+        {/* === DARK MODE TOGGLE - CẢI TIẾN === */}
+        <li>
+          <div className="dropdown-item py-2 d-flex align-items-center justify-content-between">
+            <div className="d-flex align-items-center">
+              <i
+                className={`bx text-warning me-3 fs-5 transition-all ${
+                  darkMode ? "bx-moon" : "bx-sun"
+                }`}
+                style={{
+                  transition: "transform 0.3s ease",
+                  transform: darkMode ? "rotate(180deg)" : "rotate(0deg)",
+                }}
+              ></i>
+              <span className="fw-medium">
+                {darkMode ? "Dark Mode" : "Light Mode"}
+              </span>
+            </div>
+
+            <div className="form-check form-switch m-0">
+              <input
+                className="form-check-input"
+                type="checkbox"
+                role="switch"
+                checked={darkMode}
+                onChange={(e) => setDarkMode(e.target.checked)}
+                style={{
+                  cursor: "pointer",
+                  width: "42px",
+                  height: "24px",
+                }}
+              />
+            </div>
+          </div>
+        </li>
+
+        <li>
+          <div className="dropdown-divider my-2"></div>
+        </li>
+
+        {/* === LOGOUT === */}
+        <li>
+          <button
+            className="dropdown-item py-2 text-danger fw-semibold d-flex align-items-center"
+            onClick={handleLogout}
+          >
+            <i className="bx bx-power-off me-3"></i> Log Out
+          </button>
+        </li>
+      </ul>
+    </div>
+  );
 };
 
 export default UserDropdown;

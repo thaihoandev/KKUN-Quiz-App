@@ -124,7 +124,7 @@ export default function ArticleDetailPage() {
         <div className="row">
           {/* Cột chính */}
           <div className="col-xl-9 col-lg-9">
-            <ArticleDetail slug={slug!} />
+            {currentArticle && <ArticleDetail article={currentArticle} />}
           </div>
 
           {/* Sidebar */}

@@ -12,6 +12,9 @@ import com.kkunquizapp.QuizAppBackend.article.service.TagService;
 import com.kkunquizapp.QuizAppBackend.common.utils.MarkdownProcessor;
 import com.kkunquizapp.QuizAppBackend.common.utils.SlugUtil;
 import com.kkunquizapp.QuizAppBackend.fileUpload.service.CloudinaryService;
+import com.kkunquizapp.QuizAppBackend.user.dto.UserSummaryDto;
+import com.kkunquizapp.QuizAppBackend.user.model.User;
+import com.kkunquizapp.QuizAppBackend.user.service.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -22,10 +25,10 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
 import java.util.HashSet;
-import java.util.List;
+
 import java.util.Map;
 import java.util.UUID;
-import java.util.stream.Collectors;
+
 
 @Service
 @RequiredArgsConstructor
@@ -36,6 +39,7 @@ public class ArticleServiceImpl implements ArticleService {
     private final MarkdownProcessor markdownProcessor;
     private final CloudinaryService cloudinaryService;
     private final TagService tagService;
+    private final UserService userService;
     private final ArticleMapper mapper;
 
     /**
@@ -58,6 +62,11 @@ public class ArticleServiceImpl implements ArticleService {
     public ArticleDto getBySlug(String slug) {
         Article article = articleRepository.findBySlug(slug)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Article not found with slug: " + slug));
+
+        // Tăng lượt xem
+        article.setViews(article.getViews() + 1);
+        articleRepository.save(article);
+
         return mapper.toDto(article);
     }
 
@@ -87,9 +96,14 @@ public class ArticleServiceImpl implements ArticleService {
 
         article.setContentMarkdown(req.getContentMarkdown());
         article.setContentHtml(markdownProcessor.toHtml(req.getContentMarkdown()));
+
+        // Tính thời gian đọc
+        int words = req.getContentMarkdown().split("\\s+").length;
+        int readingTime = Math.max(1, words / 200);
+        article.setReadingTime(readingTime);
+        article.setAuthorId(req.getAuthorId());
         article.setArticleCategory(category);
         article.setDifficulty(req.getDifficulty());
-        article.setAuthorId(req.getAuthorId());
         article.setPublished(true);
 
         // 3. Handle tags

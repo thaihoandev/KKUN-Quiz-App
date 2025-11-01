@@ -648,7 +648,7 @@ const ChatPage: React.FC = () => {
                       setConvs(prev => prev.map(x => (x.id === c.id ? { ...x, unreadCount: 0 } : x)));
                     }}
                   >
-                    <div className="d-flex align-items-start">
+                    <div className="d-flex align-items-center">
                       {getConversationAvatar(c, currentUserId!) ? (
                         <img
                           src={getConversationAvatar(c, currentUserId!)!}

@@ -1,54 +1,65 @@
-import {Outlet} from "react-router-dom";
+import { Outlet } from "react-router-dom";
 import SidebarMain from "@/components/sidebars/SidebarMain";
 import Footer from "@/components/Footer";
 import Navbar from "@/components/navbars/Navbar";
-import {getCurrentUser} from "@/services/userService";
-import {useNavigate} from "react-router-dom";
-import React, {useEffect, useState} from "react";
+import { getCurrentUser } from "@/services/userService";
+import React, { useEffect, useState } from "react";
+import "bootstrap/dist/css/bootstrap.min.css";
 
 const MainLayout = () => {
-    const [profile, setProfile] = useState<any>(null);
-    const [loading, setLoading] = useState<boolean>(true);
-    const [error, setError] = useState<string | null>(null);
-    const navigate = useNavigate();
-    useEffect(() => {
-        const fetchUserProfile = async () => {
-            try {
-                const data = await getCurrentUser();
-                setProfile(data);
-            } catch (err: any) {
-                setError("Không thể tải thông tin người dùng");
-            } finally {
-                setLoading(false);
-            }
-        };
+  const [profile, setProfile] = useState<any>(null);
 
-        fetchUserProfile();
-    }, []);
+  useEffect(() => {
+    const fetchUserProfile = async () => {
+      try {
+        const data = await getCurrentUser();
+        setProfile(data);
+      } catch (err: any) {
+        console.error("Không thể tải thông tin người dùng:", err);
+      }
+    };
+    fetchUserProfile();
+  }, []);
 
-    useEffect(() => {
-        const script = document.createElement("script");
-        script.async = true;
-        document.body.appendChild(script);
+  return (
+    <div className="vh-100 d-flex">
+      {/* Sidebar */}
+      <div
+        className="bg-white border-end"
+        style={{
+          height: "100vh",
+          overflowY: "auto",
+          position: "sticky",
+          top: 0,
+          flexShrink: 0,
+        }}
+      >
+        <SidebarMain profile={profile} />
+      </div>
 
-        return () => {
-            document.body.removeChild(script); // Cleanup khi unmount
-        };
-    }, []);
-    return (
-        <div className="layout-wrapper layout-content-navbar">
-            <div className="layout-container">
-                <SidebarMain profile={profile} />
-                <div className="layout-page">
-                    <Navbar profile={profile} />
-                    <div className="wrapper-content">
-                        <Outlet /> {/* Render trang con */}
-                    </div>
-                    <Footer />
-                </div>
+      {/* Nội dung chính */}
+      <div
+        className="flex-grow-1 d-flex flex-column bg-light"
+        style={{ height: "100vh", overflow: "hidden" }}
+      >
+        <Navbar profile={profile} />
+
+        <main
+          className="flex-grow-1 overflow-auto p-4 pb-0"
+          style={{
+            scrollBehavior: "smooth",
+          }}
+        >
+            <div className="container-fluid">
+                <Outlet />
             </div>
-        </div>
-    );
+            <Footer />
+                  
+        </main>
+
+      </div>
+    </div>
+  );
 };
 
 export default MainLayout;

@@ -159,6 +159,21 @@ public class UserServiceImpl implements UserService {
         return dto;
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public UserSummaryDto getPublicById(UUID userId) {
+        User user = userRepo.findById(userId)
+                .orElseThrow(() -> new UserNotFoundException("User not found with ID: " + userId));
+
+        // Chỉ trả về thông tin an toàn
+        return UserSummaryDto.builder()
+                .userId(user.getUserId())
+                .name(user.getName())
+                .username(user.getUsername())
+                .avatar(user.getAvatar())
+                .build();
+    }
+
     // ===================== RESTORE USER (giữ nguyên) =====================
     @Override
     @Transactional

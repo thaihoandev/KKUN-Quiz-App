@@ -210,7 +210,7 @@ const QuizCreateModal: React.FC<QuizCreateModalProps> = ({
             </h5>
             <button
               type="button"
-              className="btn-close btn-close-white position-absolute top-0 end-0 mt-2 me-2"
+              className="btn btn-close btn-close-white position-absolute top-0 end-0 mt-2 me-2"
               onClick={onClose}
               disabled={effectiveLoading}
               aria-label="Close"

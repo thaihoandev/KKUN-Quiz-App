@@ -296,7 +296,7 @@ const QuestionForm: React.FC<QuestionFormProps> = ({
                                 style={{maxHeight: "200px"}}
                             />
                             <button
-                                className="btn btn-sm btn-outline-light"
+                                className="btn-sm btn-outline-light"
                                 onClick={() => {
                                     setImageFile(null);
                                     setQuestion({

@@ -1,20 +1,49 @@
 import React, { useState, useEffect } from "react";
-import { FileTextOutlined, PlusOutlined, SearchOutlined, MenuOutlined, RightOutlined } from "@ant-design/icons";
-import { Button, Typography, Input, Spin, Drawer, List, message } from "antd";
+import {
+  FileTextOutlined,
+  PlusOutlined,
+  SearchOutlined,
+  MenuOutlined,
+  FireOutlined,
+  FolderOutlined,
+} from "@ant-design/icons";
+import {
+  Button,
+  Typography,
+  Input,
+  Spin,
+  Drawer,
+  List,
+  message,
+  Card,
+  Space,
+  Tag,
+} from "antd";
 import { Link } from "react-router-dom";
 import { getCategories } from "@/services/categoryService";
+import {
+  getArticles,
+  getArticlesByCategory,
+} from "@/services/articleService";
 import ArticleList from "@/components/layouts/article/ArticleList";
-import "bootstrap/dist/css/bootstrap.min.css";
+import { ArticleCategoryDto, ArticleDto } from "@/types/article";
 
 const { Title, Text } = Typography;
 
-export default function ArticlesPage() {
-  const [categories, setCategories] = useState<{ id: string; name: string }[]>([]);
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState<string>("");
-  const [loading, setLoading] = useState<boolean>(true);
-  const [sidebarVisible, setSidebarVisible] = useState<boolean>(false);
+interface CategoryWithArticles extends ArticleCategoryDto {
+  articles: ArticleDto[];
+}
 
+export default function ArticlesPage() {
+  const [categories, setCategories] = useState<ArticleCategoryDto[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [sidebarLoading, setSidebarLoading] = useState(true);
+  const [sidebarVisible, setSidebarVisible] = useState(false);
+  const [categoriesWithArticles, setCategoriesWithArticles] = useState<CategoryWithArticles[]>([]);
+
+  // ✅ Fetch categories
   useEffect(() => {
     const fetchCategories = async () => {
       setLoading(true);
@@ -22,7 +51,6 @@ export default function ArticlesPage() {
         const res = await getCategories();
         setCategories(res.content);
       } catch (error) {
-        console.error("Error fetching categories:", error);
         message.error("Không thể tải danh mục!");
       } finally {
         setLoading(false);
@@ -31,195 +59,270 @@ export default function ArticlesPage() {
     fetchCategories();
   }, []);
 
+  // ✅ Fetch top bài viết hot theo từng danh mục
+  useEffect(() => {
+    const fetchSidebarArticles = async () => {
+      setSidebarLoading(true);
+      try {
+        const res = await Promise.all(
+          categories.map(async (cat) => {
+            const result = await getArticlesByCategory(cat.id, 0, 3, "views,desc");
+            return {
+              ...cat,
+              articles: result.content || [],
+            };
+          })
+        );
+        setCategoriesWithArticles(res);
+      } catch (error) {
+        message.error("Không thể tải bài viết hot!");
+      } finally {
+        setSidebarLoading(false);
+      }
+    };
+
+    if (categories.length > 0) fetchSidebarArticles();
+  }, [categories]);
+
   const handleCategorySelect = (categoryId: string) => {
     setSelectedCategory(categoryId === selectedCategory ? null : categoryId);
-    setSidebarVisible(false); // Close sidebar on mobile after selection
+    setSidebarVisible(false);
   };
 
-  const toggleSidebar = () => {
-    setSidebarVisible(!sidebarVisible);
-  };
+  const toggleSidebar = () => setSidebarVisible(!sidebarVisible);
 
   return (
-    <div className="min-vh-100" style={{ backgroundColor: "#f5f7fa" }}>
-      {/* Hero Section */}
+    <div className="min-vh-100" style={{ backgroundColor: "#f8f9fa" }}>
+      {/* ==== Hero Banner ==== */}
       <div
-        className="bg-white shadow-lg py-5 animate__animated animate__fadeIn"
+        className="position-relative overflow-hidden"
         style={{
-          background: "linear-gradient(135deg, #ffffff 0%, #f0f2f5 100%)",
+          background:
+            "linear-gradient(rgba(0,0,0,0.4), rgba(0,0,0,0.6)), url('https://images.unsplash.com/photo-1499750310107-5fef28a666f8?q=80&w=2070') center/cover no-repeat",
+          minHeight: "30vh",
+          display: "flex",
+          alignItems: "center",
+          color: "white",
         }}
       >
-        <div className="container text-center">
-          <div
-            className="bg-primary rounded-circle d-inline-flex align-items-center justify-content-center mb-4"
-            style={{ width: "80px", height: "80px" }}
-          >
-            <FileTextOutlined style={{ fontSize: "40px", color: "white" }} />
-          </div>
-          <Title level={1} className="mb-3 fw-bold" style={{ color: "#1a1a1a", fontSize: "36px" }}>
-            Khám phá kiến thức
+        <div className="container py-5 text-center">
+          <Title level={1} style={{ color: "white", fontSize: 48, fontWeight: 700 }}>
+            Khám Phá Kiến Thức
           </Title>
-          <Text type="secondary" className="mb-4 d-block" style={{ fontSize: "18px" }}>
-            Tìm kiếm và đọc các bài viết hữu ích từ cộng đồng của chúng tôi
+          <Text style={{ color: "#f0f0f0", fontSize: 20 }}>
+            Đọc, chia sẻ và học hỏi từ hàng nghìn bài viết chất lượng từ cộng đồng
           </Text>
-          <div className="d-flex justify-content-center align-items-center gap-3 flex-column flex-md-row">
+          <div className="d-flex flex-column flex-md-row justify-content-center align-items-center gap-3 mt-4">
             <Input
-              prefix={<SearchOutlined className="text-muted" />}
-              placeholder="Tìm kiếm bài viết..."
+              prefix={<SearchOutlined />}
+              placeholder="Tìm kiếm bài viết, chủ đề, tác giả..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               size="large"
-              className="rounded-3"
-              style={{ maxWidth: "400px", width: "100%" }}
+              className="rounded-pill"
+              style={{
+                maxWidth: "500px",
+                background: "rgba(255,255,255,0.9)",
+              }}
             />
             <Link to="/articles/create">
               <Button
                 type="primary"
                 icon={<PlusOutlined />}
                 size="large"
+                className="rounded-pill"
                 style={{
-                  borderRadius: "8px",
                   fontWeight: 600,
-                  background: "linear-gradient(135deg, #1890ff 0%, #096dd9 100%)",
+                  background: "#ff4d4f",
                   border: "none",
-                  transition: "all 0.3s ease",
+                  boxShadow: "0 4px 12px rgba(255,77,79,0.3)",
                 }}
-                className="btn btn-primary"
               >
-                Tạo bài viết
+                Viết bài mới
               </Button>
             </Link>
           </div>
         </div>
       </div>
 
-      {/* Main Content with Sidebar */}
-      <div className="container-fluid py-5">
+      {/* ==== Main Content ==== */}
+      <div className="container-fluid py-5 px-5">
         <div className="row">
-          {/* Sidebar (Category Column) */}
-          <div className="col-md-2 d-none d-md-block">
-            <div className="bg-white shadow-sm rounded-3 p-4" style={{ position: "sticky", top: "20px" }}>
-              <Title level={4} className="mb-4 fw-bold" style={{ color: "#1a1a1a" }}>
-                Danh mục
+          {/* ==== Sidebar ==== */}
+          <div className="col-lg-3 col-xl-3 d-none d-lg-block">
+            <div
+              className="card rounded-3 shadow-sm p-4 mb-4"
+              style={{ position: "sticky", top: "20px" }}
+            >
+              <Title level={5} className="mb-3 d-flex align-items-center">
+                <MenuOutlined className="me-2" /> Danh mục
               </Title>
+
               {loading ? (
                 <Spin tip="Đang tải danh mục..." />
               ) : (
                 <List
                   dataSource={[{ id: "", name: "Tất cả" }, ...categories]}
-                  renderItem={(category) => (
+                  renderItem={(cat) => (
                     <List.Item
-                      onClick={() => handleCategorySelect(category.id)}
-                      className="border-0 px-2 py-1 cursor-pointer animate__animated animate__fadeIn"
+                      onClick={() => handleCategorySelect(cat.id)}
+                      className="border-0 px-3 py-2 rounded-2 cursor-pointer"
                       style={{
-                        background: selectedCategory === category.id ? "#e6f7ff" : "transparent",
-                        borderRadius: "8px",
-                        transition: "all 0.3s ease",
-                      }}
-                      onMouseEnter={(e) => {
-                        if (selectedCategory !== category.id) {
-                          e.currentTarget.style.background = "#f5f7fa";
-                        }
-                      }}
-                      onMouseLeave={(e) => {
-                        if (selectedCategory !== category.id) {
-                          e.currentTarget.style.background = "transparent";
-                        }
+                        background:
+                          selectedCategory === cat.id ? "#e6f7ff" : "transparent",
+                        transition: "all 0.3s",
                       }}
                     >
-                      <div className="d-flex align-items-center">
-                        <RightOutlined
-                          style={{
-                            fontSize: "12px",
-                            color: selectedCategory === category.id ? "#1890ff" : "#8c8c8c",
-                            marginRight: "12px",
-                          }}
-                        />
-                        <Text
-                          style={{
-                            fontSize: "16px",
-                            fontWeight: selectedCategory === category.id ? 600 : 400,
-                            color: selectedCategory === category.id ? "#1890ff" : "#1a1a1a",
-                          }}
-                        >
-                          {category.name}
-                        </Text>
-                      </div>
+                      <Text
+                        strong={selectedCategory === cat.id}
+                        style={{
+                          color:
+                            selectedCategory === cat.id ? "#1890ff" : "#262626",
+                        }}
+                      >
+                        {cat.name}
+                      </Text>
                     </List.Item>
                   )}
                 />
               )}
             </div>
-          </div>
 
-          {/* Article List */}
-          <div className="col-md-10">
-            <ArticleList categoryId={selectedCategory} searchQuery={searchQuery} />
-          </div>
-
-          {/* Mobile Sidebar (Drawer) */}
-          <Drawer
-            title="Danh mục"
-            placement="left"
-            onClose={toggleSidebar}
-            open={sidebarVisible}
-            width={250}
-            headerStyle={{ borderBottom: "1px solid #f0f0f0", padding: "16px" }}
-          >
-            {loading ? (
-              <Spin tip="Đang tải danh mục..." />
-            ) : (
-              <List
-                dataSource={[{ id: "", name: "Tất cả" }, ...categories]}
-                renderItem={(category) => (
-                  <List.Item
-                    onClick={() => handleCategorySelect(category.id)}
-                    className="border-0 px-2 py-1 cursor-pointer"
-                    style={{
-                      background: selectedCategory === category.id ? "#e6f7ff" : "transparent",
-                      borderRadius: "8px",
-                      transition: "all 0.3s ease",
-                    }}
-                  >
-                    <div className="d-flex align-items-center">
-                      <RightOutlined
+            {/* ==== Hot Articles ==== */}
+            <Card
+              className="shadow-sm"
+              title={
+                <Space>
+                  <FireOutlined style={{ color: "#ff4d4f" }} />
+                  <span>Bài viết hot</span>
+                </Space>
+              }
+              style={{ borderRadius: "12px" }}
+              loading={sidebarLoading}
+            >
+              {sidebarLoading ? (
+                <Spin />
+              ) : (
+                <List
+                  dataSource={categoriesWithArticles
+                    .flatMap((c) => c.articles)
+                    .sort((a, b) => (b.views || 0) - (a.views || 0))
+                    .slice(0, 5)}
+                  renderItem={(item, index) => (
+                    <List.Item
+                      style={{
+                        padding: "8px 0",
+                        transition: "all 0.2s",
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                      }}
+                      onMouseEnter={(e) =>
+                        (e.currentTarget.style.transform = "translateX(5px)")
+                      }
+                      onMouseLeave={(e) =>
+                        (e.currentTarget.style.transform = "translateX(0)")
+                      }
+                    >
+                      <Link
+                        to={`/articles/${item.slug}`}
+                        className="text-decoration-none w-100"
                         style={{
-                          fontSize: "12px",
-                          color: selectedCategory === category.id ? "#1890ff" : "#8c8c8c",
-                          marginRight: "12px",
-                        }}
-                      />
-                      <Text
-                        style={{
-                          fontSize: "16px",
-                          fontWeight: selectedCategory === category.id ? 600 : 400,
-                          color: selectedCategory === category.id ? "#1890ff" : "#1a1a1a",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "12px",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
                         }}
                       >
-                        {category.name}
-                      </Text>
-                    </div>
-                  </List.Item>
-                )}
-              />
-            )}
-          </Drawer>
+                        {/* Cột số thứ tự */}
+                        <div
+                          style={{
+                            flexShrink: 0,
+                            width: "28px",
+                            textAlign: "right",
+                            fontWeight: 700,
+                            color: "#ff4d4f",
+                          }}
+                        >
+                          {index + 1}.
+                        </div>
+
+                        {/* Cột tiêu đề */}
+                        <div
+                          style={{
+                            flex: 1,
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                            color: "#1a1a1a",
+                            fontWeight: 500,
+                          }}
+                        >
+                          {item.title}
+                        </div>
+                      </Link>
+                    </List.Item>
+                  )}
+                  size="small"
+                  locale={{ emptyText: "Không có bài viết hot" }}
+                />
+
+              )}
+            </Card>
+          </div>
+
+          {/* ==== Article List ==== */}
+          <div className="col-lg-9 col-xl-9">
+            <ArticleList
+              categoryId={selectedCategory}
+              searchQuery={searchQuery}
+            />
+          </div>
         </div>
       </div>
 
-      {/* Mobile Menu Button */}
-      <Button
-        icon={<MenuOutlined />}
-        size="large"
-        className="d-md-none position-fixed bottom-0 end-0 m-4 rounded-circle shadow"
-        style={{
-          zIndex: 1000,
-          background: "linear-gradient(135deg, #1890ff 0%, #096dd9 100%)",
-          color: "white",
-          border: "none",
-        }}
-        onClick={toggleSidebar}
-      />
+      {/* ==== Mobile Drawer ==== */}
+      <Drawer
+        title={
+          <Title level={5} className="m-0">
+            <MenuOutlined className="me-2" /> Danh mục
+          </Title>
+        }
+        placement="left"
+        onClose={toggleSidebar}
+        open={sidebarVisible}
+        width={280}
+      >
+        {loading ? (
+          <Spin tip="Đang tải..." />
+        ) : (
+          <List
+            dataSource={[{ id: "", name: "Tất cả" }, ...categories]}
+            renderItem={(cat) => (
+              <List.Item
+                onClick={() => handleCategorySelect(cat.id)}
+                className="border-0 px-3 py-2 rounded-2"
+                style={{
+                  background:
+                    selectedCategory === cat.id ? "#e6f7ff" : "transparent",
+                }}
+              >
+                <Text
+                  strong={selectedCategory === cat.id}
+                  style={{
+                    color:
+                      selectedCategory === cat.id ? "#1890ff" : "#262626",
+                  }}
+                >
+                  {cat.name}
+                </Text>
+              </List.Item>
+            )}
+          />
+        )}
+      </Drawer>
     </div>
   );
 }

@@ -281,19 +281,22 @@ const PostCard: React.FC<PostCardProps> = ({ post, profile, onUpdate }) => {
     setVisibleComments((prev) => prev + 3);
   };
 
+  // ✅ Chỉ hiển thị toàn bộ replies (hoặc có thể giới hạn)
   const handleShowReplies = (commentId: string) => {
     setExpandedReplies((prev) => ({
       ...prev,
-      [commentId]: prev[commentId] ? prev[commentId] + 3 : 3,
+      [commentId]: comments.find((c) => c.id === commentId)?.replies.length || 0,
     }));
   };
 
+  // ✅ Ẩn toàn bộ replies
   const handleHideReplies = (commentId: string) => {
     setExpandedReplies((prev) => ({
       ...prev,
       [commentId]: 0,
     }));
   };
+
 
   const handleImageClick = (index: number) => {
     setZoomedImageIndex(index);
@@ -370,28 +373,30 @@ const PostCard: React.FC<PostCardProps> = ({ post, profile, onUpdate }) => {
                 </button>
               )}
               {!isReply && comment.replies && comment.replies.length > 0 && (
-                <>
-                  {visibleReplyCount === 0 ? (
-                    <button
-                      type="button"
-                      className="btn btn-link btn-sm text-primary p-0 ms-2"
-                      onClick={() => handleShowReplies(comment.id)}
-                      aria-label={`Show ${comment.replies.length} replies`}
-                    >
-                      <i className="bx bx-chevron-down me-1"></i>Show {comment.replies.length} {comment.replies.length === 1 ? "reply" : "replies"}
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      className="btn btn-link btn-sm text-primary p-0 ms-2"
-                      onClick={() => handleHideReplies(comment.id)}
-                      aria-label="Hide replies"
-                    >
-                      <i className="bx bx-chevron-up me-1"></i>Hide replies
-                    </button>
-                  )}
-                </>
-              )}
+              <>
+                {visibleReplyCount > 0 ? (
+                  <button
+                    type="button"
+                    className="btn btn-link btn-sm text-primary p-0 ms-2"
+                    onClick={() => handleHideReplies(comment.id)}
+                    aria-label="Hide replies"
+                  >
+                    <i className="bx bx-chevron-up me-1"></i>Hide replies
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn btn-link btn-sm text-primary p-0 ms-2"
+                    onClick={() => handleShowReplies(comment.id)}
+                    aria-label={`Show ${comment.replies.length} replies`}
+                  >
+                    <i className="bx bx-chevron-down me-1"></i>
+                    Show {comment.replies.length} {comment.replies.length === 1 ? "reply" : "replies"}
+                  </button>
+                )}
+              </>
+            )}
+
             </small>
             {!isReply && visibleReplyCount > 0 && comment.replies && (
               <div className="mt-2">
@@ -601,7 +606,7 @@ const PostCard: React.FC<PostCardProps> = ({ post, profile, onUpdate }) => {
             <Modal.Header className="border-0 pt-0 position-relative">
               <button
                 type="button"
-                className="btn-close position-absolute top-0 end-0 m-2"
+                className="btn btn-close position-absolute top-0 end-0 m-2"
                 onClick={handleCloseZoom}
                 aria-label="Close"
               />

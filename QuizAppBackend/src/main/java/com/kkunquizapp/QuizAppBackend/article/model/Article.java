@@ -57,6 +57,12 @@ public class Article {
     )
     private Set<Tag> tags = new HashSet<>();
 
+    @Column(nullable = false)
+    private int readingTime = 0; // minutes
+
+    @Column(nullable = false)
+    private long views = 0;
+
     private LocalDateTime createdAt = LocalDateTime.now();
     private LocalDateTime updatedAt = LocalDateTime.now();
 }

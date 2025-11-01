@@ -123,7 +123,7 @@ const EditProfileModal = ({ profile, onClose, onUpdate }: EditProfileModalProps)
             </h5>
             <button
               type="button"
-              className="btn-close"
+              className="btn btn-close"
               onClick={onClose}
               disabled={loading}
               aria-label="Close"
@@ -137,7 +137,7 @@ const EditProfileModal = ({ profile, onClose, onUpdate }: EditProfileModalProps)
                   {error}
                   <button
                     type="button"
-                    className="btn-close"
+                    className="btn btn-close"
                     onClick={() => setError(null)}
                     aria-label="Dismiss error"
                   ></button>

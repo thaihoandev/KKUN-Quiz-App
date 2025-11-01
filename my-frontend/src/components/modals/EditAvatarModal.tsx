@@ -115,7 +115,7 @@ const EditAvatarModal = ({ profile, onClose, onUpdate }: EditAvatarModalProps) =
             <h5 className="modal-title">Edit Avatar</h5>
             <button
               type="button"
-              className="btn-close"
+              className="btn btn-close"
               onClick={onClose}
               aria-label="Close"
               disabled={loading}

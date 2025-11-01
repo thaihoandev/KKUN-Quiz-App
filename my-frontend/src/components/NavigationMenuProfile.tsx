@@ -14,14 +14,20 @@ interface NavigationMenuProps {
 
 const NavigationMenu: React.FC<NavigationMenuProps> = ({ menuItems, activeTab, onTabChange }) => {
   return (
-    <div className="nav-align-top">
-      <ul className="nav nav-pills flex-column flex-md-row mb-3 flex-wrap row-gap-2">
+    <div className="w-100 d-flex justify-content-center">
+      <ul className="nav nav-pills mb-3 d-flex flex-wrap justify-content-center gap-2">
         {menuItems.map((item) => (
           <li className="nav-item" key={item.path}>
             <button
-              className={`nav-link ${activeTab === item.path ? "active" : ""}`}
+              className={`nav-link px-4 py-2 rounded-pill fw-medium ${
+                activeTab === item.path ? "active" : "text-secondary"
+              }`}
               onClick={() => onTabChange(item.path)}
               aria-current={activeTab === item.path ? "page" : undefined}
+              style={{
+                minWidth: "120px",
+                transition: "all 0.2s ease-in-out",
+              }}
             >
               <i className={`bx ${item.icon} me-2`}></i>
               {item.label}

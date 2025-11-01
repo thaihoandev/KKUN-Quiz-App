@@ -20,7 +20,12 @@ export interface ArticleDto {
   category: ArticleCategoryDto;
   difficulty: "BEGINNER" | "INTERMEDIATE" | "ADVANCED";
   authorId: string;
+  authorName?: string;     
+  authorAvatar?: string;   
   published: boolean;
+  readingTime?: number;    
+  views?: number;          
   createdAt: string;
+  updatedAt?: string;      
   tags?: TagDto[];
 }
