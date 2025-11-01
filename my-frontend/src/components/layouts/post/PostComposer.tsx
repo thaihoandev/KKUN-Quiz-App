@@ -123,7 +123,7 @@ const PostComposer: React.FC<PostComposerProps> = ({
         {error && (
           <div className="alert alert-danger alert-dismissible fade show mb-3" role="alert">
             {error}
-            <button type="button" className="btn-close" onClick={() => setError(null)} />
+            <button type="button" className="btn btn-close" onClick={() => setError(null)} />
           </div>
         )}
 

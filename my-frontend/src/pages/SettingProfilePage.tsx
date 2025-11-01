@@ -181,17 +181,17 @@ const SettingProfilePage = () => {
           role="alert"
         >
           {notice.message}
-          <button type="button" className="btn-close" aria-label="Close" onClick={() => setNotice(null)} />
+          <button type="button" className="btn btn-close" aria-label="Close" onClick={() => setNotice(null)} />
         </div>
       )}
 
       {/* Profile Information */}
       <div className="row mb-4">
         <div className="col-12">
-          <div className="card p-4 rounded-4 border-0 shadow">
-            <h5 className="card-header px-0 pb-3 border-bottom border-secondary">Thông tin cá nhân</h5>
+          <div className="card p-0 rounded-4 border-0 shadow">
+            <h5 className="card-header px-4 pb-3 border-bottom border-secondary">Thông tin cá nhân</h5>
 
-            <div className="card-body px-0 pt-4">
+            <div className="card-body px-4 pt-4">
               <div className="d-flex flex-column flex-md-row align-items-center gap-3 mb-4">
                 <div className="position-relative">
                   <img
@@ -270,16 +270,16 @@ const SettingProfilePage = () => {
       {/* Interface Settings */}
       <div className="row mb-4">
         <div className="col-12">
-          <div className="card p-4 rounded-4 border-0 shadow">
-            <h5 className="card-header px-0 pb-3 border-bottom border-secondary">
+          <div className="card p-0 rounded-4 border-0 shadow">
+            <h5 className="card-header px-4 pb-3 border-bottom border-secondary">
               Giao diện
             </h5>
-            <div className="card-body px-0 pt-4">
+            <div className="card-body px-4 pt-4">
               <div className="row g-4">
                 <div className="col-md-6">
                   <div className="form-group">
-                    <label className="form-label text-muted">Hình nền</label>
-                    <select className="form-select rounded-3 border-0 bg-light">
+                    <h5 className="form-label text-muted">Hình nền</h5>
+                    <select className="form-select">
                       <option>Auto</option>
                       <option>Dark</option>
                       <option>Light</option>
@@ -288,8 +288,8 @@ const SettingProfilePage = () => {
                 </div>
                 <div className="col-md-6">
                   <div className="form-group">
-                    <label className="form-label text-muted">Ngôn ngữ</label>
-                    <select className="form-select rounded-3 border-0 bg-light">
+                    <h5 className="form-label text-muted">Ngôn ngữ</h5>
+                    <select className="form-select">
                       <option>Tiếng Việt</option>
                       <option>English</option>
                       <option>Français</option>
@@ -380,7 +380,7 @@ const SettingProfilePage = () => {
             <div className="modal-content bg-dark text-white rounded-4 border-0">
               <div className="modal-header border-0">
                 <h5 className="modal-title">Xác thực email mới</h5>
-                <button className="btn-close btn-close-white" onClick={() => setShowEmailOtp(false)} />
+                <button className="btn btn-close btn-close-white" onClick={() => setShowEmailOtp(false)} />
               </div>
               <div className="modal-body">
                 <p className="text-muted">

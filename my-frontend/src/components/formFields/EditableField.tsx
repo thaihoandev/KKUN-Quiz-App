@@ -3,7 +3,6 @@ import { Modal, Button, Tooltip, OverlayTrigger } from "react-bootstrap";
 import { useForm } from "react-hook-form";
 import { yupResolver } from "@hookform/resolvers/yup";
 import { getFieldValidationSchema } from "@/schemas/fieldSchema";
-import "bootstrap/dist/css/bootstrap.min.css";
 
 interface EditableFieldProps {
   label: string;
@@ -88,7 +87,9 @@ const EditableField: React.FC<EditableFieldProps> = ({
           >
             <span>
               <Button
-                className="btn btn-outline-primary btn-sm d-flex align-items-center"
+                variant="outline-primary"
+                size="sm"
+                className="d-flex align-items-center"
                 onClick={handleEditClick}
                 disabled={disabled}
               >

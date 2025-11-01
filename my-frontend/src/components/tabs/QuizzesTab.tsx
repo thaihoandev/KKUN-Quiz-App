@@ -136,67 +136,28 @@ const QuizzesTab = ({ profile }: QuizzesTabProps) => {
         ) : (
           <>
             <div className="nav-align-top nav-tabs-shadow">
-              <ul className="nav nav-tabs nav-fill" role="tablist">
-                <li className="nav-item">
-                  <button
-                    type="button"
-                    className="nav-link active"
-                    role="tab"
-                    data-bs-toggle="tab"
-                    data-bs-target="#navs-justified-published"
-                    aria-controls="navs-justified-published"
-                    aria-selected="true"
-                  >
-                    <span className="d-none d-sm-inline-flex align-items-center">
-                      <i className="icon-base bx bx-home icon-sm me-1_5"></i>
-                      Published
-                      <span className="badge rounded-pill badge-center h-px-20 w-px-20 bg-label-danger ms-1_5">
-                        {quizzes.PUBLISHED.length}
-                      </span>
-                    </span>
-                    <i className="icon-base bx bx-home icon-sm d-sm-none"></i>
-                  </button>
-                </li>
-                <li className="nav-item">
-                  <button
-                    type="button"
-                    className="nav-link"
-                    role="tab"
-                    data-bs-toggle="tab"
-                    data-bs-target="#navs-justified-draft"
-                    aria-controls="navs-justified-draft"
-                    aria-selected="false"
-                  >
-                    <span className="d-none d-sm-inline-flex align-items-center">
-                      <i className="icon-base bx bx-user icon-sm me-1_5"></i>
-                      Draft
-                      <span className="badge rounded-pill badge-center h-px-20 w-px-20 bg-label-danger ms-1_5">
-                        {quizzes.DRAFT.length}
-                      </span>
-                    </span>
-                    <i className="icon-base bx bx-user icon-sm d-sm-none"></i>
-                  </button>
-                </li>
-                <li className="nav-item">
-                  <button
-                    type="button"
-                    className="nav-link"
-                    role="tab"
-                    data-bs-toggle="tab"
-                    data-bs-target="#navs-justified-archived"
-                    aria-controls="navs-justified-archived"
-                    aria-selected="false"
-                  >
-                    <span className="d-none d-sm-inline-flex align-items-center">
-                      <i className="icon-base bx bx-message-square icon-sm me-1_5"></i>
-                      Archived
-                      <span className="badge rounded-pill badge-center h-px-20 w-px-20 bg-label-danger ms-1_5">
-                        {quizzes.CLOSED.length}
-                      </span>
-                    </span>
-                    <i className="icon-base bx bx-message-square icon-sm d-sm-none"></i>
-                  </button>
-                </li>
+              <ul className="nav nav-tabs justify-content-center" role="tablist">
+                {[
+                  { id: "published", label: "Published", icon: "bx bx-home", count: quizzes.PUBLISHED.length },
+                  { id: "draft", label: "Draft", icon: "bx bx-user", count: quizzes.DRAFT.length },
+                  { id: "archived", label: "Archived", icon: "bx bx-archive", count: quizzes.CLOSED.length },
+                ].map((tab, index) => (
+                  <li className="nav-item flex-fill text-center" key={tab.id}>
+                    <button
+                      type="button"
+                      className={`nav-link mx-0 w-100 ${index === 0 ? "active" : ""}`}
+                      role="tab"
+                      data-bs-toggle="tab"
+                      data-bs-target={`#navs-justified-${tab.id}`}
+                      aria-controls={`navs-justified-${tab.id}`}
+                      aria-selected={index === 0}
+                    >
+                      <i className={`icon-base ${tab.icon} icon-sm me-2`}></i>
+                      <span className="fw-semibold">{tab.label}</span>
+                      <span className="badge rounded-pill bg-primary ms-2">{tab.count}</span>
+                    </button>
+                  </li>
+                ))}
               </ul>
               <div className="tab-content">
                 <div className="tab-pane fade show active" id="navs-justified-published" role="tabpanel">

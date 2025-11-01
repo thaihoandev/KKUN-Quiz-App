@@ -163,16 +163,27 @@ const NotificationHeader: React.FC<NotificationHeaderProps> = ({ profile }) => {
   }, []);
 
   return (
-    <li className="nav-item dropdown-notifications navbar-dropdown dropdown me-3 me-xl-2">
+    <div className="nav-item dropdown-notifications navbar-dropdown dropdown me-3 me-xl-2">
       <a className="nav-link dropdown-toggle hide-arrow" href="#" data-bs-toggle="dropdown">
-        <span className="position-relative">
-          <i className="icon-base bx bx-bell icon-md" />
+        <span
+          className="position-relative d-inline-flex align-items-center justify-content-center"
+          style={{ width: "40px", height: "40px" }} // 👈 để khớp nút dark mode
+        >
+          <i className="bx bx-bell fs-4"></i>
           {totalCount > 0 && (
-            <span className="badge rounded-pill bg-danger">
+            <span
+              className="badge rounded-pill bg-danger position-absolute top-25 start-100 translate-middle"
+              style={{
+                fontSize: "0.75rem",
+                transform: "translate(-35%, 35%)",
+                padding: "3px 6px",
+              }}
+            >
               {totalCount > 10 ? "10+" : totalCount}
             </span>
           )}
         </span>
+
       </a>
 
       <ul
@@ -219,7 +230,7 @@ const NotificationHeader: React.FC<NotificationHeaderProps> = ({ profile }) => {
           </ul>
         </li>
       </ul>
-    </li>
+    </div>
   );
 };
 
