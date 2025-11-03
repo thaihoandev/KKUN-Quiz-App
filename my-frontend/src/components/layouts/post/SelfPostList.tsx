@@ -129,7 +129,7 @@ export default function SelfPostList({
   return (
     <div className={`post-list ${className}`}>
       <div className="card mb-3 shadow-sm">
-        <div className="card-body d-flex justify-content-between align-items-center">
+        <div className="card-body d-flex justify-content-between py-3 align-items-center">
           <small className="text-uppercase text-body-secondary">Posts</small>
           {/* chỗ này tuỳ biến filter/sort nếu cần */}
         </div>

@@ -12,6 +12,6 @@ import java.util.UUID;
 public interface SeriesRepository extends JpaRepository<Series, UUID> {
 
     Optional<Series> findBySlug(String slug);
-
+    Page<Series> findByAuthorId(UUID authorId, Pageable pageable);
     Page<Series> findAll(Pageable pageable);
 }

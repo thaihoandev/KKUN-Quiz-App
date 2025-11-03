@@ -11,5 +11,7 @@ public class SeriesDto {
     private String slug;
     private String description;
     private String thumbnailUrl;
+    private UUID authorId;
+    private String authorName; // nếu bạn muốn hiển thị tên luôn
     private List<ArticleDto> articles;
 }

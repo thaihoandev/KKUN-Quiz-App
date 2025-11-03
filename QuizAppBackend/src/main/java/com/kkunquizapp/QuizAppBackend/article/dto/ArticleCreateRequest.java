@@ -16,6 +16,7 @@ public class ArticleCreateRequest {
     private UUID categoryId;              // 👈 liên kết category bằng UUID
     private ArticleDifficulty difficulty;
     private UUID authorId;
+    private UUID seriesId;
 
     // 👇 Thêm thumbnail file
     private MultipartFile thumbnail;

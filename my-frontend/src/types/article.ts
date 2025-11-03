@@ -1,3 +1,5 @@
+import { SeriesSummaryDto } from "./series";
+
 export interface ArticleCategoryDto {
   id: string;
   name: string;
@@ -14,18 +16,39 @@ export interface ArticleDto {
   id: string;
   title: string;
   slug: string;
+  description: string;
+  // ✅ Nội dung
   contentMarkdown: string;
   contentHtml: string;
+
+  // ✅ Thumbnail (tùy chọn)
   thumbnailUrl?: string;
+
+  // ✅ Danh mục
   category: ArticleCategoryDto;
+
+  // ✅ Series mà bài viết thuộc về (nếu có)
+  series: SeriesSummaryDto;
+  orderIndex?: number;
+
+  // ✅ Độ khó
   difficulty: "BEGINNER" | "INTERMEDIATE" | "ADVANCED";
+
+  // ✅ Tác giả
   authorId: string;
-  authorName?: string;     
-  authorAvatar?: string;   
+  authorName?: string;
+  authorAvatar?: string;
+
+  // ✅ Trạng thái
   published: boolean;
-  readingTime?: number;    
-  views?: number;          
+
+  // ✅ Thông tin bổ sung
+  readingTime?: number;
+  views?: number;
   createdAt: string;
-  updatedAt?: string;      
+  updatedAt?: string;
+
+  // ✅ Tags
   tags?: TagDto[];
 }
+

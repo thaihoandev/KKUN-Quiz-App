@@ -43,6 +43,8 @@ export const getArticles = async (
 export const getArticleBySlug = async (slug: string): Promise<ArticleDto | null> => {
   try {
     const response = await axiosInstance.get(`${API_URL}/${slug}`);
+    console.log(response.data);
+    
     return response.data;
   } catch (error) {
     handleApiError(error, "Failed to fetch article detail");
@@ -77,8 +79,11 @@ export const getArticlesByCategory = async (
 };
 
 // ✅ Tạo mới bài viết (multipart/form-data)
+// ✅ Tạo mới bài viết (có thể gắn vào series)
 export const createArticle = async (formData: FormData): Promise<ArticleDto | null> => {
   try {
+    // formData có thể chứa:
+    // title, contentMarkdown, categoryId, authorId, tags[], thumbnail, difficulty, seriesId
     const response = await axiosInstance.post(API_URL, formData, {
       headers: { "Content-Type": "multipart/form-data" },
     });
@@ -88,3 +93,4 @@ export const createArticle = async (formData: FormData): Promise<ArticleDto | nu
     return null;
   }
 };
+

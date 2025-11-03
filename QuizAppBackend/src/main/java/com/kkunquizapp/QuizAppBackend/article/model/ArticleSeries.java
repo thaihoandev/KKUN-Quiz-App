@@ -25,6 +25,7 @@ public class ArticleSeries {
     @Column(columnDefinition = "UUID")
     private UUID seriesId;
 
+    @Column(nullable = false)
     private int orderIndex = 0;
 }
 

@@ -23,6 +23,10 @@ public class ArticleDto {
     private boolean published;
     private Set<TagDto> tags;
     private int readingTime;
+    private Integer orderIndex;
+
+    private SeriesSummaryDto series;
+
     private long views;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

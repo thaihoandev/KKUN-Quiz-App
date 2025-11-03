@@ -3,6 +3,7 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from "axios";
 import { useAuthStore } from "@/store/authStore";
 import Cookies from "js-cookie";
+import { redirectToLogin } from "@/utils/navigationHelper";
 /**
  * Extend the Axios request config to track retry state
  */
@@ -87,14 +88,15 @@ axiosInstance.interceptors.response.use(
         return axiosInstance(originalRequest);
       } else {
         useAuthStore.getState().logout();
-        // window.location.replace("/login");
+        redirectToLogin();
+
       }
     }
 
     // Nếu không còn cookie refresh-token, logout luôn
     if (is401 && !isRefreshCall && !hasRefreshCookie) {
       useAuthStore.getState().logout();
-      // window.location.replace("/login");
+      redirectToLogin();
       return; // ngăn axios tiếp tục retry
     }
 
