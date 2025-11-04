@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import logo from "@/assets/img/logo/kkun-quiz-logo.png";
 
 interface Profile {
@@ -17,6 +17,9 @@ const SidebarMain: React.FC<{ profile?: Profile }> = ({ profile }) => {
 
   const handleMenuItemClick = (path: string) => setActiveMenuItem(path);
   const isActive = (path: string) => activeMenuItem === path;
+
+  const getNavLinkClass = ({ isActive: active }: { isActive: boolean }) =>
+    `menu-link ${active ? "active" : ""}`;
 
   return (
     <aside
@@ -56,10 +59,12 @@ const SidebarMain: React.FC<{ profile?: Profile }> = ({ profile }) => {
           </span>
         </li>
 
-        <li
-          className={`menu-item ${isActive("/join-game") ? "active" : ""}`}
-        >
-          <Link to="/join-game" className="menu-link " onClick={() => handleMenuItemClick("/join-game")}>
+        <li className={`menu-item ${isActive("/join-game") ? "active" : ""}`}>
+          <Link
+            to="/join-game"
+            className="menu-link"
+            onClick={() => handleMenuItemClick("/join-game")}
+          >
             <i className="menu-icon bx bx-joystick text-primary"></i>
             <div className="fw-semibold text-primary">Join Game</div>
           </Link>
@@ -72,11 +77,15 @@ const SidebarMain: React.FC<{ profile?: Profile }> = ({ profile }) => {
               <span className="menu-header-text">My Account</span>
             </li>
 
-            <li className={`menu-item ${isActive("/dashboard") ? "active" : ""}`}>
-              <Link to="/dashboard" className="menu-link">
+            <li className={`menu-item ${isActive(`/profile/${profile.userId}`) ? "active" : ""}`}>
+              <NavLink
+                to={`/profile/${profile.userId}`}
+                end
+                className={getNavLinkClass}
+              >
                 <i className="menu-icon bx bx-user-circle"></i>
                 <div>My Profile</div>
-              </Link>
+              </NavLink>
             </li>
 
             <li className={`menu-item ${isActive("/achievements") ? "active" : ""}`}>
@@ -119,10 +128,16 @@ const SidebarMain: React.FC<{ profile?: Profile }> = ({ profile }) => {
               <span className="menu-header-text">Get Started</span>
             </li>
             <li className="menu-item">
-              <button onClick={() => navigate("/login")} className="btn btn-primary w-100 mb-2">
+              <button
+                onClick={() => navigate("/login")}
+                className="btn btn-primary w-100 mb-2"
+              >
                 <i className="bx bx-log-in me-2"></i>Login
               </button>
-              <button onClick={() => navigate("/register")} className="btn btn-outline-primary w-100">
+              <button
+                onClick={() => navigate("/register")}
+                className="btn btn-outline-primary w-100"
+              >
                 <i className="bx bx-user-plus me-2"></i>Register
               </button>
             </li>

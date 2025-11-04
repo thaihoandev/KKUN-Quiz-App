@@ -31,6 +31,9 @@ public class Series {
 
     private String thumbnailUrl;
 
+    @Column(nullable = false)
+    private UUID authorId;
+
     private LocalDateTime createdAt = LocalDateTime.now();
     private LocalDateTime updatedAt = LocalDateTime.now();
 }

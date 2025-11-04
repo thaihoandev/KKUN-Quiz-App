@@ -3,14 +3,21 @@ import { useParams, Link } from "react-router-dom";
 import ArticleDetail from "@/components/layouts/article/ArticleDetail";
 import { ArticleCategoryDto, ArticleDto } from "@/types/article";
 import { Card, List, Spin, Typography, Space, Tag, Avatar, message } from "antd";
-import { FolderOutlined, FireOutlined } from "@ant-design/icons";
+import {
+  FolderOutlined,
+  FireOutlined,
+  BookOutlined,
+} from "@ant-design/icons";
 import "bootstrap/dist/css/bootstrap.min.css";
 import { getCategories } from "@/services/categoryService";
-import { getArticlesByCategory, getArticleBySlug } from "@/services/articleService";
+import {
+  getArticlesByCategory,
+  getArticleBySlug,
+} from "@/services/articleService";
+import { getSeriesBySlug } from "@/services/seriesService";
 
 const { Title, Text } = Typography;
 
-// Interface chứa category + articles
 interface CategoryWithArticles extends ArticleCategoryDto {
   articles: ArticleDto[];
 }
@@ -18,7 +25,11 @@ interface CategoryWithArticles extends ArticleCategoryDto {
 export default function ArticleDetailPage() {
   const { slug } = useParams<{ slug: string }>();
   const [currentArticle, setCurrentArticle] = useState<ArticleDto | null>(null);
-  const [categoriesWithArticles, setCategoriesWithArticles] = useState<CategoryWithArticles[]>([]);
+  const [categoriesWithArticles, setCategoriesWithArticles] = useState<
+    CategoryWithArticles[]
+  >([]);
+  const [seriesArticles, setSeriesArticles] = useState<ArticleDto[]>([]);
+  const [seriesTitle, setSeriesTitle] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [sidebarLoading, setSidebarLoading] = useState(false);
 
@@ -32,6 +43,13 @@ export default function ArticleDetailPage() {
     getArticleBySlug(slug)
       .then((article) => {
         setCurrentArticle(article);
+        console.log("article",article);
+        
+        // Nếu bài viết thuộc series nào đó → load danh sách bài trong series
+        if (article?.series.slug) {
+          fetchSeriesArticles(article.series.slug);
+        }
+
         if (article?.category?.id) {
           fetchCategoriesAndArticles(article.category.id);
         } else {
@@ -46,19 +64,35 @@ export default function ArticleDetailPage() {
       .finally(() => setLoading(false));
   }, [slug]);
 
+  // ✅ Lấy bài viết trong series
+  const fetchSeriesArticles = async (seriesSlug: string) => {
+    try {
+      const series = await getSeriesBySlug(seriesSlug);
+      if (series?.articles?.length) {
+        setSeriesArticles(series.articles);
+        setSeriesTitle(series.title);
+      }
+    } catch (err) {
+      console.error("Failed to fetch series articles:", err);
+    }
+  };
+
+  // ✅ Lấy danh mục và bài viết sidebar
   const fetchCategoriesAndArticles = async (currentCategoryId?: string) => {
     setSidebarLoading(true);
     try {
-      // ✅ Lấy danh mục có phân trang
       const catRes = await getCategories(0, 5, "name,asc");
       const categories = catRes.content;
 
-      // Ưu tiên chuyên mục hiện tại
       const relevantIds = currentCategoryId
-        ? [currentCategoryId, ...categories.filter(c => c.id !== currentCategoryId).map(c => c.id)]
-        : categories.map(c => c.id);
+        ? [
+            currentCategoryId,
+            ...categories
+              .filter((c) => c.id !== currentCategoryId)
+              .map((c) => c.id),
+          ]
+        : categories.map((c) => c.id);
 
-      // ✅ Lấy bài viết theo từng category (có phân trang)
       const results = await Promise.all(
         relevantIds.slice(0, 4).map(async (id) => {
           try {
@@ -71,13 +105,11 @@ export default function ArticleDetailPage() {
         })
       );
 
-      // Ghép dữ liệu category + articles
       const updated = categories.map((cat) => {
         const match = results.find((r) => r.id === cat.id);
         return { ...cat, articles: match?.articles || [] };
       });
 
-      // Đưa category hiện tại lên đầu
       if (currentCategoryId) {
         const idx = updated.findIndex((c) => c.id === currentCategoryId);
         if (idx > 0) {
@@ -86,7 +118,9 @@ export default function ArticleDetailPage() {
         }
       }
 
-      setCategoriesWithArticles(updated.filter((c) => c.articles.length > 0).slice(0, 4));
+      setCategoriesWithArticles(
+        updated.filter((c) => c.articles.length > 0).slice(0, 4)
+      );
     } catch (err) {
       console.error("Error fetching categories and articles:", err);
       message.error("Không thể tải danh sách chuyên mục!");
@@ -131,6 +165,79 @@ export default function ArticleDetailPage() {
           <div className="col-xl-3 col-lg-3">
             <div className="d-flex flex-column h-100">
               <div className="sticky-top" style={{ top: "20px" }}>
+                {/* ✅ Bài viết trong series */}
+                {seriesArticles.length > 0 && (
+                  <Card
+                    className="mb-4 shadow-sm"
+                    title={
+                      <Space>
+                        <BookOutlined style={{ color: "#52c41a" }} />
+                        <span>
+                          Series: <strong>{seriesTitle}</strong>
+                        </span>
+                      </Space>
+                    }
+                    style={{
+                      borderRadius: "12px",
+                    }}
+                    bodyStyle={{
+                      paddingRight: "8px",
+                      paddingTop: 0, // giảm khoảng cách giữa title và list
+                    }}
+                  >
+                    {/* Bọc danh sách trong div scroll */}
+                    <div
+                      style={{
+                        maxHeight: "300px", // 👈 Giới hạn chiều cao của list
+                        overflowY: "auto", // 👈 Chỉ phần list scroll
+                        paddingRight: "4px",
+                      }}
+                    >
+                      <List
+                        dataSource={seriesArticles}
+                        renderItem={(item, index) => {
+                          const isActive = item.id === currentArticle.id;
+                          return (
+                            <List.Item
+                              style={{
+                                padding: "10px 8px",
+                                marginBottom: "6px",
+                                borderRadius: "8px",
+                                background: isActive ? "rgba(24,144,255,0.12)" : "transparent",
+                                border: isActive ? "1px solid #1890ff" : "1px solid transparent",
+                                transition: "all 0.2s ease",
+                              }}
+                            >
+                              <Link
+                                to={`/articles/${item.slug}`}
+                                className="w-100 text-decoration-none"
+                              >
+                                <Space className="w-100 align-items-start">
+                                  <div style={{ flex: 1 }}>
+                                    <Title
+                                      level={5}
+                                      style={{
+                                        margin: 0,
+                                        fontSize: "15px",
+                                        lineHeight: "1.3",
+                                        color: isActive ? "#1890ff" : "#1a1a1a",
+                                        fontWeight: isActive ? 600 : 500,
+                                      }}
+                                    >
+                                      {index + 1}. {item.title}
+                                    </Title>
+                                  </div>
+                                </Space>
+                              </Link>
+                            </List.Item>
+                          );
+                        }}
+                        size="small"
+                        locale={{ emptyText: "Chưa có bài viết nào trong series" }}
+                      />
+                    </div>
+                  </Card>
+                )}
                 {/* Cùng chuyên mục */}
                 {currentArticle.category && (
                   <Card
@@ -145,7 +252,9 @@ export default function ArticleDetailPage() {
                     loading={sidebarLoading}
                   >
                     <List
-                      dataSource={categoriesWithArticles[0]?.articles.slice(0, 5) || []}
+                      dataSource={
+                        categoriesWithArticles[0]?.articles.slice(0, 5) || []
+                      }
                       renderItem={(item) => (
                         <List.Item
                           style={{
@@ -153,12 +262,6 @@ export default function ArticleDetailPage() {
                             borderBottom: "1px solid #f0f0f0",
                             transition: "all 0.2s",
                           }}
-                          onMouseEnter={(e) =>
-                            (e.currentTarget.style.transform = "translateX(5px)")
-                          }
-                          onMouseLeave={(e) =>
-                            (e.currentTarget.style.transform = "translateX(0)")
-                          }
                         >
                           <Link
                             to={`/articles/${item.slug}`}
@@ -191,17 +294,6 @@ export default function ArticleDetailPage() {
                                 />
                               )}
                             </Space>
-                            <div className="mt-2 d-flex justify-content-between align-items-center">
-                              <Tag color="blue" style={{ fontWeight: 500 }}>
-                                {item.difficulty || "N/A"}
-                              </Tag>
-                              <small style={{ color: "#8c8c8c" }}>
-                                {new Date(item.createdAt || "").toLocaleDateString("vi-VN", {
-                                  month: "short",
-                                  day: "numeric",
-                                })}
-                              </small>
-                            </div>
                           </Link>
                         </List.Item>
                       )}
@@ -231,12 +323,6 @@ export default function ArticleDetailPage() {
                           padding: "8px 0",
                           transition: "all 0.2s",
                         }}
-                        onMouseEnter={(e) =>
-                          (e.currentTarget.style.transform = "translateX(5px)")
-                        }
-                        onMouseLeave={(e) =>
-                          (e.currentTarget.style.transform = "translateX(0)")
-                        }
                       >
                         <Link
                           to={`/articles/category/${cat.id}`}
@@ -294,12 +380,6 @@ export default function ArticleDetailPage() {
                           padding: "10px 0",
                           transition: "all 0.2s",
                         }}
-                        onMouseEnter={(e) =>
-                          (e.currentTarget.style.transform = "translateX(5px)")
-                        }
-                        onMouseLeave={(e) =>
-                          (e.currentTarget.style.transform = "translateX(0)")
-                        }
                       >
                         <Link
                           to={`/articles/${item.slug}`}

@@ -2,10 +2,14 @@ package com.kkunquizapp.QuizAppBackend.article.service.impl;
 
 import com.kkunquizapp.QuizAppBackend.article.dto.ArticleCreateRequest;
 import com.kkunquizapp.QuizAppBackend.article.dto.ArticleDto;
+import com.kkunquizapp.QuizAppBackend.article.dto.SeriesSummaryDto;
 import com.kkunquizapp.QuizAppBackend.article.mapper.ArticleMapper;
 import com.kkunquizapp.QuizAppBackend.article.model.Article;
 import com.kkunquizapp.QuizAppBackend.article.model.ArticleCategory;
+import com.kkunquizapp.QuizAppBackend.article.model.ArticleSeries;
 import com.kkunquizapp.QuizAppBackend.article.repository.ArticleRepository;
+import com.kkunquizapp.QuizAppBackend.article.repository.ArticleSeriesRepository;
+import com.kkunquizapp.QuizAppBackend.article.repository.SeriesRepository;
 import com.kkunquizapp.QuizAppBackend.article.service.ArticleCategoryService;
 import com.kkunquizapp.QuizAppBackend.article.service.ArticleService;
 import com.kkunquizapp.QuizAppBackend.article.service.TagService;
@@ -35,6 +39,9 @@ import java.util.UUID;
 public class ArticleServiceImpl implements ArticleService {
 
     private final ArticleRepository articleRepository;
+    private final ArticleSeriesRepository articleSeriesRepository;
+    private final SeriesRepository seriesRepository;
+
     private final ArticleCategoryService categoryService;
     private final MarkdownProcessor markdownProcessor;
     private final CloudinaryService cloudinaryService;
@@ -67,8 +74,24 @@ public class ArticleServiceImpl implements ArticleService {
         article.setViews(article.getViews() + 1);
         articleRepository.save(article);
 
-        return mapper.toDto(article);
+        ArticleDto dto = mapper.toDto(article);
+
+        // ✅ Gắn thông tin series rút gọn (nếu có)
+        articleSeriesRepository.findByArticleId(article.getId()).ifPresent(link -> {
+            seriesRepository.findById(link.getSeriesId()).ifPresent(series -> {
+                SeriesSummaryDto summary = new SeriesSummaryDto();
+                summary.setId(series.getId());
+                summary.setTitle(series.getTitle());
+                summary.setSlug(series.getSlug());
+                summary.setDescription(series.getDescription());
+                summary.setThumbnailUrl(series.getThumbnailUrl());
+                dto.setSeries(summary);
+            });
+        });
+
+        return dto;
     }
+
 
     /**
      * Create a new article with optional Cloudinary thumbnail upload.
@@ -86,12 +109,8 @@ public class ArticleServiceImpl implements ArticleService {
         article.setTitle(req.getTitle());
 
         // Generate unique slug
-        String baseSlug = SlugUtil.toSlug(req.getTitle());
-        String slug = baseSlug;
-        if (articleRepository.findBySlug(slug).isPresent()) {
-            // Append a short UUID (first 8 characters) to ensure uniqueness
-            slug = baseSlug + "-" + UUID.randomUUID().toString().substring(0, 8);
-        }
+        String slug = SlugUtil.toSlug(req.getTitle(),true);
+
         article.setSlug(slug);
 
         article.setContentMarkdown(req.getContentMarkdown());
@@ -126,6 +145,21 @@ public class ArticleServiceImpl implements ArticleService {
 
         // 5. Save to database
         articleRepository.save(article);
+
+        if (req.getSeriesId() != null) {
+            ArticleSeries link = new ArticleSeries();
+            link.setSeriesId(req.getSeriesId());
+            link.setArticleId(article.getId());
+
+            // Lấy thứ tự tiếp theo trong series
+            int nextOrder = articleSeriesRepository
+                    .findBySeriesIdOrderByOrderIndex(req.getSeriesId())
+                    .size() + 1;
+
+            link.setOrderIndex(nextOrder);
+            articleSeriesRepository.save(link);
+        }
+
         return mapper.toDto(article);
     }
 

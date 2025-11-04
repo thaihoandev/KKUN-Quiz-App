@@ -193,6 +193,7 @@ textarea.ant-input {
 
 .ant-card-body {
     color: var(--quiz-text) !important;
+    padding: 1.25rem !important;
 }
 
 /* Table */

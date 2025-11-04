@@ -9,6 +9,7 @@ import {
   HomeOutlined,
   EyeOutlined,
 } from "@ant-design/icons";
+import MDEditor from "@uiw/react-md-editor";
 
 const { Title, Text } = Typography;
 
@@ -197,13 +198,16 @@ const ArticleDetail: React.FC<Props> = ({ article }) => {
                 {/* Article Content */}
                 <div
                   className="article-content"
-                  dangerouslySetInnerHTML={{ __html: article.contentHtml }}
+                  data-color-mode="light"
                   style={{
                     fontSize: "18px",
                     lineHeight: "1.8",
                     color: "#333",
+                    background: "transparent",
                   }}
-                />
+                >
+                  <MDEditor.Markdown source={article.contentMarkdown || ""} />
+                </div>
 
                 {/* Tags */}
                 {article.tags && article.tags.length > 0 && (

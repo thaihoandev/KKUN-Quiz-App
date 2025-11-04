@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import MDEditor from "@uiw/react-md-editor";
 import { getCategories } from "@/services/categoryService";
 import { getTags, createTag } from "@/services/tagService";
+import { getSeriesList } from "@/services/seriesService";
 import { createArticle } from "@/services/articleService";
 import { ArticleCategoryDto } from "@/types/article";
 import { notification } from "antd";
@@ -18,7 +19,6 @@ import {
   Row,
   Col,
   Spin,
-  Empty,
 } from "antd";
 import {
   FileTextOutlined,
@@ -27,26 +27,34 @@ import {
   PictureOutlined,
   UploadOutlined,
   TagsOutlined,
-  InfoCircleOutlined,
+  ReadOutlined,
 } from "@ant-design/icons";
 import "bootstrap/dist/css/bootstrap.min.css";
 import { useAuthStore } from "@/store/authStore";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 
 const { Title, Text } = Typography;
 
 interface ArticleFormValues {
   title: string;
   categoryId: string;
-  difficulty: string;
+  difficulty?: string;
   tags: string[];
+  seriesId?: string;
 }
 
 const ArticleForm: React.FC = () => {
+  const [searchParams] = useSearchParams();
+  const seriesIdFromParams = searchParams.get("seriesId");
+
   const [categories, setCategories] = useState<ArticleCategoryDto[]>([]);
   const [tags, setTags] = useState<{ id: string; name: string }[]>([]);
+  const [series, setSeries] = useState<{ id: string; title: string }[]>([]);
+
   const [loadingCategories, setLoadingCategories] = useState(true);
   const [loadingTags, setLoadingTags] = useState(true);
+  const [loadingSeries, setLoadingSeries] = useState(true);
+
   const [form] = Form.useForm();
   const [thumbnail, setThumbnail] = useState<File | null>(null);
   const [thumbnailPreview, setThumbnailPreview] = useState<string>("");
@@ -55,46 +63,58 @@ const ArticleForm: React.FC = () => {
   const { user, ensureMe } = useAuthStore();
   const navigate = useNavigate();
 
+  // 🧩 Tải categories, tags, series
   useEffect(() => {
     const fetchData = async () => {
-      setLoadingCategories(true);
-      setLoadingTags(true);
       try {
-        const [catRes, tagRes] = await Promise.all([
-          getCategories(0, 20, "name,asc"),
-          getTags(0, 20, "name,asc"),
+        setLoadingCategories(true);
+        setLoadingTags(true);
+        setLoadingSeries(true);
+
+        const [catRes, tagRes, seriesRes] = await Promise.all([
+          getCategories(0, 50, "name,asc"),
+          getTags(0, 50, "name,asc"),
+          getSeriesList(0, 50, "createdAt,desc"),
         ]);
+
         setCategories(catRes.content);
         setTags(tagRes.content);
-      } catch (err) {
-        message.error("Không thể tải danh mục hoặc thẻ tag!");
+        setSeries(seriesRes.content);
+
+        // ✅ Nếu có seriesId từ params, tự động set
+        if (seriesIdFromParams) {
+          form.setFieldValue("seriesId", seriesIdFromParams);
+        }
+      } catch {
+        message.error("Không thể tải danh mục, tag hoặc series!");
       } finally {
         setLoadingCategories(false);
         setLoadingTags(false);
+        setLoadingSeries(false);
       }
     };
 
     fetchData();
     ensureMe();
-  }, [ensureMe]);
+  }, [ensureMe, form, seriesIdFromParams]);
 
+  // ✅ Upload ảnh
   const handleThumbnailChange = (info: any) => {
     const file = info.file.originFileObj || info.file;
     setThumbnail(file);
 
     if (file) {
       const reader = new FileReader();
-      reader.onloadend = () => {
-        setThumbnailPreview(reader.result as string);
-      };
+      reader.onloadend = () => setThumbnailPreview(reader.result as string);
       reader.readAsDataURL(file);
     }
   };
 
+  // ✅ Submit form
   const handleSubmit = async (values: ArticleFormValues) => {
-    if (!user || !user.userId) {
+    if (!user?.userId) {
       notification.error({
-        message: "Error",
+        message: "Lỗi",
         description: "Vui lòng đăng nhập để tạo bài viết!",
       });
       return;
@@ -102,7 +122,7 @@ const ArticleForm: React.FC = () => {
 
     if (!contentMarkdown.trim()) {
       notification.error({
-        message: "Error",
+        message: "Lỗi",
         description: "Vui lòng nhập nội dung bài viết!",
       });
       return;
@@ -112,46 +132,62 @@ const ArticleForm: React.FC = () => {
     formData.append("title", values.title);
     formData.append("contentMarkdown", contentMarkdown);
     formData.append("categoryId", values.categoryId);
-    formData.append("difficulty", values.difficulty);
     formData.append("authorId", user.userId);
+
+    if (values.difficulty) {
+      formData.append("difficulty", values.difficulty);
+    }
+
+    if (values.seriesId) {
+      formData.append("seriesId", values.seriesId);
+    }
 
     if (thumbnail) {
       formData.append("thumbnail", thumbnail);
     }
 
-    // ✅ Gửi từng tag riêng biệt để Spring Boot map thành List<String>
-    if (values.tags && values.tags.length > 0) {
-      values.tags.forEach((tag: string) => {
-        formData.append("tags", tag);
-      });
+    if (values.tags?.length > 0) {
+      values.tags.forEach((tag) => formData.append("tags", tag));
     }
 
     try {
       await createArticle(formData);
       notification.success({
-        message: "Success",
+        message: "Thành công",
         description: "Tạo bài viết thành công!",
       });
       form.resetFields();
       setContentMarkdown("");
       setThumbnail(null);
       setThumbnailPreview("");
-      navigate("/articles");
-    } catch (error) {
+
+      // ✅ Quay về series page nếu có, không thì về articles
+      if (seriesIdFromParams) {
+        const selectedSeries = series.find((s) => s.id === seriesIdFromParams);
+        if (selectedSeries) {
+          navigate(`/series/${selectedSeries.id}`);
+        } else {
+          navigate("/articles");
+        }
+      } else {
+        navigate("/articles");
+      }
+    } catch {
       notification.error({
-        message: "Error",
-        description: "Có lỗi xảy ra khi tạo bài viết!",
+        message: "Lỗi",
+        description: "Không thể tạo bài viết!",
       });
     }
   };
 
+  // ✅ Tạo tag mới
   const handleTagCreate = async (newTagName: string) => {
     const existing = tags.find(
       (t) => t.name.toLowerCase() === newTagName.toLowerCase()
     );
     if (existing) {
       notification.warning({
-        message: "Warning",
+        message: "Cảnh báo",
         description: "Tag đã tồn tại!",
       });
       return existing.id;
@@ -165,7 +201,7 @@ const ArticleForm: React.FC = () => {
       }
     } catch {
       notification.error({
-        message: "Error",
+        message: "Lỗi",
         description: "Không thể tạo tag mới!",
       });
     }
@@ -188,322 +224,178 @@ const ArticleForm: React.FC = () => {
             </Title>
           </div>
 
-          {/* Form */}
           <Card className="shadow-lg border-0" style={{ borderRadius: "16px" }}>
             <Form
               form={form}
               layout="vertical"
               onFinish={handleSubmit}
-              initialValues={{ difficulty: "BEGINNER" }}
+              initialValues={{ difficulty: undefined }}
             >
               {/* Tiêu đề */}
               <Form.Item
+                name="title"
                 label={
                   <Space>
                     <FileTextOutlined style={{ color: "#1890ff", fontSize: "18px" }} />
-                    <span style={{ fontWeight: 600, fontSize: "15px" }}>Tiêu đề bài viết</span>
+                    <span style={{ fontWeight: 600 }}>Tiêu đề bài viết</span>
                   </Space>
                 }
-                name="title"
-                required={true}
-                rules={[
-                  { required: true, message: "Vui lòng nhập tiêu đề bài viết!" },
-                ]}
+                rules={[{ required: true, message: "Vui lòng nhập tiêu đề!" }]}
               >
                 <Input
                   size="large"
-                  required={true}
-                  placeholder="Nhập tiêu đề hấp dẫn cho bài viết của bạn..."
-                  style={{ borderRadius: "8px" }}
+                  placeholder="Nhập tiêu đề hấp dẫn cho bài viết..."
                 />
               </Form.Item>
 
-              {/* Category - Difficulty */}
+              {/* Category - Difficulty - Series */}
               <Row gutter={16}>
-                <Col xs={24} md={12}>
+                <Col xs={24} md={8}>
                   <Form.Item
+                    name="categoryId"
                     label={
                       <Space>
                         <FolderOpenOutlined style={{ color: "#1890ff", fontSize: "18px" }} />
-                        <span style={{ fontWeight: 600, fontSize: "15px" }}>Chuyên mục</span>
+                        <span style={{ fontWeight: 600 }}>Chuyên mục</span>
                       </Space>
                     }
-                    required={true}
-                    name="categoryId"
-                    rules={[
-                      { required: true, message: "Vui lòng chọn chuyên mục!" },
-                    ]}
+                    rules={[{ required: true, message: "Vui lòng chọn chuyên mục!" }]}
                   >
                     {loadingCategories ? (
-                      <Spin tip="Đang tải chuyên mục..." />
-                    ) : categories.length > 0 ? (
-                      <Select size="large" placeholder="-- Chọn chuyên mục --">
-                        {categories.map((c) => (
-                          <Select.Option key={c.id} value={c.id}>
-                            {c.name}
-                          </Select.Option>
-                        ))}
-                      </Select>
+                      <Spin />
                     ) : (
-                      <Empty
-                        description="Chưa có chuyên mục nào"
-                        image={Empty.PRESENTED_IMAGE_SIMPLE}
+                      <Select
+                        size="large"
+                        placeholder="-- Chọn chuyên mục --"
+                        options={categories.map((c) => ({
+                          label: c.name,
+                          value: c.id,
+                        }))}
                       />
                     )}
                   </Form.Item>
                 </Col>
 
-                <Col xs={24} md={12}>
+                <Col xs={24} md={8}>
                   <Form.Item
+                    name="difficulty"
                     label={
                       <Space>
                         <BarChartOutlined style={{ color: "#1890ff", fontSize: "18px" }} />
-                        <span style={{ fontWeight: 600, fontSize: "15px" }}>Độ khó</span>
+                        <span style={{ fontWeight: 600 }}>Độ khó (tùy chọn)</span>
                       </Space>
                     }
-                    name="difficulty"
                   >
-                    <Select size="large">
-                      <Select.Option value="BEGINNER">Cơ bản</Select.Option>
-                      <Select.Option value="INTERMEDIATE">
-                        Trung bình
-                      </Select.Option>
-                      <Select.Option value="ADVANCED">Nâng cao</Select.Option>
-                    </Select>
+                    <Select
+                      size="large"
+                      allowClear
+                      placeholder="-- Chọn độ khó --"
+                      options={[
+                        { label: "Cơ bản", value: "BEGINNER" },
+                        { label: "Trung bình", value: "INTERMEDIATE" },
+                        { label: "Nâng cao", value: "ADVANCED" },
+                      ]}
+                    />
+                  </Form.Item>
+                </Col>
+
+                <Col xs={24} md={8}>
+                  <Form.Item
+                    name="seriesId"
+                    label={
+                      <Space>
+                        <ReadOutlined style={{ color: "#1890ff", fontSize: "18px" }} />
+                        <span style={{ fontWeight: 600 }}>Series (nếu có)</span>
+                      </Space>
+                    }
+                  >
+                    {loadingSeries ? (
+                      <Spin />
+                    ) : (
+                      <Select
+                        size="large"
+                        allowClear
+                        placeholder="-- Gắn vào series --"
+                        options={series.map((s) => ({
+                          label: s.title,
+                          value: s.id,
+                        }))}
+                      />
+                    )}
                   </Form.Item>
                 </Col>
               </Row>
 
-              {/* ✅ Tag selector */}
+              {/* Tags */}
               <Form.Item
+                name="tags"
                 label={
                   <Space>
                     <TagsOutlined style={{ color: "#1890ff", fontSize: "18px" }} />
-                    <span style={{ fontWeight: 600, fontSize: "15px" }}>Thẻ Tag</span>
+                    <span style={{ fontWeight: 600 }}>Thẻ tag</span>
                   </Space>
                 }
-                name="tags"
               >
                 {loadingTags ? (
-                  <Spin tip="Đang tải tag..." />
+                  <Spin />
                 ) : (
                   <Select
                     mode="tags"
                     size="large"
-                    placeholder="Nhập hoặc chọn thẻ tag (vd: Java, Backend...)"
-                    style={{ width: "100%" }}
+                    placeholder="Nhập hoặc chọn tag..."
                     onBlur={async (e) => {
                       const input = (e.target as HTMLInputElement).value.trim();
                       if (input) await handleTagCreate(input);
                     }}
-                    showSearch
-                  >
-                    {tags.map((t) => (
-                      <Select.Option key={t.name} value={t.name}>
-                        {t.name}
-                      </Select.Option>
-                    ))}
-                  </Select>
+                    options={tags.map((t) => ({
+                      label: t.name,
+                      value: t.name,
+                    }))}
+                  />
                 )}
               </Form.Item>
 
-              {/* Markdown Editor - IMPROVED */}
-              {/* Markdown Editor - IMPROVED */}
+              {/* Markdown Editor */}
               <Form.Item
-                name="contentMarkdown"
                 label={
                   <Space>
-                    <FileTextOutlined style={{ color: "#1890ff", fontSize: "18px" }} />
-                    <span style={{ fontWeight: 600, fontSize: "15px" }}>Nội dung bài viết</span>
-                    <span
-                      style={{
-                        color: "#8c8c8c",
-                        fontWeight: 400,
-                        fontSize: "14px",
-                      }}
-                    >
-                      (Hỗ trợ Markdown)
-                    </span>
+                    <FileTextOutlined style={{ color: "#1890ff" }} />
+                    <span style={{ fontWeight: 600 }}>Nội dung bài viết</span>
+                    <Text type="secondary">(Hỗ trợ Markdown)</Text>
                   </Space>
                 }
-                tooltip={{
-                  title:
-                    "Sử dụng Markdown để định dạng nội dung. Hỗ trợ: **in đậm**, *in nghiêng*, # tiêu đề, - danh sách, [link](url), ![hình ảnh](url)",
-                  icon: <InfoCircleOutlined style={{ color: "#1890ff", fontSize: "16px" }} />,
-                }}
               >
-                <div
+                <MDEditor
+                  value={contentMarkdown}
+                  onChange={(v) => setContentMarkdown(v || "")}
+                  height={500}
+                  preview="live"
                   data-color-mode="light"
-                  className="border rounded overflow-hidden md-editor-custom"
-                  style={{
-                    boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
-                    transition: "all 0.3s ease",
+                  textareaProps={{
+                    placeholder: `✍️ Bắt đầu viết bài tại đây...
+
+# Tiêu đề chính
+Viết phần mở đầu hấp dẫn cho bài viết của bạn.
+
+## Mục 1
+- Gạch đầu dòng 1
+- Gạch đầu dòng 2
+
+> Gợi ý: bạn có thể sử dụng **Markdown** để định dạng văn bản.`,
                   }}
-                >
-                  <style>{`
-                    .md-editor-custom .w-md-editor {
-                      min-height: 800px !important;
-                    }
-
-                    .md-editor-custom .w-md-editor-content {
-                      display: flex !important;
-                      flex-direction: column !important;
-                      height: 100% !important;
-                    }
-
-                    .md-editor-custom .w-md-editor-text-pre {
-                      flex: 1 1 70% !important; /* 👈 chiếm 70% chiều cao */
-                    }
-
-                    .md-editor-custom .w-md-editor-preview {
-                      flex: 1 1 30% !important; /* 👈 phần preview chiếm 30% còn lại */
-                    }
-
-                    .md-editor-custom .w-md-editor-text-pre > textarea {
-                      height: 100% !important;
-                      min-height: 500px !important;
-                      padding: 16px !important;
-                      font-size: 16px !important;
-                      line-height: 1.8 !important;
-                    }
-                    .md-editor-custom .w-md-editor-toolbar {
-                      height: 48px !important;
-                      padding: 8px 12px !important;
-                      background: #fafafa !important;
-                    }
-                    
-                    .md-editor-custom .w-md-editor-toolbar button {
-                      height: 32px !important;
-                      width: 32px !important;
-                      font-size: 18px !important;
-                    }
-                    
-                    .md-editor-custom .w-md-editor-toolbar-divider {
-                      height: 28px !important;
-                      margin: 0 8px !important;
-                    }
-                    
-                    .md-editor-custom .w-md-editor-toolbar ul > li {
-                      margin: 0 3px !important;
-                    }
-
-                    .md-editor-custom .w-md-editor-text {
-                      font-size: 15px !important;
-                      line-height: 1.8 !important;
-                    }
-
-                    .md-editor-custom .wmde-markdown {
-                      font-size: 15px !important;
-                      line-height: 1.8 !important;
-                    }
-                  `}</style>
-                  
-                  <MDEditor
-                    value={contentMarkdown}
-                    onChange={(v) => setContentMarkdown(v || "")}
-                    height={500}
-                    preview="live"
-                    textareaProps={{
-                      placeholder: `# Tiêu đề bài viết
-
-              ## Giới thiệu
-              Viết phần giới thiệu ngắn gọn về chủ đề...
-
-              ## Nội dung chính
-
-              ### Phần 1: Mô tả
-              - Điểm quan trọng thứ nhất
-              - Điểm quan trọng thứ hai
-
-              ### Phần 2: Chi tiết
-              **Lưu ý:** Sử dụng **in đậm** để nhấn mạnh nội dung quan trọng.
-
-              > Trích dẫn hoặc ghi chú đặc biệt
-
-              \`\`\`javascript
-              // Code example
-              console.log("Hello World");
-              \`\`\`
-
-              ## Kết luận
-              Tóm tắt những điểm chính...
-
-              ---
-
-              **Mẹo:** 
-              - Sử dụng # ## ### cho tiêu đề
-              - ** ** cho in đậm, * * cho in nghiêng
-              - [Text](URL) để tạo link
-              - ![Alt](URL) để chèn hình ảnh`,
-                    }}
-                    previewOptions={{
-                      rehypePlugins: [],
-                    }}
-                  />
-                </div>
-
-                {/* Quick Guide */}
-                <div
-                  style={{
-                    marginTop: "14px",
-                    padding: "14px 18px",
-                    background: "#f0f5ff",
-                    borderRadius: "8px",
-                    fontSize: "14px",
-                    color: "#595959",
-                  }}
-                >
-                  <Space direction="vertical" size={6} style={{ width: "100%" }}>
-                    <div
-                      style={{
-                        fontWeight: 600,
-                        color: "#1890ff",
-                        marginBottom: "6px",
-                        fontSize: "15px",
-                      }}
-                    >
-                      📝 Hướng dẫn nhanh Markdown:
-                    </div>
-                    <Space wrap size={[18, 10]}>
-                      <span style={{ fontSize: "14px" }}>
-                        <code style={{ fontSize: "13px", padding: "2px 6px" }}>#</code> Tiêu đề
-                      </span>
-                      <span style={{ fontSize: "14px" }}>
-                        <code style={{ fontSize: "13px", padding: "2px 6px" }}>**text**</code> In đậm
-                      </span>
-                      <span style={{ fontSize: "14px" }}>
-                        <code style={{ fontSize: "13px", padding: "2px 6px" }}>*text*</code> In nghiêng
-                      </span>
-                      <span style={{ fontSize: "14px" }}>
-                        <code style={{ fontSize: "13px", padding: "2px 6px" }}>- item</code> Danh sách
-                      </span>
-                      <span style={{ fontSize: "14px" }}>
-                        <code style={{ fontSize: "13px", padding: "2px 6px" }}>[text](url)</code> Link
-                      </span>
-                      <span style={{ fontSize: "14px" }}>
-                        <code style={{ fontSize: "13px", padding: "2px 6px" }}>![alt](url)</code> Hình ảnh
-                      </span>
-                      <span style={{ fontSize: "14px" }}>
-                        <code style={{ fontSize: "13px", padding: "2px 6px" }}>`code`</code> Code
-                      </span>
-                      <span style={{ fontSize: "14px" }}>
-                        <code style={{ fontSize: "13px", padding: "2px 6px" }}>&gt;</code> Trích dẫn
-                      </span>
-                    </Space>
-                  </Space>
-                </div>
+                />
               </Form.Item>
 
-              {/* Thumbnail Upload */}
+              {/* Thumbnail */}
               <Form.Item
                 label={
                   <Space>
                     <PictureOutlined style={{ color: "#1890ff", fontSize: "18px" }} />
-                    <span style={{ fontWeight: 600, fontSize: "15px" }}>Ảnh thumbnail</span>
+                    <span style={{ fontWeight: 600 }}>Ảnh thumbnail</span>
                   </Space>
                 }
               >
-                <Row gutter={16} align="middle">
+                <Row gutter={16}>
                   <Col xs={24} md={thumbnailPreview ? 16 : 24}>
                     <Upload
                       beforeUpload={() => false}
@@ -512,39 +404,27 @@ const ArticleForm: React.FC = () => {
                       accept="image/*"
                       listType="text"
                     >
-                      <Button
-                        icon={<UploadOutlined />}
-                        size="large"
-                        style={{ width: "100%" }}
-                      >
+                      <Button icon={<UploadOutlined />} size="large" block>
                         {thumbnail ? thumbnail.name : "Chọn ảnh thumbnail"}
                       </Button>
                     </Upload>
-                    <Text
-                      type="secondary"
-                      className="d-block mt-2"
-                      style={{ fontSize: "13px" }}
-                    >
+                    <Text type="secondary" style={{ fontSize: "13px" }}>
                       PNG, JPG, GIF tối đa 5MB
                     </Text>
                   </Col>
 
                   {thumbnailPreview && (
                     <Col xs={24} md={8}>
-                      <div
-                        className="border rounded overflow-hidden shadow-sm"
-                        style={{ height: "150px" }}
-                      >
-                        <img
-                          src={thumbnailPreview}
-                          alt="Preview"
-                          style={{
-                            width: "100%",
-                            height: "100%",
-                            objectFit: "cover",
-                          }}
-                        />
-                      </div>
+                      <img
+                        src={thumbnailPreview}
+                        alt="Preview"
+                        style={{
+                          width: "100%",
+                          height: "150px",
+                          objectFit: "cover",
+                          borderRadius: "8px",
+                        }}
+                      />
                     </Col>
                   )}
                 </Row>
@@ -562,9 +442,6 @@ const ArticleForm: React.FC = () => {
                     fontSize: "16px",
                     fontWeight: 600,
                     borderRadius: "12px",
-                    background:
-                      "linear-gradient(135deg, #1890ff 0%, #096dd9 100%)",
-                    border: "none",
                   }}
                   disabled={!user}
                 >
@@ -576,7 +453,7 @@ const ArticleForm: React.FC = () => {
 
           <div className="text-center mt-4">
             <Text type="secondary">
-              Bài viết của bạn sẽ được xem xét trước khi hiển thị công khai
+              Bài viết của bạn sẽ được duyệt trước khi hiển thị công khai
             </Text>
           </div>
         </div>

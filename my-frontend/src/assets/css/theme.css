@@ -1,4 +1,4 @@
-/* ===== Quiz Theme CSS – FULL LIGHT & DARK MODE ===== */
+/* ===== Quiz Theme CSS – FULL LIGHT & DARK MODE (FIXED) ===== */
 
 :root {
     /* ==== Màu chủ đạo (Brand Colors) ==== */
@@ -78,7 +78,7 @@
     --line-height-base: 1.6;
     --heading-letter-spacing: -0.5px;
 
-    --transition: all 0.25s ease;
+    --transition: color 0.25s ease, background 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
     --transition-fast: all 0.15s ease-in-out;
     --transition-slow: all 0.4s ease;
     --blur-bg: blur(10px);
@@ -99,13 +99,13 @@
 *::before,
 *::after {
     box-sizing: border-box;
-    transition: var(--transition);
 }
 
 a {
     text-decoration: none;
     color: var(--primary-color);
     font-weight: 600;
+    transition: color 0.25s ease;
 }
 
 a:hover {
@@ -144,7 +144,8 @@ h6 {
 
 h1 {
     font-size: 2.5rem;
-    background: var(--gradient-primary);
+    color: var(--text-color);
+    background: var(--text-color);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
@@ -158,6 +159,7 @@ h1 {
     background: var(--surface-color);
     margin-bottom: 2rem;
     overflow: visible;
+    transition: box-shadow 0.25s ease;
 }
 
 .card-header {
@@ -170,7 +172,7 @@ h1 {
 }
 
 .card-body {
-    padding: 2rem;
+    padding: 1.5rem;
     overflow: visible;
     color: var(--text-color);
 }
@@ -189,10 +191,10 @@ h1 {
     align-items: center;
     justify-content: center;
     gap: 0.5rem;
+    transition: background 0.25s ease, box-shadow 0.25s ease, color 0.25s ease;
 }
 
 .btn:hover {
-    transform: translateY(-2px);
     box-shadow: var(--hover-shadow);
 }
 
@@ -234,6 +236,7 @@ h1 {
     color: var(--primary-color) !important;
     border: 2px solid var(--primary-color) !important;
     background-color: var(--light-bg) !important;
+    transition: background 0.25s ease, color 0.25s ease, border-color 0.25s ease;
 }
 
 .btn-outline-primary:hover {
@@ -255,6 +258,7 @@ h1 {
     color: white !important;
     border: 2px solid white !important;
     background-color: transparent !important;
+    transition: background 0.25s ease, color 0.25s ease;
 }
 
 .btn-outline-light:hover {
@@ -270,6 +274,7 @@ h1 {
     color: var(--secondary-color) !important;
     border: 2px solid var(--secondary-color) !important;
     background-color: transparent !important;
+    transition: background 0.25s ease, color 0.25s ease;
 }
 
 .btn-outline-secondary:hover {
@@ -285,6 +290,7 @@ h1 {
     padding: 0.5rem 0.75rem !important;
     font-weight: 600;
     text-decoration: none;
+    transition: color 0.25s ease;
 }
 
 .btn-link:hover {
@@ -302,6 +308,7 @@ h1 {
     padding: 0.25rem;
     opacity: 1;
     position: relative;
+    transition: background-color 0.25s ease, border-color 0.25s ease;
 }
 
 .btn-close:hover {
@@ -330,10 +337,11 @@ h1 {
 .form-select {
     border: 2px solid var(--border-color);
     border-radius: 12px;
-    padding: 0.75rem 1rem;
     font-size: 1rem;
     background-color: var(--surface-color);
     color: var(--text-color);
+    transition: border-color 0.25s ease;
+    box-shadow: 0 0 0 0px rgba(96, 165, 250, 0);
 }
 
 .form-control::placeholder {
@@ -373,6 +381,7 @@ h1 {
     border-radius: 6px;
     border: 2px solid var(--border-color);
     background-color: var(--surface-color);
+    transition: background-color 0.25s ease, border-color 0.25s ease;
 }
 
 .form-check-input:checked {
@@ -393,6 +402,7 @@ h1 {
     font-size: 0.85rem;
     text-transform: uppercase;
     letter-spacing: 0.5px;
+    display: inline-block;
 }
 
 .badge-primary {
@@ -421,6 +431,7 @@ h1 {
 .progress-bar {
     background: var(--gradient-primary);
     border-radius: 10px;
+    transition: width 0.6s ease;
 }
 
 /* Alert */
@@ -431,6 +442,7 @@ h1 {
     padding: 1.25rem;
     background-color: var(--surface-alt);
     color: var(--text-color);
+    transition: box-shadow 0.25s ease;
 }
 
 .alert-success {
@@ -473,6 +485,7 @@ h1 {
 .navbar {
     background: var(--gradient-primary) !important;
     box-shadow: 0 4px 12px rgba(96, 165, 250, 0.2);
+    transition: box-shadow 0.25s ease;
 }
 
 .navbar-brand {
@@ -487,12 +500,12 @@ h1 {
     margin: 0 0.5rem;
     border-radius: 8px;
     padding: 0.5rem 1rem;
+    transition: color 0.25s ease, background 0.25s ease;
 }
 
 .nav-link:hover {
     color: #ffd700 !important;
     background: rgba(255, 255, 255, 0.15);
-    transform: translateY(-2px);
 }
 
 /* List Group */
@@ -503,6 +516,7 @@ h1 {
     margin-bottom: 0.5rem;
     background: var(--surface-color);
     color: var(--text-color);
+    transition: border-color 0.25s ease, background-color 0.25s ease;
 }
 
 .list-group-item:hover {
@@ -538,6 +552,7 @@ h1 {
     padding: 1rem;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
     color: var(--text-color);
+    transition: background 0.25s ease, box-shadow 0.25s ease;
 }
 
 .table tbody tr:hover td {
@@ -556,6 +571,7 @@ h1 {
     font-weight: 600;
     border-radius: 8px !important;
     padding: 0.5rem 1rem;
+    transition: background 0.25s ease, color 0.25s ease, border-color 0.25s ease;
 }
 
 .page-link:hover {
@@ -586,13 +602,13 @@ h1 {
     color: var(--text-color);
     font-weight: 500;
     margin-bottom: 0.25rem;
+    transition: background 0.25s ease, color 0.25s ease;
 }
 
 .dropdown-item:hover,
 .dropdown-item:active {
     background: var(--gradient-primary);
     color: white;
-    transform: translateX(4px);
 }
 
 .dropdown-divider {
@@ -625,12 +641,20 @@ h1 {
     border-radius: 12px;
     color: var(--text-color);
     font-weight: 600;
+    transition: border-color 0.25s ease, color 0.25s ease;
+    padding: 0.75rem 1rem;
+    cursor: pointer;
+    box-shadow: 0 0 0 0px rgba(96, 165, 250, 0) !important;
+}
+
+.input-group-text:hover {
+    color: var(--primary-color);
 }
 
 .input-group:focus-within .input-group-text {
     border-color: var(--primary-color);
-    box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.2);
     color: var(--primary-color);
+    box-shadow: none !important;
 }
 
 /* Nav Tabs & Pills */
@@ -640,11 +664,11 @@ h1 {
     font-weight: 600;
     padding: 0.75rem 1.5rem;
     background: transparent;
+    transition: background 0.25s ease, color 0.25s ease;
 }
 
 .nav-pills .nav-link:hover {
     background: var(--surface-alt);
-    transform: translateY(-2px);
 }
 
 .nav-pills .nav-link.active {
@@ -662,9 +686,8 @@ h1 {
     color: var(--text-light) !important;
     font-weight: 600;
     border-radius: 0;
-
+    transition: border-bottom-color 0.25s ease, color 0.25s ease;
 }
-
 
 .nav-tabs .nav-link:hover {
     border-bottom-color: var(--primary-color);
@@ -757,6 +780,7 @@ h1 {
     border-radius: 12px;
     padding: 1rem;
     border: 2px solid var(--border-color);
+    transition: background 0.25s ease, color 0.25s ease, border-color 0.25s ease;
 }
 
 .accordion-button:not(.collapsed) {

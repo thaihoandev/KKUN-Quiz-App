@@ -91,19 +91,19 @@ const ArticleCardHorizontal: React.FC<ArticleCardHorizontalProps> = ({ article }
               bottom: 0,
               left: 0,
               right: 0,
-              background: "linear-gradient(to top, rgba(0,0,0,0.7), transparent 60%)",
-              color: "#fff",
               padding: "20px 24px",
+              color: "#fff",
             }}
           >
             <Title
-              level={1}
+              level={2}
               style={{
-                fontSize: "30px",
+                fontSize: "26px",
                 fontWeight: 700,
                 color: "#fff",
                 margin: 0,
-                lineHeight: "1.2",
+                lineHeight: "1.3",
+                textShadow: "0 2px 8px rgba(0,0,0,0.6)", // 👈 tạo chiều sâu, chữ nổi bật
                 WebkitLineClamp: 2,
                 WebkitBoxOrient: "vertical",
                 overflow: "hidden",
@@ -113,6 +113,7 @@ const ArticleCardHorizontal: React.FC<ArticleCardHorizontalProps> = ({ article }
               {article.title}
             </Title>
           </div>
+
         </div>
 
         {/* === Content === */}
