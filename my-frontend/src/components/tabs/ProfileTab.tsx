@@ -186,7 +186,7 @@ const ProfileTab = ({ profile, onEditProfile }: ProfileTabProps) => {
                   <Button
                     type="primary"
                     icon={<PlusOutlined />}
-                    onClick={() => setOpenModal(true)}
+                    onClick={() => navigate("/series/create")}
                   >
                     Tạo series đầu tiên
                   </Button>
