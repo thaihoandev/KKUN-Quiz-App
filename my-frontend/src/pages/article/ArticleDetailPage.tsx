@@ -43,11 +43,15 @@ export default function ArticleDetailPage() {
     getArticleBySlug(slug)
       .then((article) => {
         setCurrentArticle(article);
-        console.log("article",article);
-        
-        // Nếu bài viết thuộc series nào đó → load danh sách bài trong series
-        if (article?.series.slug) {
+        console.log("article", article);
+
+        // ✅ Kiểm tra tồn tại series trước khi gọi API
+        if (article?.series && article.series.slug) {
           fetchSeriesArticles(article.series.slug);
+        } else {
+          // nếu không có series thì reset state liên quan
+          setSeriesArticles([]);
+          setSeriesTitle(null);
         }
 
         if (article?.category?.id) {
@@ -56,6 +60,7 @@ export default function ArticleDetailPage() {
           fetchCategoriesAndArticles();
         }
       })
+
       .catch((error) => {
         console.error("Error fetching article:", error);
         message.error("Không thể tải bài viết. Vui lòng thử lại!");
