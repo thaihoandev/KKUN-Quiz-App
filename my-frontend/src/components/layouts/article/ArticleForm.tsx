@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import MDEditor from "@uiw/react-md-editor";
 import { getCategories } from "@/services/categoryArticleService";
 import { getTags, createTag } from "@/services/tagService";
-import { getSeriesList } from "@/services/seriesService";
+import { getSeriesByAuthor, getSeriesList } from "@/services/seriesService";
 import { createArticle } from "@/services/articleService";
 import { ArticleCategoryDto } from "@/types/article";
 import { notification } from "antd";
@@ -74,7 +74,7 @@ const ArticleForm: React.FC = () => {
         const [catRes, tagRes, seriesRes] = await Promise.all([
           getCategories(0, 50, "name,asc"),
           getTags(0, 50, "name,asc"),
-          getSeriesList(0, 50, "createdAt,desc"),
+          getSeriesByAuthor(user?.userId.toString(), 0, 10, "createdAt,desc"),
         ]);
 
         setCategories(catRes.content);
@@ -250,6 +250,7 @@ const ArticleForm: React.FC = () => {
 
               {/* Category - Difficulty - Series */}
               <Row gutter={16}>
+                {/* 🟢 Category */}
                 <Col xs={24} md={8}>
                   <Form.Item
                     name="categoryId"
@@ -265,8 +266,17 @@ const ArticleForm: React.FC = () => {
                       <Spin />
                     ) : (
                       <Select
+                        showSearch
+                        allowClear
                         size="large"
-                        placeholder="-- Chọn chuyên mục --"
+                        placeholder="-- Chọn hoặc tìm chuyên mục --"
+                        optionFilterProp="label"
+                        filterOption={(input, option) =>
+                          (option?.label ?? "")
+                            .toString()
+                            .toLowerCase()
+                            .includes(input.toLowerCase())
+                        }
                         options={categories.map((c) => ({
                           label: c.name,
                           value: c.id,
@@ -276,6 +286,7 @@ const ArticleForm: React.FC = () => {
                   </Form.Item>
                 </Col>
 
+                {/* 🟠 Difficulty */}
                 <Col xs={24} md={8}>
                   <Form.Item
                     name="difficulty"
@@ -287,9 +298,17 @@ const ArticleForm: React.FC = () => {
                     }
                   >
                     <Select
-                      size="large"
+                      showSearch
                       allowClear
-                      placeholder="-- Chọn độ khó --"
+                      size="large"
+                      placeholder="-- Chọn hoặc tìm độ khó --"
+                      optionFilterProp="label"
+                      filterOption={(input, option) =>
+                        (option?.label ?? "")
+                          .toString()
+                          .toLowerCase()
+                          .includes(input.toLowerCase())
+                      }
                       options={[
                         { label: "Cơ bản", value: "BEGINNER" },
                         { label: "Trung bình", value: "INTERMEDIATE" },
@@ -299,6 +318,7 @@ const ArticleForm: React.FC = () => {
                   </Form.Item>
                 </Col>
 
+                {/* 🔵 Series */}
                 <Col xs={24} md={8}>
                   <Form.Item
                     name="seriesId"
@@ -311,20 +331,33 @@ const ArticleForm: React.FC = () => {
                   >
                     {loadingSeries ? (
                       <Spin />
-                    ) : (
+                    ) : series.length > 0 ? (
                       <Select
-                        size="large"
+                        showSearch
                         allowClear
-                        placeholder="-- Gắn vào series --"
+                        size="large"
+                        placeholder="-- Chọn hoặc tìm series --"
+                        optionFilterProp="label"
+                        filterOption={(input, option) =>
+                          (option?.label ?? "")
+                            .toString()
+                            .toLowerCase()
+                            .includes(input.toLowerCase())
+                        }
                         options={series.map((s) => ({
                           label: s.title,
                           value: s.id,
                         }))}
                       />
+                    ) : (
+                      <Text type="secondary">
+                        Không có series nào, hãy tạo trước khi gắn bài viết.
+                      </Text>
                     )}
                   </Form.Item>
                 </Col>
               </Row>
+
 
               {/* Tags */}
               <Form.Item

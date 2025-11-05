@@ -53,11 +53,12 @@ export const getSeriesList = async (
 
 // ✅ Lấy danh sách series của một tác giả
 export const getSeriesByAuthor = async (
-  authorId: string,
+  authorId?: string,
   page = 0,
   size = 10,
   sort = "createdAt,desc"
 ): Promise<PageResponse<SeriesDto>> => {
+  if (!authorId) return { content: [], totalPages: 0, totalElements: 0, size, number: page, first: true, last: true };
   try {
     const response = await axiosInstance.get(`${API_URL}/author/${authorId}`, {
       params: { page, size, sort },
@@ -65,17 +66,10 @@ export const getSeriesByAuthor = async (
     return response.data;
   } catch (error) {
     handleApiError(error, "Failed to fetch series by author");
-    return {
-      content: [],
-      totalPages: 0,
-      totalElements: 0,
-      size,
-      number: page,
-      first: true,
-      last: true,
-    };
+    return { content: [], totalPages: 0, totalElements: 0, size, number: page, first: true, last: true };
   }
 };
+
 
 // ✅ Lấy chi tiết series (gồm danh sách bài viết)
 export const getSeriesBySlug = async (slug: string): Promise<SeriesDto | null> => {
