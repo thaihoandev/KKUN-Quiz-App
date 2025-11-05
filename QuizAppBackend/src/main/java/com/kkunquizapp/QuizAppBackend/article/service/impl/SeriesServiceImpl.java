@@ -195,4 +195,12 @@ public class SeriesServiceImpl implements SeriesService {
         articleSeriesRepository.save(newLink);
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public Page<ArticleDto> getUnassignedArticlesByAuthor(UUID authorId, Pageable pageable) {
+        Page<Article> page = articleRepository.findUnassignedByAuthorId(authorId, pageable);
+        return page.map(mapper::toDto);
+    }
+
+
 }

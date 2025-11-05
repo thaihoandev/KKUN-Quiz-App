@@ -51,107 +51,92 @@ const ArticleCard: React.FC<ArticleCardProps> = ({ article }) => {
         hoverable
         className="border-0 shadow-sm"
         style={{
-          borderRadius: "16px",
+          borderRadius: 16,
           overflow: "hidden",
           transition: "all 0.3s ease",
           backgroundColor: "#fff",
-          height: "420px",
           display: "flex",
           flexDirection: "column",
+          height: 420,
         }}
         onMouseEnter={(e) => {
-          e.currentTarget.style.transform = "translateY(-8px)";
-          e.currentTarget.style.boxShadow = "0 8px 20px rgba(0, 0, 0, 0.15)";
+          e.currentTarget.style.transform = "translateY(-6px)";
+          e.currentTarget.style.boxShadow = "0 10px 22px rgba(0, 0, 0, 0.15)";
         }}
         onMouseLeave={(e) => {
           e.currentTarget.style.transform = "translateY(0)";
           e.currentTarget.style.boxShadow = "0 3px 8px rgba(0, 0, 0, 0.08)";
         }}
         bodyStyle={{
-          padding: "10px",
-          flex: "1 1 auto",
+          padding: "12px",
           display: "flex",
           flexDirection: "column",
+          flex: "1 1 auto",
         }}
       >
         {/* Thumbnail */}
         <div
-        style={{
+          style={{
             width: "100%",
-            height: "180px",
-            borderRadius: "12px",
+            height: 180,
+            borderRadius: 12,
             overflow: "hidden",
             backgroundColor: "#f0f2f5",
-            position: "relative",
             flexShrink: 0,
-        }}
+          }}
         >
-        {article.thumbnailUrl ? (
+          {article.thumbnailUrl ? (
             <img
-            src={article.thumbnailUrl}
-            alt={article.title}
-            style={{
+              src={article.thumbnailUrl}
+              alt={article.title}
+              style={{
                 width: "100%",
                 height: "100%",
-                objectFit: "cover",      // 👈 giữ tỉ lệ ảnh, cắt vừa khung
-                objectPosition: "center", // 👈 canh giữa ảnh
+                objectFit: "cover",
+                objectPosition: "center",
                 transition: "transform 0.4s ease",
                 display: "block",
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.transform = "scale(1.08)")}
-            onMouseLeave={(e) => (e.currentTarget.style.transform = "scale(1)")}
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.transform = "scale(1.05)")}
+              onMouseLeave={(e) => (e.currentTarget.style.transform = "scale(1)")}
             />
-        ) : (
+          ) : (
             <div
-            style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
+              style={{
                 width: "100%",
                 height: "100%",
                 background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-            }}
+              }}
             >
-            <FolderOutlined style={{ fontSize: "56px", color: "white", opacity: 0.7 }} />
+              <FolderOutlined style={{ fontSize: 56, color: "white", opacity: 0.7 }} />
             </div>
-        )}
+          )}
         </div>
-
 
         {/* Content */}
         <div
           style={{
             flex: "1 1 auto",
             display: "flex",
-                      flexDirection: "column",
-            padding: "6px 10px",
+            flexDirection: "column",
+            justifyContent: "space-between",
+            paddingTop: 10,
           }}
         >
-          <div className="mt-3">
+          <div>
             <Space wrap size={[8, 8]} className="mb-2">
               <Tag
                 color={getDifficultyColor(article.difficulty)}
-                style={{
-                  fontWeight: 500,
-                  fontSize: "13px",
-                  borderRadius: "16px",
-                }}
+                style={{ fontWeight: 500, fontSize: 13, borderRadius: 16 }}
               >
                 {getDifficultyText(article.difficulty)}
               </Tag>
               {article.category && (
-                <Tag
-                  color="blue"
-                  style={{
-                    fontWeight: 500,
-                    fontSize: "13px",
-                    borderRadius: "16px",
-                  }}
-                >
-                  <FolderOutlined style={{ marginRight: "4px" }} />
+                <Tag color="blue" style={{ fontWeight: 500, fontSize: 13, borderRadius: 16 }}>
+                  <FolderOutlined style={{ marginRight: 4 }} />
                   {article.category.name}
                 </Tag>
               )}
@@ -160,11 +145,11 @@ const ArticleCard: React.FC<ArticleCardProps> = ({ article }) => {
             <Title
               level={4}
               style={{
-                fontSize: "22px",
+                fontSize: 20,
                 fontWeight: 700,
                 color: "#1a1a1a",
-                lineHeight: "1.6",
-                marginBottom: "8px",
+                marginBottom: 8,
+                lineHeight: 1.5,
               }}
             >
               <div
@@ -174,8 +159,6 @@ const ArticleCard: React.FC<ArticleCardProps> = ({ article }) => {
                   WebkitLineClamp: 2,
                   overflow: "hidden",
                   textOverflow: "ellipsis",
-                  wordBreak: "break-word",
-                  height: "3.2em",
                 }}
               >
                 {article.title}
@@ -184,22 +167,21 @@ const ArticleCard: React.FC<ArticleCardProps> = ({ article }) => {
           </div>
 
           {/* Meta info */}
-          <div style={{ marginTop: "12px", color: "#595959", fontSize: "13px" }}>
+          <div style={{ marginTop: 10, color: "#595959", fontSize: 13 }}>
             <div className="d-flex align-items-center mb-2">
-              <UserOutlined style={{ marginRight: "6px" }} />
+              <UserOutlined style={{ marginRight: 6 }} />
               <Text>{article.authorName || "Admin"}</Text>
             </div>
 
             <div className="d-flex align-items-center justify-content-between">
               <span>
-                <ClockCircleOutlined style={{ marginRight: "6px" }} />
+                <ClockCircleOutlined style={{ marginRight: 6 }} />
                 {new Date(article.createdAt).toLocaleDateString("vi-VN")} •{" "}
                 {article.readingTime} phút đọc
               </span>
-
               {article.views !== undefined && (
                 <span>
-                  <EyeOutlined style={{ marginRight: "4px" }} />
+                  <EyeOutlined style={{ marginRight: 4 }} />
                   {article.views}
                 </span>
               )}

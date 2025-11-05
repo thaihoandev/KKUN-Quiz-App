@@ -1,10 +1,12 @@
 package com.kkunquizapp.QuizAppBackend.article.controller;
 
+import com.kkunquizapp.QuizAppBackend.article.dto.ArticleDto;
 import com.kkunquizapp.QuizAppBackend.article.dto.SeriesDto;
 import com.kkunquizapp.QuizAppBackend.article.service.SeriesService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -35,6 +37,13 @@ public class SeriesController {
     @GetMapping("/{slug}")
     public ResponseEntity<SeriesDto> getBySlug(@PathVariable String slug) {
         return ResponseEntity.ok(seriesService.getBySlug(slug));
+    }
+
+    @GetMapping("/author/{authorId}/unassigned-articles")
+    public ResponseEntity<Page<ArticleDto>> getUnassignedArticlesByAuthor(
+            @PathVariable UUID authorId,
+            @PageableDefault(size = 12, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
+        return ResponseEntity.ok(seriesService.getUnassignedArticlesByAuthor(authorId, pageable));
     }
 
     @PostMapping

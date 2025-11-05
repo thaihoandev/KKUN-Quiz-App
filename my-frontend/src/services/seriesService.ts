@@ -88,6 +88,32 @@ export const getSeriesBySlug = async (slug: string): Promise<SeriesDto | null> =
   }
 };
 
+export const getUnassignedArticlesByAuthorPaged = async (
+  authorId: string,
+  page = 0,
+  size = 12,
+  sort = "createdAt,desc"
+): Promise<PageResponse<ArticleDto>> => {
+  try {
+    const res = await axiosInstance.get(
+      `${API_URL}/author/${authorId}/unassigned-articles`,
+      { params: { page, size, sort } }
+    );
+    return res.data;
+  } catch (error) {
+    handleApiError(error, "Failed to fetch unassigned articles");
+    return {
+      content: [],
+      totalPages: 0,
+      totalElements: 0,
+      size,
+      number: page,
+      first: true,
+      last: true,
+    };
+  }
+};
+
 // ✅ Tạo mới series
 export const createSeries = async (
   title: string,
