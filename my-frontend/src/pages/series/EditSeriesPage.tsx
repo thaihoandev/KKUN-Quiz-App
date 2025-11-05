@@ -1,50 +1,83 @@
 import { useEffect, useState } from "react";
-import { Input, Button, Card, Spin, message } from "antd";
-import { getSeriesBySlug, updateSeries } from "@/services/seriesService";
+import {
+  Input,
+  Button,
+  Card,
+  Spin,
+  Divider,
+  Typography,
+  List,
+  notification,
+} from "antd";
+import {
+  getSeriesBySlug,
+  updateSeries,
+  updateArticleOrder,
+} from "@/services/seriesService";
 import { useNavigate, useParams } from "react-router-dom";
-import { BookOutlined, ArrowLeftOutlined, SaveOutlined } from "@ant-design/icons";
+import {
+  BookOutlined,
+  ArrowLeftOutlined,
+  SaveOutlined,
+  MenuOutlined,
+  CheckOutlined,
+} from "@ant-design/icons";
+import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
+import { ArticleDto } from "@/types/article";
 
-interface SeriesDto {
-  id: string;
-  title: string;
-  slug: string;
-  description?: string;
-  thumbnailUrl?: string;
-}
+const { Text } = Typography;
 
 export default function EditSeriesPage() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
 
   const [form, setForm] = useState({
+    id: "",
     title: "",
     description: "",
     thumbnailUrl: "",
   });
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
 
-  // ✅ Load series info
+  const [articles, setArticles] = useState<ArticleDto[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [savingInfo, setSavingInfo] = useState(false);
+  const [savingOrder, setSavingOrder] = useState(false);
+  const [orderChanged, setOrderChanged] = useState(false);
+
+  // ✅ Load dữ liệu series + bài viết
   useEffect(() => {
     const fetchSeries = async () => {
       if (!slug) return;
       setLoading(true);
       try {
-        // có thể đổi sang getSeriesById nếu backend hỗ trợ
         const data = await getSeriesBySlug(slug);
         if (!data) {
-          message.error("Không tìm thấy series.");
+          notification.error({
+            message: "Không tìm thấy series",
+            description: "Series này không tồn tại hoặc đã bị xóa.",
+          });
           navigate("/me/series");
           return;
         }
+
         setForm({
+          id: data.id,
           title: data.title,
           description: data.description || "",
           thumbnailUrl: data.thumbnailUrl || "",
         });
+
+        const sortedArticles =
+          data.articles?.sort(
+            (a, b) => (a.orderIndex || 0) - (b.orderIndex || 0)
+          ) || [];
+        setArticles(sortedArticles);
       } catch (err) {
         console.error(err);
-        message.error("Không thể tải thông tin series.");
+        notification.error({
+          message: "Lỗi tải dữ liệu",
+          description: "Không thể tải thông tin series. Vui lòng thử lại.",
+        });
       } finally {
         setLoading(false);
       }
@@ -52,30 +85,75 @@ export default function EditSeriesPage() {
     fetchSeries();
   }, [slug]);
 
-  const handleSave = async () => {
+  // ✅ Lưu thông tin series
+  const handleSaveInfo = async () => {
     if (!form.title.trim()) {
-      message.warning("Vui lòng nhập tiêu đề series!");
+      notification.warning({
+        message: "Thiếu tiêu đề",
+        description: "Vui lòng nhập tiêu đề cho series.",
+      });
       return;
     }
-    if (!slug) return;
+    if (!form.id) return;
 
-    setSaving(true);
+    setSavingInfo(true);
     try {
       const updated = await updateSeries(
-        slug,
+        form.id,
         form.title,
         form.description,
         form.thumbnailUrl || undefined
       );
       if (updated) {
-        message.success("Cập nhật series thành công!");
-        navigate(`/series/${updated.slug}`);
+        notification.success({
+          message: "Cập nhật thành công",
+          description: "Thông tin series đã được lưu lại.",
+        });
       }
     } catch (err) {
       console.error(err);
-      message.error("Không thể cập nhật series.");
+      notification.error({
+        message: "Cập nhật thất bại",
+        description: "Không thể lưu thông tin series. Vui lòng thử lại.",
+      });
     } finally {
-      setSaving(false);
+      setSavingInfo(false);
+    }
+  };
+
+  // ✅ Kéo-thả reorder
+  const handleDragEnd = (result: any) => {
+    if (!result.destination) return;
+    const reordered = Array.from(articles);
+    const [moved] = reordered.splice(result.source.index, 1);
+    reordered.splice(result.destination.index, 0, moved);
+
+    reordered.forEach((a, i) => (a.orderIndex = i + 1));
+    setArticles(reordered);
+    setOrderChanged(true);
+  };
+
+  // ✅ Lưu thứ tự bài viết
+  const handleSaveOrder = async () => {
+    if (!form.id) return;
+    setSavingOrder(true);
+    try {
+      const ids = articles.map((a) => a.id);
+      const ok = await updateArticleOrder(form.id, ids);
+      if (ok) {
+        notification.success({
+          message: "Cập nhật thứ tự thành công",
+          description: "Thứ tự bài viết trong series đã được cập nhật.",
+        });
+        setOrderChanged(false);
+      }
+    } catch {
+      notification.error({
+        message: "Lưu thứ tự thất bại",
+        description: "Vui lòng thử lại hoặc kiểm tra kết nối mạng.",
+      });
+    } finally {
+      setSavingOrder(false);
     }
   };
 
@@ -88,6 +166,7 @@ export default function EditSeriesPage() {
 
   return (
     <div className="container py-5">
+      {/* 🔙 Back */}
       <Button
         type="link"
         icon={<ArrowLeftOutlined />}
@@ -97,14 +176,15 @@ export default function EditSeriesPage() {
         Quay lại
       </Button>
 
+      {/* 🧾 Form chỉnh sửa */}
       <Card
         title={
           <span className="fw-semibold">
             <BookOutlined className="me-2" />
-            Chỉnh sửa Series
+            Thông tin Series
           </span>
         }
-        className="shadow-sm border-0"
+        className="shadow-sm border-0 mb-5"
       >
         <Input
           placeholder="Tiêu đề series"
@@ -117,9 +197,7 @@ export default function EditSeriesPage() {
           rows={3}
           className="mb-3"
           value={form.description}
-          onChange={(e) =>
-            setForm({ ...form, description: e.target.value })
-          }
+          onChange={(e) => setForm({ ...form, description: e.target.value })}
         />
         <Input
           placeholder="Thumbnail URL (tùy chọn)"
@@ -134,13 +212,85 @@ export default function EditSeriesPage() {
           <Button
             type="primary"
             icon={<SaveOutlined />}
-            loading={saving}
-            onClick={handleSave}
+            loading={savingInfo}
+            onClick={handleSaveInfo}
             disabled={!form.title.trim()}
           >
-            Lưu thay đổi
+            Lưu thông tin
           </Button>
         </div>
+      </Card>
+
+      {/* 🔄 Sắp xếp bài viết */}
+      <Card
+        title={
+          <span className="fw-semibold">
+            <MenuOutlined className="me-2" />
+            Sắp xếp thứ tự bài viết
+          </span>
+        }
+        className="shadow-sm border-0"
+      >
+        {articles.length === 0 ? (
+          <Text type="secondary">Series chưa có bài viết nào.</Text>
+        ) : (
+          <>
+            <DragDropContext onDragEnd={handleDragEnd}>
+              <Droppable droppableId="articles">
+                {(provided) => (
+                  <div ref={provided.innerRef} {...provided.droppableProps}>
+                    <List
+                      dataSource={articles}
+                      renderItem={(a, index) => (
+                        <Draggable
+                          draggableId={a.id}
+                          index={index}
+                          key={a.id}
+                        >
+                          {(drag) => (
+                            <div
+                              ref={drag.innerRef}
+                              {...drag.draggableProps}
+                              {...drag.dragHandleProps}
+                              className="border rounded p-2 mb-2 bg-light d-flex align-items-center justify-content-between"
+                            >
+                              <div>
+                                <Text strong>
+                                  {index + 1}. {a.title}
+                                </Text>
+                                <br />
+                                <Text type="secondary" style={{ fontSize: 12 }}>
+                                  {a.description || "Không có mô tả"}
+                                </Text>
+                              </div>
+                              <MenuOutlined className="text-muted" />
+                            </div>
+                          )}
+                        </Draggable>
+                      )}
+                    >
+                      {provided.placeholder}
+                    </List>
+                  </div>
+                )}
+              </Droppable>
+            </DragDropContext>
+
+            <Divider />
+
+            <div className="text-end">
+              <Button
+                type="primary"
+                icon={<CheckOutlined />}
+                loading={savingOrder}
+                disabled={!orderChanged}
+                onClick={handleSaveOrder}
+              >
+                Lưu thứ tự bài viết
+              </Button>
+            </div>
+          </>
+        )}
       </Card>
     </div>
   );

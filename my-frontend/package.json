@@ -13,6 +13,7 @@
   "dependencies": {
     "@algolia/autocomplete-js": "^1.19.2",
     "@ant-design/v5-patch-for-react-19": "^1.0.3",
+    "@hello-pangea/dnd": "^18.0.1",
     "@hookform/resolvers": "^5.1.1",
     "@react-oauth/google": "^0.12.2",
     "@simonwep/pickr": "^1.9.1",
