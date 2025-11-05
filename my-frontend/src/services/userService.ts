@@ -1,9 +1,9 @@
-// userService.ts
+// src/services/userService.ts
 import axiosInstance from "./axiosInstance";
 import { UserResponseDTO, UserRequestDTO, PageResponse } from "@/interfaces";
 import { useAuthStore } from "@/store/authStore";
 
-// ETag cache cho các resource đơn
+// ========================== Cache (ETag) ==========================
 const etagCache = new Map<string, string>();
 const dataCache = new Map<string, UserResponseDTO>();
 const saveCache = (key: string, data: UserResponseDTO, etag?: string) => {
@@ -11,7 +11,7 @@ const saveCache = (key: string, data: UserResponseDTO, etag?: string) => {
   if (etag) etagCache.set(key, etag);
 };
 
-// ========================== Types cho Friends/Requests ==========================
+// ========================== Types ==========================
 export type FriendSuggestion = {
   userId: string;
   name?: string;
@@ -39,17 +39,17 @@ export type FriendRequestItem = {
 export type FriendshipStatus = "NONE" | "REQUESTED" | "INCOMING" | "FRIEND";
 export type FriendshipStatusResponse = { status: FriendshipStatus; requestId?: string | null };
 
-// ========================== Admin: Get all users (Page) ==========================
+// ========================== Admin: Get all users ==========================
 export const getAllUsers = async (params?: {
   page?: number;
   size?: number;
-  sort?: string; // ví dụ: 'createdAt,desc'
+  sort?: string;
 }): Promise<PageResponse<UserResponseDTO>> => {
-  const res = await axiosInstance.get<PageResponse<UserResponseDTO>>("/users", { params });
+  const res = await axiosInstance.get<PageResponse<UserResponseDTO>>(`/users/`, { params });
   return res.data;
 };
 
-// ========================== Current user với ETag ==========================
+// ========================== Current user ==========================
 export const getCurrentUser = async (force = false): Promise<UserResponseDTO | null> => {
   const persistedUser = useAuthStore.getState().user;
   if (!persistedUser) return null;
@@ -58,7 +58,8 @@ export const getCurrentUser = async (force = false): Promise<UserResponseDTO | n
   const headers: Record<string, string> = {};
   if (!force && etagCache.has(key)) headers["If-None-Match"] = etagCache.get(key)!;
 
-  const res = await axiosInstance.get<UserResponseDTO>("/users/me", {
+  // ✅ Backend endpoint: /api/users/me
+  const res = await axiosInstance.get<UserResponseDTO>(`/users/me`, {
     headers,
     validateStatus: (s) => (s >= 200 && s < 300) || s === 304,
   });
@@ -70,7 +71,7 @@ export const getCurrentUser = async (force = false): Promise<UserResponseDTO | n
   return res.data;
 };
 
-// ========================== Get user by id với ETag ==========================
+// ========================== Get user by ID ==========================
 export const getUserById = async (userId: string, force = false): Promise<UserResponseDTO> => {
   const key = userId;
   const headers: Record<string, string> = {};
@@ -95,7 +96,7 @@ export const getUserById = async (userId: string, force = false): Promise<UserRe
   return res.data;
 };
 
-// ========================== Update profile ==========================
+// ========================== Update user ==========================
 export const updateUser = async (userId: string, patch: Partial<UserRequestDTO>) => {
   const res = await axiosInstance.put<UserResponseDTO>(`/users/${userId}`, patch);
   const meId = useAuthStore.getState().user?.userId;
@@ -107,12 +108,14 @@ export const updateUser = async (userId: string, patch: Partial<UserRequestDTO>)
   return res.data;
 };
 
+// ========================== Update avatar ==========================
 export const updateUserAvatar = async (userId: string, file: File) => {
   const fd = new FormData();
   fd.append("file", file);
   const res = await axiosInstance.post<UserResponseDTO>(`/users/${userId}/avatar`, fd, {
     headers: { "Content-Type": "multipart/form-data" },
   });
+
   const meId = useAuthStore.getState().user?.userId;
   if (meId && meId === userId) {
     try {
@@ -124,50 +127,51 @@ export const updateUserAvatar = async (userId: string, file: File) => {
 
 // ========================== Soft delete ==========================
 export const deleteSoftUser = async (userId: string, password: string) => {
+  // ✅ Backend endpoint: /api/users/{id}/delete
   await axiosInstance.post(`/users/${userId}/delete`, { password });
   etagCache.delete(userId);
   dataCache.delete(userId);
 };
 
-// ========================== Suggestions (Page) ==========================
+// ========================== Friend suggestions ==========================
 export const getFriendSuggestions = async (params?: {
   page?: number;
   size?: number;
   sort?: string;
 }): Promise<PageResponse<FriendSuggestion>> => {
-  const res = await axiosInstance.get<PageResponse<FriendSuggestion>>(`/users/suggestions`, {
-    params,
-  });
+  // ✅ Backend: /api/users/me/friends/suggestions
+  const res = await axiosInstance.get<PageResponse<FriendSuggestion>>(
+    `/users/me/friends/suggestions`,
+    { params }
+  );
   return res.data;
 };
 
-// (nếu cần cho user cụ thể)
-// export const getFriendSuggestionsForUser = async (userId: string, params?: { page?: number; size?: number; sort?: string; }) => {
-//   const res = await axiosInstance.get<PageResponse<FriendSuggestion>>(`/users/${userId}/suggestions`, { params });
-//   return res.data;
-// };
-
-// ========================== Friend Request Actions ==========================
+// ========================== Friend requests ==========================
 export const sendFriendRequest = async (friendId: string) =>
+  // ✅ Backend: /api/users/me/friends/{friendId}
   axiosInstance.post(`/users/me/friends/${friendId}`);
 
 export const acceptFriendRequest = async (requestId: string) =>
+  // ✅ Backend: /api/users/me/friend-requests/{requestId}/accept
   axiosInstance.post(`/users/me/friend-requests/${requestId}/accept`);
 
 export const declineFriendRequest = async (requestId: string) =>
+  // ✅ Backend: /api/users/me/friend-requests/{requestId}/decline
   axiosInstance.post(`/users/me/friend-requests/${requestId}/decline`);
 
 export const cancelFriendRequest = async (requestId: string) =>
+  // ✅ Backend: /api/users/me/friend-requests/{requestId}/cancel
   axiosInstance.post(`/users/me/friend-requests/${requestId}/cancel`);
 
-// ========================== Friend Requests (Page) ==========================
 export const getIncomingFriendRequestsPaged = async (params?: {
   page?: number;
   size?: number;
   sort?: string;
 }): Promise<PageResponse<FriendRequestItem>> => {
+  // ✅ Backend: /api/users/me/friend-requests/incoming
   const res = await axiosInstance.get<PageResponse<FriendRequestItem>>(
-    "/users/me/friend-requests/incoming",
+    `/users/me/friend-requests/incoming`,
     { params }
   );
   return res.data;
@@ -178,36 +182,41 @@ export const getOutgoingFriendRequestsPaged = async (params?: {
   size?: number;
   sort?: string;
 }): Promise<PageResponse<FriendRequestItem>> => {
+  // ✅ Backend: /api/users/me/friend-requests/outgoing
   const res = await axiosInstance.get<PageResponse<FriendRequestItem>>(
-    "/users/me/friend-requests/outgoing",
+    `/users/me/friend-requests/outgoing`,
     { params }
   );
   return res.data;
 };
 
-// ========================== Friendship Status ==========================
+// ========================== Friendship status ==========================
 export const getFriendshipStatus = async (targetId: string) => {
+  // ✅ Backend: /api/users/me/friendships/{targetId}/status
   const res = await axiosInstance.get<FriendshipStatusResponse>(
     `/users/me/friendships/${targetId}/status`
   );
   return res.data;
 };
 
-// ========================== My Friends (Page) ==========================
+// ========================== My friends ==========================
 export const getMyFriends = async (params?: {
   page?: number;
   size?: number;
   sort?: string;
 }): Promise<PageResponse<UserResponseDTO>> => {
+  // ✅ Backend: /api/users/me/friends
   const res = await axiosInstance.get<PageResponse<UserResponseDTO>>(`/users/me/friends`, {
     params,
   });
   return res.data;
 };
 
-// ========================== Email change via OTP ==========================
+// ========================== Email change (OTP) ==========================
 export const requestEmailOtp = async (newEmail: string) =>
-  axiosInstance.post("/users/me/request-email-otp", { email: newEmail });
+  // ✅ Backend: /api/users/me/request-email-otp
+  axiosInstance.post(`/users/me/request-email-otp`, { email: newEmail });
 
 export const verifyEmailOtp = async (code: string) =>
-  axiosInstance.post("/users/me/verify-email-otp", { code });
+  // ✅ Backend: /api/users/me/verify-email-otp
+  axiosInstance.post(`/users/me/verify-email-otp`, { code });

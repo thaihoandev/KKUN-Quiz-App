@@ -85,14 +85,14 @@ public class AuthServiceImpl implements AuthService {
         );
 
         if (authentication.isAuthenticated()) {
+
             UserPrincipal userPrincipal = (UserPrincipal) authentication.getPrincipal();
             Map<String, String> tokens = jwtService.generateTokens(userPrincipal);
 
             Optional<User> userOpt = userRepo.findByUsername(userPrincipal.getUsername());
-            if (userOpt.isEmpty()) {
-                throw new IllegalStateException("User not found after authentication");
+            if (userOpt.isEmpty() || !userOpt.get().isActive()) {
+                throw new InvalidRequestException("This account is deactivated or not found");
             }
-
             UserResponseDTO userResponse = modelMapper.map(userOpt.get(), UserResponseDTO.class);
 
             Map<String, Object> result = new HashMap<>();
@@ -210,11 +210,18 @@ public class AuthServiceImpl implements AuthService {
     public String getCurrentUserId() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
 
-        if (authentication != null && authentication.getPrincipal() instanceof Jwt) {
-            Jwt jwt = (Jwt) authentication.getPrincipal();
-            return jwt.getClaim("userId");
+        if (authentication == null || !authentication.isAuthenticated()) {
+            throw new IllegalStateException("No authenticated user");
         }
 
-        throw new IllegalStateException("Cannot get userId from Access Token");
+        Object principal = authentication.getPrincipal();
+
+        if (principal instanceof Jwt jwt) {
+            return jwt.getClaim("userId");
+        } else if (principal instanceof UserPrincipal userPrincipal) {
+            return userPrincipal.getUserId().toString();
+        }
+
+        throw new IllegalStateException("Unsupported principal type: " + principal.getClass().getSimpleName());
     }
 }

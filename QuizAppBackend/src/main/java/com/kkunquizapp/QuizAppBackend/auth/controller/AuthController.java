@@ -30,15 +30,17 @@ public class AuthController {
 
     // ================= Cookie helper =================
     private void writeCookie(HttpServletResponse resp, String name, String value, int maxAgeSeconds, boolean httpOnly) {
+        boolean isLocalhost = System.getenv("SPRING_PROFILES_ACTIVE") == null
+                || System.getenv("SPRING_PROFILES_ACTIVE").equals("local");
+
         ResponseCookie cookie = ResponseCookie.from(name, value == null ? "" : value)
                 .httpOnly(httpOnly)
-                .secure(true)
+                .secure(!isLocalhost) // ❗ localhost không cần HTTPS
+                .sameSite(isLocalhost ? "Lax" : "None") // ❗ Lax cho dev, None cho deploy
                 .path("/")
                 .maxAge(Duration.ofSeconds(Math.max(0, maxAgeSeconds)))
-                .sameSite("None")
-                // ✅ KHÔNG set domain (để browser tự động set)
-                // Hoặc set domain chính xác: .onrender.com
                 .build();
+
         resp.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
     }
 

@@ -4,21 +4,14 @@ import com.cloudinary.Cloudinary;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kkunquizapp.QuizAppBackend.auth.dto.AuthResponseDTO;
 import com.kkunquizapp.QuizAppBackend.auth.service.JwtService;
-import com.kkunquizapp.QuizAppBackend.common.exception.DuplicateEntityException;
-import com.kkunquizapp.QuizAppBackend.common.exception.InvalidRequestException;
-import com.kkunquizapp.QuizAppBackend.common.exception.UserNotFoundException;
+import com.kkunquizapp.QuizAppBackend.common.exception.*;
 import com.kkunquizapp.QuizAppBackend.fileUpload.service.CloudinaryService;
 import com.kkunquizapp.QuizAppBackend.notification.service.NotificationService;
 import com.kkunquizapp.QuizAppBackend.user.dto.*;
-
 import com.kkunquizapp.QuizAppBackend.user.model.*;
-import com.kkunquizapp.QuizAppBackend.user.model.enums.FriendshipStatus;
-import com.kkunquizapp.QuizAppBackend.user.model.enums.UserRole;
-import com.kkunquizapp.QuizAppBackend.user.repository.EmailChangeTokenRepo;
-import com.kkunquizapp.QuizAppBackend.user.repository.FriendRequestRepo;
-import com.kkunquizapp.QuizAppBackend.user.repository.UserRepo;
+import com.kkunquizapp.QuizAppBackend.user.model.enums.*;
+import com.kkunquizapp.QuizAppBackend.user.repository.*;
 import com.kkunquizapp.QuizAppBackend.user.service.*;
-import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.modelmapper.ModelMapper;
 import org.springframework.beans.factory.annotation.Value;
@@ -28,23 +21,18 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
-import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.context.request.RequestContextHolder;
-import org.springframework.web.context.request.ServletRequestAttributes;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
 import java.time.LocalDateTime;
-import java.time.Year;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import static com.kkunquizapp.QuizAppBackend.common.helper.validateHelper.isEmailFormat;
-
 
 @Service
 @RequiredArgsConstructor
@@ -61,9 +49,9 @@ public class UserServiceImpl implements UserService {
     private final NotificationService notificationService;
     private final EmailChangeTokenRepo emailChangeTokenRepo;
     private final MailService mailService;
-    private final BCryptPasswordEncoder passwordEncoder;
     private final FriendRequestRepo friendRequestRepo;
     private final StringRedisTemplate redis;
+
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final BCryptPasswordEncoder bCrypt = new BCryptPasswordEncoder();
 
@@ -85,16 +73,21 @@ public class UserServiceImpl implements UserService {
     @Value("${app.supportEmail:no-reply@kkun-quiz.local}")
     private String supportEmail;
 
+    // ===================== Helpers =====================
     private String otpKeyForUser(UUID userId) {
         return "email:change:OTP:" + userId;
     }
 
-    // ===================== OAUTH2 (giữ nguyên) =====================
+    private User getUserOrThrow(UUID id) {
+        return userRepo.findById(id)
+                .orElseThrow(() -> new UserNotFoundException("User not found with ID: " + id));
+    }
+
+    // ===================== OAUTH2 LOGIN =====================
     @Override
     @Transactional
     public AuthResponseDTO createOrUpdateOAuth2User(String email, String name) {
-        User user = userRepo.findByEmail(email)
-                .orElse(new User());
+        User user = userRepo.findByEmail(email).orElse(new User());
 
         if (user.getUserId() == null) {
             user.setEmail(email);
@@ -103,234 +96,78 @@ public class UserServiceImpl implements UserService {
             user.setPassword(encoder.encode(UUID.randomUUID().toString()));
         }
 
-        User savedUser = userRepo.save(user);
-        UserDetails userDetails = customUserDetailsService.loadUserByUsername(savedUser.getUsername());
+        userRepo.save(user);
+        UserDetails userDetails = customUserDetailsService.loadUserByUsername(user.getUsername());
         Map<String, String> tokens = jwtService.generateTokens((UserPrincipal) userDetails);
 
         return AuthResponseDTO.builder()
                 .accessToken(tokens.get("accessToken"))
                 .refreshToken(tokens.get("refreshToken"))
                 .type("Bearer")
-                .username(savedUser.getUsername())
-                .roles(List.of(savedUser.getRole().name()))
-                .build();
-    }
-
-    // ===================== GET ALL USERS (Page) =====================
-    @Override
-    @Transactional(readOnly = true)
-    public Page<UserResponseDTO> getAllUsers(String token, Pageable pageable) {
-        Map<String, Object> userInfo = jwtService.getUserInfoFromToken(token.replace("Bearer ", ""));
-        boolean isAdmin = ((List<?>) userInfo.get("roles")).contains("ROLE_ADMIN");
-        if (!isAdmin) {
-            throw new SecurityException("Bạn không có quyền truy cập");
-        }
-
-        Page<User> page = userRepo.findAll(pageable);
-        return page.map(u -> modelMapper.map(u, UserResponseDTO.class));
-    }
-
-    // ===================== GET USER BY ID (giữ nguyên) =====================
-    @Override
-    public UserResponseDTO getUserById(String userId, String token) {
-        String userIdFromToken = null;
-        boolean isAdmin = false;
-
-        if (token != null) {
-            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-            if (authentication != null && authentication.getPrincipal() instanceof Jwt jwt) {
-                userIdFromToken = jwt.getClaim("userId");
-                List<String> roles = jwt.getClaim("roles");
-                isAdmin = roles.contains(UserRole.ADMIN.name());
-            }
-        }
-
-        User user = userRepo.findById(UUID.fromString(userId))
-                .orElseThrow(() -> new UserNotFoundException("User not found with ID: " + userId));
-
-        UserResponseDTO dto = modelMapper.map(user, UserResponseDTO.class);
-
-        boolean isOwner = userIdFromToken != null && userIdFromToken.equals(userId);
-        if (!isAdmin && !isOwner) {
-            dto.setEmail(null);
-            dto.setRoles(null);
-            dto.setUsername(null);
-        }
-        return dto;
-    }
-
-    @Override
-    @Transactional(readOnly = true)
-    public UserSummaryDto getPublicById(UUID userId) {
-        User user = userRepo.findById(userId)
-                .orElseThrow(() -> new UserNotFoundException("User not found with ID: " + userId));
-
-        // Chỉ trả về thông tin an toàn
-        return UserSummaryDto.builder()
-                .userId(user.getUserId())
-                .name(user.getName())
                 .username(user.getUsername())
-                .avatar(user.getAvatar())
+                .roles(List.of(user.getRole().name()))
                 .build();
     }
 
-    // ===================== RESTORE USER (giữ nguyên) =====================
+    // ===================== ADMIN: GET ALL USERS =====================
     @Override
     @Transactional
-    public void restoreUser(UUID id) {
-        User user = userRepo.findById(id)
-                .orElseThrow(() -> new UserNotFoundException("User not found with ID: " + id));
-
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (!(authentication != null && authentication.getPrincipal() instanceof Jwt jwt)) {
-            throw new SecurityException("Invalid Access Token");
-        }
-        @SuppressWarnings("unchecked")
-        List<String> roles = jwt.getClaim("roles");
-        boolean isAdmin = roles != null && roles.contains(UserRole.ADMIN.name());
-        if (!isAdmin) {
-            throw new SecurityException("You do not have permission to restore this user");
-        }
-        if (user.isActive()) return;
-
-        user.setActive(true);
-        user.setUpdatedAt(LocalDateTime.now());
-        userRepo.save(user);
+    public Page<UserResponseDTO> getAllUsers(Pageable pageable) {
+        Page<User> users = userRepo.findAll(pageable);
+        return users.map(u -> modelMapper.map(u, UserResponseDTO.class));
     }
 
-    // ===================== UPDATE USER (giữ nguyên) =====================
+    // ===================== GET USER BY ID =====================
+    @Override
+    @Transactional
+    public UserResponseDTO getUserById(String userId) {
+        User user = getUserOrThrow(UUID.fromString(userId));
+        return modelMapper.map(user, UserResponseDTO.class);
+    }
+
+    // ===================== UPDATE USER =====================
     @Override
     @Transactional
     public UserResponseDTO updateUser(UUID id, UserRequestDTO userRequestDTO) {
-        User existingUser = userRepo.findById(id)
-                .orElseThrow(() -> new UserNotFoundException("User not found with ID: " + id));
+        User existingUser = getUserOrThrow(id);
 
         if (userRequestDTO.getEmail() != null && !isEmailFormat(userRequestDTO.getEmail())) {
             throw new InvalidRequestException("Invalid email format");
         }
+
         if (userRequestDTO.getEmail() != null && !userRequestDTO.getEmail().equals(existingUser.getEmail())) {
-            if (userRepo.findByEmail(userRequestDTO.getEmail()).isPresent()) {
-                throw new DuplicateEntityException("Email already in use");
-            }
+            userRepo.findByEmail(userRequestDTO.getEmail())
+                    .ifPresent(u -> { throw new DuplicateEntityException("Email already in use"); });
             existingUser.setEmail(userRequestDTO.getEmail());
         }
 
-        if (userRequestDTO.getUsername() != null && !userRequestDTO.getUsername().isEmpty()) {
-            existingUser.setUsername(userRequestDTO.getUsername());
-        }
-        if (userRequestDTO.getName() != null) {
-            existingUser.setName(userRequestDTO.getName());
-        }
-        if (userRequestDTO.getSchool() != null) {
-            existingUser.setSchool(userRequestDTO.getSchool());
-        }
-        if (userRequestDTO.getPassword() != null && !userRequestDTO.getPassword().isEmpty()) {
+        if (userRequestDTO.getUsername() != null) existingUser.setUsername(userRequestDTO.getUsername());
+        if (userRequestDTO.getName() != null) existingUser.setName(userRequestDTO.getName());
+        if (userRequestDTO.getSchool() != null) existingUser.setSchool(userRequestDTO.getSchool());
+        if (userRequestDTO.getPassword() != null && !userRequestDTO.getPassword().isBlank()) {
             existingUser.setPassword(encoder.encode(userRequestDTO.getPassword()));
         }
         if (userRequestDTO.getRole() != null) {
             try {
-                UserRole role = UserRole.valueOf(userRequestDTO.getRole().toUpperCase());
-                existingUser.setRole(role);
+                existingUser.setRole(UserRole.valueOf(userRequestDTO.getRole().toUpperCase()));
             } catch (IllegalArgumentException e) {
                 throw new InvalidRequestException("Invalid role: " + userRequestDTO.getRole());
             }
         }
 
-        User updatedUser = userRepo.save(existingUser);
-        return modelMapper.map(updatedUser, UserResponseDTO.class);
+        existingUser.setUpdatedAt(LocalDateTime.now());
+        userRepo.save(existingUser);
+        return modelMapper.map(existingUser, UserResponseDTO.class);
     }
 
-    // ===================== DELETE USER (giữ nguyên) =====================
-    @Override
-    public void deleteUser(UUID id) {
-        if (!userRepo.existsById(id)) {
-            throw new UserNotFoundException("User not found with ID: " + id);
-        }
-        userRepo.deleteById(id);
-    }
-
-    // ===================== SOFT DELETE (giữ nguyên) =====================
-    @Override
-    @Transactional
-    public void deleteSoftUser(UUID id, String password) {
-        User user = userRepo.findById(id)
-                .orElseThrow(() -> new UserNotFoundException("User not found with ID: " + id));
-
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (!(authentication != null && authentication.getPrincipal() instanceof Jwt jwt)) {
-            throw new SecurityException("Invalid Access Token");
-        }
-
-        String userIdFromToken = jwt.getClaim("userId");
-        @SuppressWarnings("unchecked")
-        List<String> roles = jwt.getClaim("roles");
-        boolean isAdmin = roles != null && roles.contains(UserRole.ADMIN.name());
-
-        if (!isAdmin && !id.toString().equals(userIdFromToken)) {
-            throw new SecurityException("You do not have permission to delete this user");
-        }
-
-        if (!isAdmin) {
-            if (password == null || password.isBlank()) {
-                throw new IllegalArgumentException("Password is required to delete account");
-            }
-            if (!passwordEncoder.matches(password, user.getPassword())) {
-                throw new SecurityException("Invalid password");
-            }
-        }
-
-        if (!user.isActive()) return;
-
-        user.setActive(false);
-        user.setUpdatedAt(LocalDateTime.now());
-        userRepo.save(user);
-    }
-
-    // ===================== UPDATE AVATAR (giữ nguyên) =====================
-    @Override
-    @Transactional
-    public UserResponseDTO updateUserAvatar(UUID id, MultipartFile file, String token) {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (!(authentication.getPrincipal() instanceof Jwt jwt)) {
-            throw new SecurityException("Invalid Access Token");
-        }
-        String userIdFromToken = jwt.getClaim("userId");
-        List<String> roles = jwt.getClaim("roles");
-        boolean isAdmin = roles.contains(UserRole.ADMIN.name());
-        if (!isAdmin && !userIdFromToken.equals(id.toString())) {
-            throw new SecurityException("You do not have permission to update this user's avatar");
-        }
-
-        User user = userRepo.findById(id)
-                .orElseThrow(() -> new UserNotFoundException("User not found with ID: " + id));
-
-        try {
-            if (file == null || file.isEmpty()) {
-                throw new IllegalArgumentException("Avatar file cannot be empty");
-            }
-
-            String publicId = "user_avatars/" + id;
-            Map uploadResult = cloudinaryService.upload(file, publicId);
-
-            String avatarUrl = (String) uploadResult.get("secure_url");
-            user.setAvatar(avatarUrl);
-            user.setUpdatedAt(LocalDateTime.now());
-
-            User updatedUser = userRepo.save(user);
-            return modelMapper.map(updatedUser, UserResponseDTO.class);
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to upload avatar to Cloudinary: " + e.getMessage(), e);
-        }
-    }
-
-    // ===================== CHANGE PASSWORD (giữ nguyên) =====================
     @Override
     @Transactional
     public void changePassword(UUID userId, String currentPassword, String newPassword) {
-        if (currentPassword == null || currentPassword.isBlank()
-                || newPassword == null || newPassword.isBlank()) {
+        if (currentPassword == null || currentPassword.isBlank() ||
+                newPassword == null || newPassword.isBlank()) {
             throw new InvalidRequestException("Password must not be blank");
         }
+
         if (newPassword.length() < 8) {
             throw new InvalidRequestException("New password must be at least 8 characters");
         }
@@ -347,84 +184,6 @@ public class UserServiceImpl implements UserService {
         userRepo.save(user);
     }
 
-    // ===================== CURRENT USER ID (giữ nguyên) =====================
-    @Override
-    public String getCurrentUserId() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication != null && authentication.getPrincipal() instanceof UserPrincipal) {
-            UserPrincipal userPrincipal = (UserPrincipal) authentication.getPrincipal();
-            return userPrincipal.getUserId().toString();
-        }
-        HttpServletRequest request = ((ServletRequestAttributes) RequestContextHolder.currentRequestAttributes()).getRequest();
-        String userId = (String) request.getAttribute("currentUserId");
-        if (userId != null) {
-            return userId;
-        }
-        throw new IllegalStateException("Cannot get userId from Access Token or request");
-    }
-
-    @Override
-    public User getCurrentUser() {
-        UUID id = UUID.fromString(getCurrentUserId());
-        return userRepo.findById(id)
-                .orElseThrow(() -> new UserNotFoundException("User not found: " + id));
-    }
-
-    // ===================== FRIEND SUGGESTIONS (Page) =====================
-    @Override
-    @Transactional(readOnly = true)
-    public Page<FriendSuggestionDTO> getFriendSuggestions(UUID currentUserId, Pageable pageable) {
-        User me = userRepo.findById(currentUserId)
-                .orElseThrow(() -> new UserNotFoundException("User not found with ID: " + currentUserId));
-
-        // Loại bạn bè hiện tại
-        Set<UUID> myFriendIds = me.getFriends().stream()
-                .map(User::getUserId)
-                .collect(Collectors.toSet());
-
-        // Loại chính mình
-        Set<UUID> excluded = new HashSet<>(myFriendIds);
-        excluded.add(currentUserId);
-
-        // Loại các request PENDING (cả incoming/outgoing)
-        friendRequestRepo.findAllByRequesterAndStatus(me, FriendRequest.Status.PENDING)
-                .forEach(fr -> excluded.add(fr.getReceiver().getUserId()));
-        friendRequestRepo.findAllByReceiverAndStatus(me, FriendRequest.Status.PENDING)
-                .forEach(fr -> excluded.add(fr.getRequester().getUserId()));
-
-        // Query có phân trang
-        Page<User> candidates = userRepo.findSuggestions(
-                currentUserId,
-                excluded,
-                excluded.isEmpty(),
-                pageable
-        );
-
-        // Map sang DTO + giữ nguyên sort mutual desc trong page content
-        List<FriendSuggestionDTO> content = candidates.getContent().stream()
-                .map(u -> {
-                    int mutual = (int) u.getFriends().stream()
-                            .map(User::getUserId)
-                            .filter(myFriendIds::contains)
-                            .count();
-
-                    return new FriendSuggestionDTO(
-                            u.getUserId(),
-                            u.getName(),
-                            u.getUsername(),
-                            u.getAvatar(),
-                            mutual
-                    );
-                })
-                .sorted((a, b) -> Integer.compare(b.getMutualFriends(), a.getMutualFriends()))
-                .toList();
-
-        // Trả Page giữ nguyên pageable+total từ query gốc
-        return new PageImpl<>(content, pageable, candidates.getTotalElements());
-    }
-
-    // ===================== ADD/REQUEST/ACCEPT/DECLINE/CANCEL (giữ nguyên) =====================
-
     @Override
     @Transactional
     public void requestEmailChange(String newEmail) {
@@ -433,6 +192,7 @@ public class UserServiceImpl implements UserService {
         if (newEmail == null || newEmail.isBlank()) {
             throw new InvalidRequestException("Email must not be blank");
         }
+
         if (!isEmailFormat(newEmail)) {
             throw new InvalidRequestException("Invalid email format");
         }
@@ -445,12 +205,12 @@ public class UserServiceImpl implements UserService {
                 .orElseThrow(() -> new UserNotFoundException("User not found: " + me));
 
         if (newEmail.equalsIgnoreCase(current.getEmail())) {
-            return;
+            return; // Không làm gì nếu email mới trùng email cũ
         }
 
         emailChangeTokenRepo.deleteByUserId(me);
 
-        String token = java.util.UUID.randomUUID().toString();
+        String token = UUID.randomUUID().toString();
         EmailChangeToken ect = EmailChangeToken.builder()
                 .userId(me)
                 .newEmail(newEmail.trim())
@@ -467,10 +227,102 @@ public class UserServiceImpl implements UserService {
         <p>Bạn vừa yêu cầu đổi email đăng nhập. Nhấn vào nút bên dưới để xác nhận:</p>
         <p><a href="%s" style="display:inline-block;padding:10px 16px;border-radius:6px;background:#4f46e5;color:#fff;text-decoration:none;">Xác nhận đổi email</a></p>
         <p>Nếu nút không hoạt động, hãy copy link: <br/>%s</p>
-        <p>Liên kết sẽ hết hạn sau %d phút. Nếu bạn không yêu cầu, hãy bỏ qua email này.</p>
-        """.formatted(verifyLink, verifyLink, ttlMinutes);
+        <p>Liên kết sẽ hết hạn sau %d phút.</p>
+    """.formatted(verifyLink, verifyLink, ttlMinutes);
 
         mailService.sendEmail(newEmail, subject, html);
+    }
+
+    @Override
+    @Transactional
+    public void requestEmailChangeOtp(String newEmail) {
+        UUID me = UUID.fromString(getCurrentUserId());
+
+        if (newEmail == null || newEmail.isBlank()) {
+            throw new InvalidRequestException("Email must not be blank");
+        }
+
+        if (!isEmailFormat(newEmail)) {
+            throw new InvalidRequestException("Invalid email format");
+        }
+
+        userRepo.findByEmail(newEmail).ifPresent(u -> {
+            throw new DuplicateEntityException("Email already in use");
+        });
+
+        User current = userRepo.findById(me)
+                .orElseThrow(() -> new UserNotFoundException("User not found: " + me));
+
+        if (newEmail.equalsIgnoreCase(current.getEmail())) {
+            return; // Không cần gửi OTP nếu email không đổi
+        }
+
+        // Tạo mã OTP 6 chữ số
+        String code = String.format("%06d", new Random().nextInt(1_000_000));
+        String codeHash = bCrypt.encode(code);
+
+        // Lưu vào Redis
+        EmailChangeOtpPayload payload = EmailChangeOtpPayload.builder()
+                .newEmail(newEmail.trim())
+                .codeHash(codeHash)
+                .attempts(0)
+                .build();
+
+        try {
+            String json = objectMapper.writeValueAsString(payload);
+            redis.opsForValue().set(otpKeyForUser(me), json, otpTTLMinutes, TimeUnit.MINUTES);
+        } catch (Exception e) {
+            throw new RuntimeException("Cannot store OTP payload: " + e.getMessage(), e);
+        }
+
+        // Gửi email chứa mã OTP
+        String subject = "Mã xác minh đổi email — " + appName;
+        String html = """
+        <p>Xin chào,</p>
+        <p>Đây là mã xác thực để đổi email đăng nhập. Mã có hiệu lực trong <b>%d phút</b>.</p>
+        <p style="font-size:22px; font-weight:bold; letter-spacing:6px;">%s</p>
+        <p>Nếu bạn không yêu cầu thao tác này, vui lòng bỏ qua email này.</p>
+    """.formatted(otpTTLMinutes, code);
+
+        mailService.sendEmail(newEmail, subject, html);
+    }
+
+
+    // ===================== DELETE USER (ADMIN) =====================
+    @Override
+    public void deleteUser(UUID id) {
+        if (!userRepo.existsById(id)) throw new UserNotFoundException("User not found: " + id);
+        userRepo.deleteById(id);
+    }
+
+    // ===================== SOFT DELETE =====================
+    @Override
+    @Transactional
+    public void deleteSoftUser(UUID id, String password) {
+        User user = getUserOrThrow(id);
+        if (!bCrypt.matches(password, user.getPassword())) {
+            throw new UnauthorizedException("Invalid password");
+        }
+        user.setActive(false);
+        user.setUpdatedAt(LocalDateTime.now());
+        userRepo.save(user);
+    }
+
+    @Override
+    @Transactional
+    public void restoreUser(UUID id) {
+        User user = userRepo.findById(id)
+                .orElseThrow(() -> new UserNotFoundException("User not found with ID: " + id));
+
+        if (user.isActive()) return; // đã active thì bỏ qua
+
+        var auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || auth.getAuthorities().stream().noneMatch(a -> a.getAuthority().equals("ADMIN"))) {
+            throw new SecurityException("Only ADMIN can restore users");
+        }
+        user.setActive(true);
+        user.setUpdatedAt(LocalDateTime.now());
+        userRepo.save(user);
     }
 
     @Override
@@ -479,6 +331,7 @@ public class UserServiceImpl implements UserService {
         if (token == null || token.isBlank()) {
             throw new InvalidRequestException("Token is required");
         }
+
         EmailChangeToken ect = emailChangeTokenRepo.findByToken(token)
                 .orElseThrow(() -> new InvalidRequestException("Invalid or expired token"));
 
@@ -505,128 +358,16 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional
-    public void requestEmailChangeOtp(String newEmail) {
-        UUID me = UUID.fromString(getCurrentUserId());
-
-        if (newEmail == null || newEmail.isBlank()) {
-            throw new InvalidRequestException("Email must not be blank");
-        }
-        if (!isEmailFormat(newEmail)) {
-            throw new InvalidRequestException("Invalid email format");
-        }
-        userRepo.findByEmail(newEmail).ifPresent(u -> {
-            throw new DuplicateEntityException("Email already in use");
-        });
-
-        User current = userRepo.findById(me)
-                .orElseThrow(() -> new UserNotFoundException("User not found: " + me));
-        if (newEmail.equalsIgnoreCase(current.getEmail())) {
-            return;
-        }
-
-        String code = String.format("%06d", new java.util.Random().nextInt(1_000_000));
-        String codeHash = bCrypt.encode(code);
-
-        EmailChangeOtpPayload payload = EmailChangeOtpPayload.builder()
-                .newEmail(newEmail.trim())
-                .codeHash(codeHash)
-                .attempts(0)
-                .build();
-        try {
-            String json = objectMapper.writeValueAsString(payload);
-            redis.opsForValue().set(otpKeyForUser(me), json, otpTTLMinutes, java.util.concurrent.TimeUnit.MINUTES);
-        } catch (Exception e) {
-            throw new RuntimeException("Cannot store OTP payload: " + e.getMessage(), e);
-        }
-
-        String subject = "Mã xác minh đổi email — " + appName;
-
-        String html = """
-    <!doctype html>
-    <html lang="vi">
-    <head>
-      <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
-      <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-      <title>%1$s - Xác minh email</title>
-    </head>
-    <body style="margin:0;padding:0;background:#f4f5f7;">
-      <table role="presentation" width="100%%" cellspacing="0" cellpadding="0" style="background:#f4f5f7;">
-        <tr>
-          <td align="center" style="padding:24px;">
-            <table role="presentation" width="600" cellspacing="0" cellpadding="0"
-                   style="background:#ffffff;border-radius:12px;overflow:hidden;">
-              <tr>
-                <td style="padding:20px 24px;background:#111827;color:#ffffff;">
-                  <div style="font-size:18px;font-weight:700;line-height:1.4;">%1$s</div>
-                  <div style="font-size:13px;opacity:.8;margin-top:4px;">Mã xác minh đổi email</div>
-                </td>
-              </tr>
-
-              <tr>
-                <td style="padding:24px;">
-                  <p style="margin:0 0 12px 0;font-size:16px;color:#111827;">Xin chào,</p>
-                  <p style="margin:0 0 16px 0;font-size:14px;color:#374151;">
-                    Đây là mã xác thực để đổi email đăng nhập. Vui lòng nhập mã trong vòng
-                    <strong>%2$d phút</strong>.
-                  </p>
-
-                  <div style="text-align:center;margin:24px 0;">
-                    <span style="
-                      display:inline-block;
-                      padding:12px 16px;
-                      font-size:28px;
-                      font-weight:700;
-                      letter-spacing:6px;
-                      color:#111827;
-                      background:#f9fafb;
-                      border:1px solid #e5e7eb;
-                      border-radius:10px;">
-                      %3$s
-                    </span>
-                  </div>
-
-                  <p style="margin:0 0 16px 0;font-size:13px;color:#6b7280;">
-                    Nếu bạn không yêu cầu thao tác này, bạn có thể bỏ qua email.
-                  </p>
-
-                  <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0;" />
-
-                  <p style="margin:0;font-size:12px;color:#9ca3af;">
-                    %1$s • %4$s
-                  </p>
-                </td>
-              </tr>
-            </table>
-
-            <p style="margin:16px 0 0 0;font-size:12px;color:#9ca3af;">
-              © %5$d %1$s. All rights reserved.
-            </p>
-          </td>
-        </tr>
-      </table>
-    </body>
-    </html>
-    """.formatted(
-                appName,
-                otpTTLMinutes,
-                code,
-                supportEmail,
-                Year.now().getValue()
-        );
-
-        mailService.sendEmail(newEmail, subject, html);
-    }
-
-    @Override
-    @Transactional
     public void verifyEmailChangeOtp(String code) {
         UUID me = UUID.fromString(getCurrentUserId());
+
         if (code == null || code.isBlank()) {
             throw new InvalidRequestException("Code is required");
         }
 
         String key = otpKeyForUser(me);
         String json = redis.opsForValue().get(key);
+
         if (json == null) {
             throw new InvalidRequestException("OTP not found or expired");
         }
@@ -634,24 +375,32 @@ public class UserServiceImpl implements UserService {
         try {
             EmailChangeOtpPayload payload = objectMapper.readValue(json, EmailChangeOtpPayload.class);
 
+            // Kiểm tra số lần nhập sai
             if (payload.getAttempts() >= otpMaxAttempts) {
                 redis.delete(key);
                 throw new InvalidRequestException("Too many attempts. Please request a new code.");
             }
 
+            // So khớp mã OTP
             boolean ok = bCrypt.matches(code, payload.getCodeHash());
             if (!ok) {
                 payload.setAttempts(payload.getAttempts() + 1);
-                redis.opsForValue().set(key, objectMapper.writeValueAsString(payload),
-                        redis.getExpire(key), TimeUnit.SECONDS);
+                redis.opsForValue().set(
+                        key,
+                        objectMapper.writeValueAsString(payload),
+                        redis.getExpire(key),
+                        TimeUnit.SECONDS
+                );
                 throw new InvalidRequestException("Invalid code");
             }
 
+            // Check trùng email
             userRepo.findByEmail(payload.getNewEmail()).ifPresent(u -> {
                 redis.delete(key);
                 throw new DuplicateEntityException("Email already in use");
             });
 
+            // Cập nhật email
             User user = userRepo.findById(me)
                     .orElseThrow(() -> new UserNotFoundException("User not found: " + me));
 
@@ -659,70 +408,66 @@ public class UserServiceImpl implements UserService {
             user.setUpdatedAt(LocalDateTime.now());
             userRepo.save(user);
 
+            // Xóa OTP sau khi xác nhận
             redis.delete(key);
 
         } catch (InvalidRequestException | DuplicateEntityException e) {
-            throw e;
+            throw e; // ném lại lỗi rõ ràng
         } catch (Exception e) {
             throw new RuntimeException("OTP verification failed: " + e.getMessage(), e);
         }
     }
 
+
+    // ===================== UPDATE AVATAR =====================
+    @Override
+    @Transactional
+    public UserResponseDTO updateUserAvatar(UUID id, MultipartFile file, String token) {
+        User user = getUserOrThrow(id);
+        try {
+            Map uploadResult = cloudinaryService.upload(file, "user_avatars/" + id);
+            String avatarUrl = (String) uploadResult.get("secure_url");
+            user.setAvatar(avatarUrl);
+            user.setUpdatedAt(LocalDateTime.now());
+            userRepo.save(user);
+            return modelMapper.map(user, UserResponseDTO.class);
+        } catch (IOException e) {
+            throw new RuntimeException("Upload failed: " + e.getMessage(), e);
+        }
+    }
+
+    // ===================== FRIEND REQUESTS & FRIENDS =====================
     @Override
     @Transactional
     public void sendFriendRequest(UUID requesterId, UUID targetUserId) {
-        if (requesterId.equals(targetUserId)) {
-            throw new InvalidRequestException("You cannot add yourself as a friend");
-        }
+        if (requesterId.equals(targetUserId))
+            throw new InvalidRequestException("Cannot add yourself");
 
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (!(authentication != null && authentication.getPrincipal() instanceof Jwt jwt)) {
-            throw new SecurityException("Invalid Access Token");
-        }
-        String userIdFromToken = jwt.getClaim("userId");
-        List<String> roles = jwt.getClaim("roles");
-        boolean isAdmin = roles != null && roles.contains(UserRole.ADMIN.name());
-        if (!isAdmin && !requesterId.toString().equals(userIdFromToken)) {
-            throw new SecurityException("You do not have permission to send requests for this user");
-        }
+        User requester = getUserOrThrow(requesterId);
+        User target = getUserOrThrow(targetUserId);
 
-        User requester = userRepo.findById(requesterId)
-                .orElseThrow(() -> new UserNotFoundException("Requester not found"));
-        User target = userRepo.findById(targetUserId)
-                .orElseThrow(() -> new UserNotFoundException("Target not found"));
+        boolean alreadyFriends = requester.getFriends().stream()
+                .anyMatch(f -> f.getUserId().equals(targetUserId));
+        if (alreadyFriends) return;
 
-        if (!requester.isActive() || !target.isActive()) {
-            throw new InvalidRequestException("Inactive accounts cannot make friend connections");
-        }
-
-        if (requester.getFriends().stream().anyMatch(f -> f.getUserId().equals(targetUserId))) return;
-
-        Optional<FriendRequest> reversePending = friendRequestRepo
+        Optional<FriendRequest> reverse = friendRequestRepo
                 .findByRequesterAndReceiverAndStatus(target, requester, FriendRequest.Status.PENDING);
-        if (reversePending.isPresent()) {
-            FriendRequest req = reversePending.get();
-            req.setStatus(FriendRequest.Status.ACCEPTED);
-            req.setUpdatedAt(LocalDateTime.now());
-            friendRequestRepo.save(req);
 
+        if (reverse.isPresent()) {
+            FriendRequest req = reverse.get();
+            req.setStatus(FriendRequest.Status.ACCEPTED);
             requester.addFriend(target);
-            userRepo.save(requester);
-            userRepo.save(target);
+            userRepo.saveAll(List.of(requester, target));
             return;
         }
 
-        FriendRequest fr = friendRequestRepo.findByRequesterAndReceiver(requester, target)
-                .orElseGet(() -> FriendRequest.builder()
-                        .requester(requester)
-                        .receiver(target)
-                        .status(FriendRequest.Status.PENDING)
-                        .createdAt(LocalDateTime.now())
-                        .build());
+        FriendRequest fr = FriendRequest.builder()
+                .requester(requester)
+                .receiver(target)
+                .status(FriendRequest.Status.PENDING)
+                .createdAt(LocalDateTime.now())
+                .build();
 
-        if (fr.getId() != null && fr.getStatus() == FriendRequest.Status.PENDING) return;
-
-        fr.setStatus(FriendRequest.Status.PENDING);
-        fr.setUpdatedAt(LocalDateTime.now());
         friendRequestRepo.save(fr);
         notificationService.createNotification(
                 target.getUserId(),
@@ -730,64 +475,26 @@ public class UserServiceImpl implements UserService {
                 "FRIEND_REQUEST_SENT",
                 "FRIEND_REQUEST",
                 fr.getId(),
-                requester.getName() + " sent you a friend request"
+                requester.getName() + " đã gửi lời mời kết bạn"
         );
     }
 
     @Override
     @Transactional
     public void acceptFriendRequest(UUID receiverId, UUID requestId) {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (!(auth != null && auth.getPrincipal() instanceof Jwt jwt)) {
-            throw new SecurityException("Invalid Access Token");
-        }
-        String userIdFromToken = jwt.getClaim("userId");
-        List<String> roles = jwt.getClaim("roles");
-        boolean isAdmin = roles != null && roles.contains(UserRole.ADMIN.name());
-        if (!isAdmin && !receiverId.toString().equals(userIdFromToken)) {
-            throw new SecurityException("You do not have permission to accept this request");
-        }
-
         FriendRequest fr = friendRequestRepo.findById(requestId)
                 .orElseThrow(() -> new InvalidRequestException("Friend request not found"));
-
-        if (!fr.getReceiver().getUserId().equals(receiverId)) {
-            throw new SecurityException("This request does not belong to you");
-        }
-        if (fr.getStatus() != FriendRequest.Status.PENDING) {
-            return;
-        }
+        if (!fr.getReceiver().getUserId().equals(receiverId))
+            throw new UnauthorizedException("Not your request");
 
         fr.setStatus(FriendRequest.Status.ACCEPTED);
         fr.setUpdatedAt(LocalDateTime.now());
         friendRequestRepo.save(fr);
 
         User requester = fr.getRequester();
-        User receiver  = fr.getReceiver();
-
-        boolean alreadyFriends = requester.getFriends().stream()
-                .anyMatch(u -> u.getUserId().equals(receiver.getUserId()));
-        if (!alreadyFriends) {
-            requester.addFriend(receiver);
-            userRepo.save(requester);
-            userRepo.save(receiver);
-        }
-
-        friendRequestRepo.findByRequesterAndReceiver(requester, receiver)
-                .filter(r -> r.getStatus() == FriendRequest.Status.PENDING)
-                .ifPresent(r -> {
-                    r.setStatus(FriendRequest.Status.ACCEPTED);
-                    r.setUpdatedAt(LocalDateTime.now());
-                    friendRequestRepo.save(r);
-                });
-
-        friendRequestRepo.findByRequesterAndReceiver(receiver, requester)
-                .filter(r -> r.getStatus() == FriendRequest.Status.PENDING)
-                .ifPresent(r -> {
-                    r.setStatus(FriendRequest.Status.ACCEPTED);
-                    r.setUpdatedAt(LocalDateTime.now());
-                    friendRequestRepo.save(r);
-                });
+        User receiver = fr.getReceiver();
+        requester.addFriend(receiver);
+        userRepo.saveAll(List.of(requester, receiver));
 
         notificationService.createNotification(
                 requester.getUserId(),
@@ -795,96 +502,107 @@ public class UserServiceImpl implements UserService {
                 "FRIEND_REQUEST_ACCEPTED",
                 "FRIEND_REQUEST",
                 fr.getId(),
-                (receiver.getName() != null ? receiver.getName() : receiver.getUsername())
-                        + " đã chấp nhận lời mời kết bạn của bạn"
+                receiver.getName() + " đã chấp nhận lời mời kết bạn"
         );
-
-//        notificationService.createNotification(
-//                receiver.getUserId(),
-//                requester.getUserId(),
-//                "FRIEND_ADDED",
-//                "FRIEND",
-//                requester.getUserId(),
-//                "Bạn và " + (requester.getName() != null ? requester.getName() : requester.getUsername())
-//                        + " đã trở thành bạn bè"
-//        );
-//
-//        notificationService.createNotification(
-//                requester.getUserId(),
-//                receiver.getUserId(),
-//                "FRIEND_ADDED",
-//                "FRIEND",
-//                receiver.getUserId(),
-//                "Bạn và " + (receiver.getName() != null ? receiver.getName() : receiver.getUsername())
-//                        + " đã trở thành bạn bè"
-//        );
     }
 
     @Override
     @Transactional
     public void declineFriendRequest(UUID receiverId, UUID requestId) {
         FriendRequest fr = friendRequestRepo.findById(requestId)
-                .orElseThrow(() -> new InvalidRequestException("Friend request not found"));
-        if (!fr.getReceiver().getUserId().equals(receiverId)) {
-            throw new SecurityException("This request does not belong to you");
-        }
-        if (fr.getStatus() != FriendRequest.Status.PENDING) return;
+                .orElseThrow(() -> new InvalidRequestException("Request not found"));
+        if (!fr.getReceiver().getUserId().equals(receiverId))
+            throw new UnauthorizedException("Not your request");
         fr.setStatus(FriendRequest.Status.DECLINED);
         fr.setUpdatedAt(LocalDateTime.now());
         friendRequestRepo.save(fr);
-//        notificationService.createNotification(
-//                fr.getRequester().getUserId(),
-//                fr.getReceiver().getUserId(),
-//                "FRIEND_REQUEST_DECLINED",
-//                "FRIEND_REQUEST",
-//                fr.getId(),
-//                fr.getReceiver().getName() + " đã từ chối lời mời kết bạn của bạn"
-//        );
     }
 
     @Override
     @Transactional
     public void cancelFriendRequest(UUID requesterId, UUID requestId) {
         FriendRequest fr = friendRequestRepo.findById(requestId)
-                .orElseThrow(() -> new InvalidRequestException("Friend request not found"));
-        if (!fr.getRequester().getUserId().equals(requesterId)) {
-            throw new SecurityException("You cannot cancel this request");
-        }
-        if (fr.getStatus() != FriendRequest.Status.PENDING) return;
-
+                .orElseThrow(() -> new InvalidRequestException("Request not found"));
+        if (!fr.getRequester().getUserId().equals(requesterId))
+            throw new UnauthorizedException("Cannot cancel this request");
         fr.setStatus(FriendRequest.Status.CANCELED);
         fr.setUpdatedAt(LocalDateTime.now());
         friendRequestRepo.save(fr);
-//        notificationService.createNotification(
-//                fr.getReceiver().getUserId(),
-//                fr.getRequester().getUserId(),
-//                "FRIEND_REQUEST_CANCELED",
-//                "FRIEND_REQUEST",
-//                fr.getId(),
-//                fr.getRequester().getName() + " đã hủy lời mời kết bạn"
-//        );
     }
 
     @Override
     @Transactional(readOnly = true)
     public Page<FriendRequestDTO> getIncomingRequestsPaged(UUID userId, Pageable pageable) {
-        User me = userRepo.findById(userId)
-                .orElseThrow(() -> new UserNotFoundException("User not found: " + userId));
-
-        return friendRequestRepo
-                .findAllByReceiverAndStatus(me, FriendRequest.Status.PENDING, pageable)
+        User me = getUserOrThrow(userId);
+        return friendRequestRepo.findAllByReceiverAndStatus(me, FriendRequest.Status.PENDING, pageable)
                 .map(this::toDto);
     }
 
     @Override
     @Transactional(readOnly = true)
     public Page<FriendRequestDTO> getOutgoingRequestsPaged(UUID userId, Pageable pageable) {
-        User me = userRepo.findById(userId)
-                .orElseThrow(() -> new UserNotFoundException("User not found: " + userId));
-
-        return friendRequestRepo
-                .findAllByRequesterAndStatus(me, FriendRequest.Status.PENDING, pageable)
+        User me = getUserOrThrow(userId);
+        return friendRequestRepo.findAllByRequesterAndStatus(me, FriendRequest.Status.PENDING, pageable)
                 .map(this::toDto);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<FriendSuggestionDTO> getFriendSuggestions(UUID currentUserId, Pageable pageable) {
+        User me = userRepo.findById(currentUserId)
+                .orElseThrow(() -> new UserNotFoundException("User not found with ID: " + currentUserId));
+
+        // Lấy danh sách ID bạn bè hiện tại
+        Set<UUID> myFriendIds = me.getFriends().stream()
+                .map(User::getUserId)
+                .collect(Collectors.toSet());
+
+        // Loại trừ bản thân và bạn bè
+        Set<UUID> excluded = new HashSet<>(myFriendIds);
+        excluded.add(currentUserId);
+
+        // Loại trừ các lời mời đang chờ (PENDING)
+        friendRequestRepo.findAllByRequesterAndStatus(me, FriendRequest.Status.PENDING)
+                .forEach(fr -> excluded.add(fr.getReceiver().getUserId()));
+        friendRequestRepo.findAllByReceiverAndStatus(me, FriendRequest.Status.PENDING)
+                .forEach(fr -> excluded.add(fr.getRequester().getUserId()));
+
+        // Truy vấn bạn bè tiềm năng (repository có thể dùng native query)
+        Page<User> candidates = userRepo.findSuggestions(
+                currentUserId,
+                excluded,
+                excluded.isEmpty(),
+                pageable
+        );
+
+        // Map sang DTO + tính mutual friends
+        List<FriendSuggestionDTO> content = candidates.getContent().stream()
+                .map(u -> {
+                    int mutual = (int) u.getFriends().stream()
+                            .map(User::getUserId)
+                            .filter(myFriendIds::contains)
+                            .count();
+
+                    return new FriendSuggestionDTO(
+                            u.getUserId(),
+                            u.getName(),
+                            u.getUsername(),
+                            u.getAvatar(),
+                            mutual
+                    );
+                })
+                .sorted((a, b) -> Integer.compare(b.getMutualFriends(), a.getMutualFriends()))
+                .toList();
+
+        return new PageImpl<>(content, pageable, candidates.getTotalElements());
+    }
+
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<UserResponseDTO> getFriendsOf(UUID userId, Pageable pageable) {
+        Page<User> friends = userRepo.findFriendsOf(userId, pageable);
+        return friends.map(u -> modelMapper.map(u, UserResponseDTO.class));
     }
 
     @Override
@@ -902,6 +620,7 @@ public class UserServiceImpl implements UserService {
         User target = userRepo.findById(targetId)
                 .orElseThrow(() -> new UserNotFoundException("User not found: " + targetId));
 
+        // Đã là bạn bè?
         if (meUser.isFriendsWith(targetId)) {
             return FriendshipStatusResponseDTO.builder()
                     .status(FriendshipStatus.FRIEND)
@@ -909,6 +628,7 @@ public class UserServiceImpl implements UserService {
                     .build();
         }
 
+        // Có lời mời đang tới từ target không?
         Optional<FriendRequest> incoming = friendRequestRepo
                 .findByRequesterAndReceiverAndStatus(target, meUser, FriendRequest.Status.PENDING);
         if (incoming.isPresent()) {
@@ -918,6 +638,7 @@ public class UserServiceImpl implements UserService {
                     .build();
         }
 
+        // Có lời mời đang gửi tới target không?
         Optional<FriendRequest> outgoing = friendRequestRepo
                 .findByRequesterAndReceiverAndStatus(meUser, target, FriendRequest.Status.PENDING);
         if (outgoing.isPresent()) {
@@ -927,23 +648,14 @@ public class UserServiceImpl implements UserService {
                     .build();
         }
 
+        // Không có mối quan hệ nào
         return FriendshipStatusResponseDTO.builder()
                 .status(FriendshipStatus.NONE)
                 .requestId(null)
                 .build();
     }
 
-    // ===================== FRIENDS OF (Page) =====================
-    @Override
-    @Transactional(readOnly = true)
-    public Page<UserResponseDTO> getFriendsOf(UUID userId, Pageable pageable) {
-        // Lấy page<User> bạn bè
-        Page<User> friendsPage = userRepo.findFriendsOf(userId, pageable);
-        // Map sang DTO
-        return friendsPage.map(friend -> modelMapper.map(friend, UserResponseDTO.class));
-    }
 
-    // ===================== Helpers (giữ nguyên) =====================
     private FriendRequestDTO toDto(FriendRequest fr) {
         return FriendRequestDTO.builder()
                 .id(fr.getId())
@@ -951,12 +663,46 @@ public class UserServiceImpl implements UserService {
                 .createdAt(fr.getCreatedAt())
                 .requesterId(fr.getRequester().getUserId())
                 .requesterName(fr.getRequester().getName())
-                .requesterUsername(fr.getRequester().getUsername())
-                .requesterAvatar(fr.getRequester().getAvatar())
                 .receiverId(fr.getReceiver().getUserId())
                 .receiverName(fr.getReceiver().getName())
-                .receiverUsername(fr.getReceiver().getUsername())
-                .receiverAvatar(fr.getReceiver().getAvatar())
+                .build();
+    }
+
+    // ===================== CURRENT USER =====================
+    @Override
+    public String getCurrentUserId() {
+        throw new UnsupportedOperationException("Use @AuthenticationPrincipal instead of manual call");
+    }
+    @Override
+    @Transactional(readOnly = true)
+    public User getCurrentUser() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+
+        if (auth == null || !auth.isAuthenticated()) {
+            throw new UnauthorizedException("User is not authenticated");
+        }
+
+        if (auth.getPrincipal() instanceof UserPrincipal principal) {
+            UUID id = principal.getUserId();
+            return userRepo.findById(id)
+                    .orElseThrow(() -> new UserNotFoundException("User not found with ID: " + id));
+        }
+
+        throw new UnauthorizedException("Invalid authentication principal");
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public UserSummaryDto getPublicById(UUID userId) {
+        User user = userRepo.findById(userId)
+                .orElseThrow(() -> new UserNotFoundException("User not found with ID: " + userId));
+
+        // Chỉ trả về thông tin công khai
+        return UserSummaryDto.builder()
+                .userId(user.getUserId())
+                .name(user.getName())
+                .username(user.getUsername())
+                .avatar(user.getAvatar())
                 .build();
     }
 

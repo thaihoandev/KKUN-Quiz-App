@@ -1,57 +1,42 @@
 package com.kkunquizapp.QuizAppBackend.common.config;
 
+import com.kkunquizapp.QuizAppBackend.common.security.CookieJwtAuthConverter;
+import com.kkunquizapp.QuizAppBackend.common.security.JwtToUserPrincipalConverter;
 import com.kkunquizapp.QuizAppBackend.user.model.enums.UserRole;
-import com.nimbusds.jose.jwk.JWK;
-import com.nimbusds.jose.jwk.JWKSet;
+import com.kkunquizapp.QuizAppBackend.user.service.CustomUserDetailsService;
+import com.nimbusds.jose.jwk.*;
 import com.nimbusds.jose.jwk.RSAKey;
-import com.nimbusds.jose.jwk.source.ImmutableJWKSet;
-import com.nimbusds.jose.jwk.source.JWKSource;
+import com.nimbusds.jose.jwk.source.*;
 import com.nimbusds.jose.proc.SecurityContext;
-import jakarta.servlet.FilterChain;
-import jakarta.servlet.ServletException;
-import jakarta.servlet.http.Cookie;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletRequestWrapper;
-import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.*;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpStatus;
-import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.authentication.AuthenticationProvider;
+import org.springframework.security.authentication.*;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
-import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.annotation.web.configuration.*;
 import org.springframework.security.config.http.SessionCreationPolicy;
-import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.oauth2.jwt.*;
-import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
-import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
-import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
+import org.springframework.security.oauth2.server.resource.authentication.*;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.AccessDeniedHandlerImpl;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
-import org.springframework.security.web.authentication.preauth.AbstractPreAuthenticatedProcessingFilter;
 import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
-import org.springframework.web.cors.CorsConfiguration;
-import org.springframework.web.cors.CorsConfigurationSource;
-import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import org.springframework.web.cors.*;
 
-import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyFactory;
-import java.security.interfaces.RSAPrivateKey;
-import java.security.interfaces.RSAPublicKey;
-import java.security.spec.PKCS8EncodedKeySpec;
-import java.security.spec.X509EncodedKeySpec;
+import java.security.interfaces.*;
+import java.security.spec.*;
 import java.util.*;
 
 @Configuration
 @EnableWebSecurity
+@EnableAspectJAutoProxy
 public class SecurityConfig {
 
     @Value("${jwt.public-key:}")
@@ -66,43 +51,72 @@ public class SecurityConfig {
     @Value("${jwt.private-key-path:}")
     private Resource privateKeyPath;
 
-    @Value("${app.cors.allowed-origins:}")
-    private String originsCsv;
+    @Value("${app.cors.allowed-origins:https://kkun-quiz.vercel.app}")
+    private String allowedOriginsCsv;
 
-    private final UserDetailsService userDetailsService;
+    private final CustomUserDetailsService userDetailsService;
+    private final JwtToUserPrincipalConverter jwtToUserPrincipalConverter;
 
-    public SecurityConfig(UserDetailsService userDetailsService) {
+    public SecurityConfig(CustomUserDetailsService userDetailsService,
+                          JwtToUserPrincipalConverter jwtToUserPrincipalConverter) {
         this.userDetailsService = userDetailsService;
+        this.jwtToUserPrincipalConverter = jwtToUserPrincipalConverter;
     }
 
+    // ===================== SECURITY FILTER CHAIN =====================
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-                .csrf(cs -> cs.disable())
+                .csrf(csrf -> csrf.disable())
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+                        // WebSocket - public
                         .requestMatchers("/ws/**").permitAll()
+
+                        // Auth endpoints - public
                         .requestMatchers(
                                 "/api/auth/refresh-token",
                                 "/api/auth/logout",
-                                "/api/games/join",
-                                "/api/games/{gameId}/answer",
-                                "/api/quizzes/published",
-                                "/api/users/me/confirm-email-change"
+                                "/api/auth/login",
+                                "/api/auth/register",
+                                "/api/auth/login-success"
                         ).permitAll()
-                        .requestMatchers("/api/quizzes/**", "/api/questions/**", "/api/files/upload/**", "/api/articles/**")
-                        .hasAnyAuthority(UserRole.USER.name(), UserRole.ADMIN.name())
+
+                        // Public quiz endpoints
+                        .requestMatchers(
+                                "/api/quizzes/published",
+                                "/api/games/join",
+                                "/api/games/{gameId}/answer"
+                        ).permitAll()
+
+                        // Email confirmation
+                        .requestMatchers("/api/users/me/confirm-email-change").permitAll()
+
+                        // Quiz, Questions, Articles - require USER or ADMIN
+                        .requestMatchers(
+                                "/api/quizzes/**",
+                                "/api/questions/**",
+                                "/api/files/upload/**",
+                                "/api/articles/**"
+                        ).hasAnyAuthority(UserRole.USER.name(), UserRole.ADMIN.name())
+
+                        // Admin endpoints - ADMIN only
                         .requestMatchers("/api/admin/**").hasAuthority(UserRole.ADMIN.name())
+
+                        // Profile endpoints - USER only
                         .requestMatchers("/api/profile/**").hasAuthority(UserRole.USER.name())
+
+                        // User endpoints - require authenticated
                         .requestMatchers(
                                 "/api/users/**",
-                                "/api/users/me",
                                 "/api/games/create",
                                 "/api/games/{gameId}/start",
                                 "/api/games/{gameId}/end",
                                 "/api/auth/change-password"
                         ).authenticated()
+
+                        // Everything else - public
                         .anyRequest().permitAll()
                 )
                 .exceptionHandling(ex -> ex
@@ -119,106 +133,61 @@ public class SecurityConfig {
                         .loginPage("/oauth2/authorization/google")
                         .defaultSuccessUrl("/api/auth/login-success", true)
                 )
-                .oauth2ResourceServer(rs -> rs.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())))
-                .addFilterBefore(new CookieJwtFilter(), BearerTokenAuthenticationFilter.class);
+                .oauth2ResourceServer(rs -> rs
+                        .bearerTokenResolver(new CookieJwtAuthConverter()) // ✅ đọc JWT từ cookie
+                        .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtToUserPrincipalConverter)) // ✅ map JWT -> UserPrincipal
+                );
 
         return http.build();
     }
 
-    public static class CookieJwtFilter extends AbstractPreAuthenticatedProcessingFilter {
-        @Override
-        public void doFilter(jakarta.servlet.ServletRequest request, jakarta.servlet.ServletResponse response, FilterChain filterChain)
-                throws ServletException, IOException {
-            HttpServletRequest httpRequest = (HttpServletRequest) request;
-            HttpServletResponse httpResponse = (HttpServletResponse) response;
-
-            if (httpRequest.getRequestURI().startsWith("/ws/")) {
-                filterChain.doFilter(request, response);
-                return;
-            }
-
-            String accessToken = null;
-            Cookie[] cookies = httpRequest.getCookies();
-            if (cookies != null) {
-                for (Cookie cookie : cookies) {
-                    if ("accessToken".equals(cookie.getName())) {
-                        accessToken = cookie.getValue();
-                        break;
-                    }
-                }
-            }
-
-            HttpServletRequest wrappedRequest = accessToken != null && !accessToken.isEmpty()
-                    ? new AuthHeaderRequestWrapper(httpRequest, "Bearer " + accessToken)
-                    : httpRequest;
-
-            filterChain.doFilter(wrappedRequest, httpResponse);
-        }
-
-        @Override
-        protected Object getPreAuthenticatedPrincipal(HttpServletRequest request) {
-            return null;
-        }
-
-        @Override
-        protected Object getPreAuthenticatedCredentials(HttpServletRequest request) {
-            return null;
-        }
+    // ===================== JWT DECODER =====================
+    @Bean
+    public JwtDecoder jwtDecoder(RSAPublicKey publicKey) {
+        return NimbusJwtDecoder.withPublicKey(publicKey).build();
     }
 
-    private static class AuthHeaderRequestWrapper extends HttpServletRequestWrapper {
-        private final String authHeader;
-
-        AuthHeaderRequestWrapper(HttpServletRequest request, String authHeader) {
-            super(request);
-            this.authHeader = authHeader;
-        }
-
-        @Override
-        public String getHeader(String name) {
-            if ("Authorization".equalsIgnoreCase(name)) {
-                return authHeader;
-            }
-            return super.getHeader(name);
-        }
-
-        @Override
-        public Enumeration<String> getHeaders(String name) {
-            if ("Authorization".equalsIgnoreCase(name)) {
-                return Collections.enumeration(List.of(authHeader));
-            }
-            return super.getHeaders(name);
-        }
-
-        @Override
-        public Enumeration<String> getHeaderNames() {
-            List<String> names = Collections.list(super.getHeaderNames());
-            names.add("Authorization");
-            return Collections.enumeration(names);
-        }
+    // ===================== JWT ENCODER =====================
+    @Bean
+    public JwtEncoder jwtEncoder(RSAPublicKey publicKey, RSAPrivateKey privateKey) {
+        JWK jwk = new RSAKey.Builder(publicKey).privateKey(privateKey).build();
+        JWKSource<SecurityContext> jwkSrc = new ImmutableJWKSet<>(new JWKSet(jwk));
+        return new NimbusJwtEncoder(jwkSrc);
     }
 
+    // ===================== PASSWORD ENCODER =====================
+    @Bean
+    public BCryptPasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
+    }
+
+    // ===================== AUTHENTICATION PROVIDER =====================
+    @Bean
+    public AuthenticationProvider authenticationProvider() {
+        DaoAuthenticationProvider provider = new DaoAuthenticationProvider();
+        provider.setUserDetailsService(userDetailsService);
+        provider.setPasswordEncoder(passwordEncoder());
+        return provider;
+    }
+
+    // ===================== AUTHENTICATION MANAGER =====================
+    @Bean
+    public AuthenticationManager authenticationManager(AuthenticationConfiguration cfg) throws Exception {
+        return cfg.getAuthenticationManager();
+    }
+
+    // ===================== RSA PUBLIC KEY =====================
     @Bean
     public RSAPublicKey publicKey() throws Exception {
         if (publicKeyBase64 != null && !publicKeyBase64.isBlank()) {
-            // ✅ Fix: thay \n trong ENV thành newline thật
             String key = publicKeyBase64.trim().replace("\\n", "\n");
-
-            if (key.contains("BEGIN PUBLIC KEY")) {
-                // Trường hợp PEM đầy đủ
-                String pem = key
-                        .replace("-----BEGIN PUBLIC KEY-----", "")
-                        .replace("-----END PUBLIC KEY-----", "")
-                        .replaceAll("\\s", "");
-                byte[] decoded = Base64.getDecoder().decode(pem);
-                X509EncodedKeySpec spec = new X509EncodedKeySpec(decoded);
-                return (RSAPublicKey) KeyFactory.getInstance("RSA").generatePublic(spec);
-            } else {
-                // Trường hợp DER base64
-                byte[] decoded = Base64.getDecoder().decode(key);
-                X509EncodedKeySpec spec = new X509EncodedKeySpec(decoded);
-                return (RSAPublicKey) KeyFactory.getInstance("RSA").generatePublic(spec);
-            }
+            String pem = key
+                    .replace("-----BEGIN PUBLIC KEY-----", "")
+                    .replace("-----END PUBLIC KEY-----", "")
+                    .replaceAll("\\s", "");
+            byte[] decoded = Base64.getDecoder().decode(pem);
+            X509EncodedKeySpec spec = new X509EncodedKeySpec(decoded);
+            return (RSAPublicKey) KeyFactory.getInstance("RSA").generatePublic(spec);
         } else if (publicKeyPath != null && publicKeyPath.exists()) {
             try (InputStream is = publicKeyPath.getInputStream()) {
                 String pem = new String(is.readAllBytes(), StandardCharsets.UTF_8)
@@ -233,25 +202,18 @@ public class SecurityConfig {
         throw new IllegalStateException("No public key configured!");
     }
 
+    // ===================== RSA PRIVATE KEY =====================
     @Bean
     public RSAPrivateKey privateKey() throws Exception {
         if (privateKeyBase64 != null && !privateKeyBase64.isBlank()) {
-            // ✅ Fix: thay \n trong ENV thành newline thật
             String key = privateKeyBase64.trim().replace("\\n", "\n");
-
-            if (key.contains("BEGIN PRIVATE KEY")) {
-                String pem = key
-                        .replace("-----BEGIN PRIVATE KEY-----", "")
-                        .replace("-----END PRIVATE KEY-----", "")
-                        .replaceAll("\\s", "");
-                byte[] decoded = Base64.getDecoder().decode(pem);
-                PKCS8EncodedKeySpec spec = new PKCS8EncodedKeySpec(decoded);
-                return (RSAPrivateKey) KeyFactory.getInstance("RSA").generatePrivate(spec);
-            } else {
-                byte[] decoded = Base64.getDecoder().decode(key);
-                PKCS8EncodedKeySpec spec = new PKCS8EncodedKeySpec(decoded);
-                return (RSAPrivateKey) KeyFactory.getInstance("RSA").generatePrivate(spec);
-            }
+            String pem = key
+                    .replace("-----BEGIN PRIVATE KEY-----", "")
+                    .replace("-----END PRIVATE KEY-----", "")
+                    .replaceAll("\\s", "");
+            byte[] decoded = Base64.getDecoder().decode(pem);
+            PKCS8EncodedKeySpec spec = new PKCS8EncodedKeySpec(decoded);
+            return (RSAPrivateKey) KeyFactory.getInstance("RSA").generatePrivate(spec);
         } else if (privateKeyPath != null && privateKeyPath.exists()) {
             try (InputStream is = privateKeyPath.getInputStream()) {
                 String pem = new String(is.readAllBytes(), StandardCharsets.UTF_8)
@@ -266,58 +228,10 @@ public class SecurityConfig {
         throw new IllegalStateException("No private key configured!");
     }
 
-
-    @Bean
-    public JwtDecoder jwtDecoder(RSAPublicKey publicKey) {
-        return NimbusJwtDecoder.withPublicKey(publicKey).build();
-    }
-
-    @Bean
-    public JwtEncoder jwtEncoder(RSAPublicKey publicKey, RSAPrivateKey privateKey) {
-        JWK jwk = new RSAKey.Builder(publicKey).privateKey(privateKey).build();
-        JWKSource<SecurityContext> jwkSrc = new ImmutableJWKSet<>(new JWKSet(jwk));
-        return new NimbusJwtEncoder(jwkSrc);
-    }
-
-    @Bean
-    public JwtAuthenticationConverter jwtAuthenticationConverter() {
-        JwtGrantedAuthoritiesConverter gaConverter = new JwtGrantedAuthoritiesConverter();
-        gaConverter.setAuthorityPrefix("");
-        gaConverter.setAuthoritiesClaimName("roles");
-        JwtAuthenticationConverter conv = new JwtAuthenticationConverter();
-        conv.setJwtGrantedAuthoritiesConverter(gaConverter);
-        return conv;
-    }
-
-    @Bean
-    public BCryptPasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
-    }
-
-    @Bean
-    public AuthenticationProvider authenticationProvider() {
-        DaoAuthenticationProvider provider = new DaoAuthenticationProvider();
-        provider.setUserDetailsService(userDetailsService);
-        provider.setPasswordEncoder(passwordEncoder());
-        return provider;
-    }
-
-    @Bean
-    public AuthenticationManager authenticationManager(AuthenticationConfiguration cfg) throws Exception {
-        return cfg.getAuthenticationManager();
-    }
-
-    @Value("${app.cors.allowed-origins}")
-    private String allowedOrigins;
-
-    @Value("${app.cors.allowed-origins:https://kkun-quiz.vercel.app}")
-    private String allowedOriginsCsv;
-
+    // ===================== CORS CONFIGURATION =====================
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration cfg = new CorsConfiguration();
-
-        // Parse từ environment variable
         List<String> origins = Arrays.stream(allowedOriginsCsv.split(","))
                 .map(String::trim)
                 .filter(s -> !s.isEmpty())
