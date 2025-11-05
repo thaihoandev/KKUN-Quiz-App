@@ -6,13 +6,15 @@ import unknownAvatar from "@/assets/img/avatars/unknown.jpg";
 import SelfPostList from "../layouts/post/SelfPostList";
 import PostComposer from "../layouts/post/PostComposer";
 import { getSeriesByAuthor, createSeries } from "@/services/seriesService";
-import { Card, Button, Spin, Empty, Modal, Input, message } from "antd";
+import { Card, Button, Spin, Empty, notification } from "antd";
 import { BookOutlined, PlusOutlined, RightOutlined } from "@ant-design/icons";
 import { useNavigate } from "react-router-dom";
 
 interface ProfileTabProps {
   profile: UserResponseDTO | null;
+  currentUser?: UserResponseDTO | null;
   onEditProfile: () => void;
+  isOwner?: boolean;
 }
 
 interface SeriesDto {
@@ -23,23 +25,15 @@ interface SeriesDto {
   thumbnailUrl?: string;
 }
 
-const ProfileTab = ({ profile, onEditProfile }: ProfileTabProps) => {
+const ProfileTab = ({ profile,currentUser, onEditProfile, isOwner = false }: ProfileTabProps) => {
   const [newPost, setNewPost] = useState<PostDTO | null>(null);
   const [seriesList, setSeriesList] = useState<SeriesDto[]>([]);
   const [loadingSeries, setLoadingSeries] = useState<boolean>(true);
-  const [openModal, setOpenModal] = useState(false);
-  const [newSeries, setNewSeries] = useState({
-    title: "",
-    description: "",
-    thumbnailUrl: "",
-  });
-  const [creating, setCreating] = useState(false);
 
   const navigate = useNavigate();
-
   const handlePostUpdate = useCallback((updatedPost: PostDTO) => {}, []);
 
-  // ✅ Fetch user's own series
+  // ✅ Load series của user
   const fetchSeries = async () => {
     if (!profile?.userId) return;
     setLoadingSeries(true);
@@ -48,6 +42,10 @@ const ProfileTab = ({ profile, onEditProfile }: ProfileTabProps) => {
       setSeriesList(res.content || []);
     } catch (err) {
       console.error("Failed to load series:", err);
+      notification.error({
+        message: "Lỗi tải series",
+        description: "Không thể tải danh sách series của người dùng.",
+      });
     } finally {
       setLoadingSeries(false);
     }
@@ -57,33 +55,28 @@ const ProfileTab = ({ profile, onEditProfile }: ProfileTabProps) => {
     fetchSeries();
   }, [profile?.userId]);
 
-  // ✅ Create new series
+  // ✅ Tạo series mới (chỉ cho owner)
   const handleCreateSeries = async () => {
-    if (!newSeries.title.trim()) {
-      message.warning("Vui lòng nhập tiêu đề series!");
-      return;
-    }
     if (!profile?.userId) return;
-
-    setCreating(true);
     try {
       const created = await createSeries(
-        newSeries.title,
-        newSeries.description,
-        profile.userId,
-        newSeries.thumbnailUrl || undefined
+        "New Series",
+        "Mô tả ngắn cho series",
+        profile.userId
       );
       if (created) {
-        message.success("Tạo series thành công!");
-        setOpenModal(false);
-        setNewSeries({ title: "", description: "", thumbnailUrl: "" });
+        notification.success({
+          message: "Tạo series thành công",
+          description: "Series mới đã được tạo.",
+        });
         fetchSeries();
       }
     } catch (err) {
       console.error(err);
-      message.error("Không thể tạo series.");
-    } finally {
-      setCreating(false);
+      notification.error({
+        message: "Không thể tạo series",
+        description: "Đã có lỗi xảy ra khi tạo series.",
+      });
     }
   };
 
@@ -97,14 +90,15 @@ const ProfileTab = ({ profile, onEditProfile }: ProfileTabProps) => {
             <div className="card-body p-4">
               <div className="d-flex justify-content-between align-items-center mb-3">
                 <h6 className="fw-bold text-uppercase text-muted small">About</h6>
-                <button
-                  className="btn btn-outline-primary btn-sm rounded-circle p-1"
-                  onClick={onEditProfile}
-                  title="Edit Profile"
-                  aria-label="Edit profile"
-                >
-                  <i className="bx bx-edit"></i>
-                </button>
+                {isOwner && (
+                  <button
+                    className="btn btn-outline-primary btn-sm rounded-circle p-1"
+                    onClick={onEditProfile}
+                    title="Edit Profile"
+                  >
+                    <i className="bx bx-edit"></i>
+                  </button>
+                )}
               </div>
               <ul className="list-unstyled mb-0">
                 <li className="d-flex align-items-center mb-2">
@@ -162,13 +156,13 @@ const ProfileTab = ({ profile, onEditProfile }: ProfileTabProps) => {
             </div>
           </div>
 
-          {/* ✅ Series List */}
+          {/* Series */}
           <Card
             title={
               <div className="d-flex justify-content-between align-items-center">
                 <span className="fw-bold text-uppercase text-muted small">
                   <BookOutlined className="me-2" />
-                  My Series
+                  {isOwner ? "My Series" : "Series"}
                 </span>
               </div>
             }
@@ -181,8 +175,14 @@ const ProfileTab = ({ profile, onEditProfile }: ProfileTabProps) => {
               </div>
             ) : seriesList.length === 0 ? (
               <div className="text-center py-3">
-                <Empty description="Bạn chưa tạo series nào" />
-                {profile?.userId && (
+                <Empty
+                  description={
+                    isOwner
+                      ? "Bạn chưa tạo series nào"
+                      : `${profile?.name || "Người dùng"} chưa có series nào`
+                  }
+                />
+                {isOwner && (
                   <Button
                     type="primary"
                     icon={<PlusOutlined />}
@@ -229,50 +229,55 @@ const ProfileTab = ({ profile, onEditProfile }: ProfileTabProps) => {
                   <Button
                     type="link"
                     className="p-0 text-primary fw-semibold"
-                    onClick={() => navigate(`/me/series`)}
+                    onClick={() =>
+                      isOwner
+                        ? navigate(`/me/series`)
+                        : navigate(`/users/${profile?.userId}/series`)
+                    }
                   >
                     Xem thêm <RightOutlined />
                   </Button>
-                  <Button
-                    type="primary"
-                    icon={<PlusOutlined />}
-                    onClick={() => navigate("/series/create")}
-                  >
-                    Tạo series mới
-                  </Button>
+
+                  {isOwner && (
+                    <Button
+                      type="primary"
+                      icon={<PlusOutlined />}
+                      onClick={() => navigate("/series/create")}
+                    >
+                      Tạo series mới
+                    </Button>
+                  )}
                 </div>
               </>
             )}
           </Card>
         </div>
 
-        {/* RIGHT SIDE: Composer + Posts */}
+        {/* RIGHT SIDE: Posts */}
         <div className="col-lg-8">
-          {profile?.userId ? (
-            <PostComposer
-              userId={profile.userId}
-              avatarUrl={profile.avatar || unknownAvatar}
-              onCreated={(post) => setNewPost(post)}
-            />
+          {isOwner ? (
+            <>
+              <PostComposer
+                userId={profile?.userId || ""}
+                avatarUrl={profile?.avatar || unknownAvatar}
+                onCreated={(post) => setNewPost(post)}
+              />
+              <SelfPostList
+                profile={profile}
+                currentUser={currentUser} 
+                onUpdate={handlePostUpdate}
+                userId={profile?.userId || ""}
+                newPost={newPost}
+              />
+            </>
           ) : (
-            <div className="card border-0 shadow-sm mb-3 rounded-4">
-              <div className="card-body p-4 text-center text-muted">
-                Please log in to create a post.
-              </div>
-            </div>
-          )}
-
-          {profile?.userId ? (
             <SelfPostList
               profile={profile}
+              currentUser={currentUser} 
               onUpdate={handlePostUpdate}
-              userId={profile.userId}
+              userId={profile?.userId || ""}
               newPost={newPost}
             />
-          ) : (
-            <div className="text-center text-muted py-3">
-              Please log in to view posts.
-            </div>
           )}
         </div>
       </div>

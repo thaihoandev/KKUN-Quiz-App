@@ -2,6 +2,7 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from "axios";
 import Cookies from "js-cookie";
 import { useAuthStore } from "@/store/authStore";
+import { redirectToLogin } from "@/utils/navigationHelper";
 
 /** Extend the Axios config to track retry state */
 interface CustomAxiosRequestConfig extends InternalAxiosRequestConfig {
@@ -78,6 +79,7 @@ axiosInstance.interceptors.response.use(
     if (is401 && !isRefreshCall && !hasRefreshCookie) {
       console.log("[axiosInstance] No refresh cookie left, force logout");
       useAuthStore.getState().logout();
+      redirectToLogin();
       return Promise.reject(error);
     }
 
