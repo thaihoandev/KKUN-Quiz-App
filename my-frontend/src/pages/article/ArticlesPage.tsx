@@ -20,7 +20,7 @@ import {
   Tag,
 } from "antd";
 import { Link } from "react-router-dom";
-import { getCategories } from "@/services/categoryService";
+import { getCategories } from "@/services/categoryArticleService";
 import {
   getArticles,
   getArticlesByCategory,

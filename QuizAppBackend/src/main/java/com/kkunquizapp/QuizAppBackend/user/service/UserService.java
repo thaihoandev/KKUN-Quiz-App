@@ -2,6 +2,7 @@ package com.kkunquizapp.QuizAppBackend.user.service;
 
 import com.kkunquizapp.QuizAppBackend.auth.dto.AuthResponseDTO;
 import com.kkunquizapp.QuizAppBackend.user.dto.*;
+import com.kkunquizapp.QuizAppBackend.user.model.User;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.web.multipart.MultipartFile;
@@ -32,6 +33,7 @@ public interface UserService {
     void changePassword(UUID userId, String currentPassword, String newPassword);
 
     String getCurrentUserId();
+    User getCurrentUser();
 
     // ĐỔI: từ List -> Page
     Page<FriendSuggestionDTO> getFriendSuggestions(UUID currentUserId, Pageable pageable);

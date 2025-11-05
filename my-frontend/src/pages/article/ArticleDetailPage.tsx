@@ -9,7 +9,7 @@ import {
   BookOutlined,
 } from "@ant-design/icons";
 import "bootstrap/dist/css/bootstrap.min.css";
-import { getCategories } from "@/services/categoryService";
+import { getCategories } from "@/services/categoryArticleService";
 import {
   getArticlesByCategory,
   getArticleBySlug,

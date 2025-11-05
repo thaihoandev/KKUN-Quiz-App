@@ -2,6 +2,7 @@ package com.kkunquizapp.QuizAppBackend.article.service.impl;
 
 import com.kkunquizapp.QuizAppBackend.article.dto.ArticleCreateRequest;
 import com.kkunquizapp.QuizAppBackend.article.dto.ArticleDto;
+import com.kkunquizapp.QuizAppBackend.article.dto.ArticleUpdateRequest;
 import com.kkunquizapp.QuizAppBackend.article.dto.SeriesSummaryDto;
 import com.kkunquizapp.QuizAppBackend.article.mapper.ArticleMapper;
 import com.kkunquizapp.QuizAppBackend.article.model.Article;
@@ -18,6 +19,7 @@ import com.kkunquizapp.QuizAppBackend.common.utils.SlugUtil;
 import com.kkunquizapp.QuizAppBackend.fileUpload.service.CloudinaryService;
 import com.kkunquizapp.QuizAppBackend.user.dto.UserSummaryDto;
 import com.kkunquizapp.QuizAppBackend.user.model.User;
+import com.kkunquizapp.QuizAppBackend.user.model.enums.UserRole;
 import com.kkunquizapp.QuizAppBackend.user.service.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -175,4 +177,95 @@ public class ArticleServiceImpl implements ArticleService {
         return articleRepository.findByArticleCategoryAndPublishedTrue(category, pageable)
                 .map(mapper::toDto);
     }
+
+    @Override
+    public ArticleDto update(String slug, ArticleUpdateRequest req) {
+        // 1️⃣ Tìm bài viết hiện có
+        Article article = articleRepository.findBySlug(slug)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Article not found: " + slug));
+
+        User currentUser = userService.getCurrentUser();
+        if (!article.getAuthorId().equals(currentUser.getUserId())
+                && currentUser.getRole() != UserRole.ADMIN) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Bạn không có quyền chỉnh sửa bài viết này");
+        }
+
+        // 2️⃣ Cập nhật các trường cơ bản
+        if (req.getTitle() != null && !req.getTitle().isBlank()) {
+            article.setTitle(req.getTitle());
+        }
+
+        if (req.getContentMarkdown() != null) {
+            article.setContentMarkdown(req.getContentMarkdown());
+            article.setContentHtml(markdownProcessor.toHtml(req.getContentMarkdown()));
+
+            // Cập nhật thời gian đọc
+            int words = req.getContentMarkdown().split("\\s+").length;
+            article.setReadingTime(Math.max(1, words / 200));
+        }
+
+        if (req.getCategoryId() != null) {
+            ArticleCategory category = categoryService.getById(req.getCategoryId());
+            article.setArticleCategory(category);
+        }
+
+        article.setDifficulty(req.getDifficulty());
+
+        // 3️⃣ Cập nhật tags
+        if (req.getTags() != null) {
+            article.setTags(new HashSet<>(tagService.getOrCreateMany(req.getTags())));
+        }
+
+        // 4️⃣ Cập nhật thumbnail nếu có file mới
+        MultipartFile thumbnail = req.getThumbnail();
+        if (thumbnail != null && !thumbnail.isEmpty()) {
+            try {
+                String publicId = "articles/thumbnails/" + UUID.randomUUID();
+                Map uploadResult = cloudinaryService.upload(thumbnail, publicId);
+                String imageUrl = (String) uploadResult.get("secure_url");
+                article.setThumbnailUrl(imageUrl);
+            } catch (IOException e) {
+                throw new RuntimeException("Failed to upload new thumbnail", e);
+            }
+        }
+
+        // 5️⃣ Cập nhật series (nếu có)
+        if (req.getSeriesId() != null) {
+            // Xóa liên kết cũ (nếu có)
+            articleSeriesRepository.findByArticleId(article.getId())
+                    .ifPresent(articleSeriesRepository::delete);
+
+            // Tạo liên kết mới
+            ArticleSeries link = new ArticleSeries();
+            link.setArticleId(article.getId());
+            link.setSeriesId(req.getSeriesId());
+            int nextOrder = articleSeriesRepository
+                    .findBySeriesIdOrderByOrderIndex(req.getSeriesId())
+                    .size() + 1;
+            link.setOrderIndex(nextOrder);
+            articleSeriesRepository.save(link);
+        }
+
+        // 6️⃣ Lưu thay đổi
+        articleRepository.save(article);
+        return mapper.toDto(article);
+    }
+
+    @Override
+    public void delete(UUID id) {
+        Article article = articleRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Article not found: " + id));
+
+        User currentUser = userService.getCurrentUser();
+        if (!article.getAuthorId().equals(currentUser.getUserId())
+                && currentUser.getRole() != UserRole.ADMIN) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Bạn không có quyền xóa bài viết này");
+        }
+        // Xóa liên kết series nếu có
+        articleSeriesRepository.findByArticleId(article.getId())
+                .ifPresent(articleSeriesRepository::delete);
+
+        articleRepository.delete(article);
+    }
+
 }

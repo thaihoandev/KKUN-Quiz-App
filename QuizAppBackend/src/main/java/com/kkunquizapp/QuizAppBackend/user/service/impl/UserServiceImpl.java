@@ -363,6 +363,13 @@ public class UserServiceImpl implements UserService {
         throw new IllegalStateException("Cannot get userId from Access Token or request");
     }
 
+    @Override
+    public User getCurrentUser() {
+        UUID id = UUID.fromString(getCurrentUserId());
+        return userRepo.findById(id)
+                .orElseThrow(() -> new UserNotFoundException("User not found: " + id));
+    }
+
     // ===================== FRIEND SUGGESTIONS (Page) =====================
     @Override
     @Transactional(readOnly = true)

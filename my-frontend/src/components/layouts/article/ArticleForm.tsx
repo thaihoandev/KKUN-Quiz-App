@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import MDEditor from "@uiw/react-md-editor";
-import { getCategories } from "@/services/categoryService";
+import { getCategories } from "@/services/categoryArticleService";
 import { getTags, createTag } from "@/services/tagService";
 import { getSeriesList } from "@/services/seriesService";
 import { createArticle } from "@/services/articleService";

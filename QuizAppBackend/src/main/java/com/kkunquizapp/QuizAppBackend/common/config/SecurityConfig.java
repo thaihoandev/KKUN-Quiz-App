@@ -91,7 +91,7 @@ public class SecurityConfig {
                                 "/api/quizzes/published",
                                 "/api/users/me/confirm-email-change"
                         ).permitAll()
-                        .requestMatchers("/api/quizzes/**", "/api/questions/**", "/api/files/upload/**")
+                        .requestMatchers("/api/quizzes/**", "/api/questions/**", "/api/files/upload/**", "/api/articles/**")
                         .hasAnyAuthority(UserRole.USER.name(), UserRole.ADMIN.name())
                         .requestMatchers("/api/admin/**").hasAuthority(UserRole.ADMIN.name())
                         .requestMatchers("/api/profile/**").hasAuthority(UserRole.USER.name())

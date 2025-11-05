@@ -2,6 +2,7 @@ package com.kkunquizapp.QuizAppBackend.article.controller;
 
 import com.kkunquizapp.QuizAppBackend.article.dto.ArticleCreateRequest;
 import com.kkunquizapp.QuizAppBackend.article.dto.ArticleDto;
+import com.kkunquizapp.QuizAppBackend.article.dto.ArticleUpdateRequest;
 import com.kkunquizapp.QuizAppBackend.article.service.ArticleService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Sort;
@@ -41,6 +42,19 @@ public class ArticleController {
     @PostMapping
     public ResponseEntity<ArticleDto> create(@ModelAttribute ArticleCreateRequest req) {
         return ResponseEntity.ok(articleService.create(req));
+    }
+
+    @PutMapping("/{slug}")
+    public ResponseEntity<ArticleDto> update(
+            @PathVariable String slug,
+            @ModelAttribute ArticleUpdateRequest req) {
+        return ResponseEntity.ok(articleService.update(slug, req));
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> delete(@PathVariable UUID id) {
+        articleService.delete(id);
+        return ResponseEntity.noContent().build();
     }
 }
 

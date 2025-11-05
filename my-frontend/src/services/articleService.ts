@@ -40,11 +40,11 @@ export const getArticles = async (
 };
 
 // ✅ Lấy bài viết theo slug
-export const getArticleBySlug = async (slug: string): Promise<ArticleDto | null> => {
+export const getArticleBySlug = async (
+  slug: string
+): Promise<ArticleDto | null> => {
   try {
     const response = await axiosInstance.get(`${API_URL}/${slug}`);
-    console.log(response.data);
-    
     return response.data;
   } catch (error) {
     handleApiError(error, "Failed to fetch article detail");
@@ -52,7 +52,7 @@ export const getArticleBySlug = async (slug: string): Promise<ArticleDto | null>
   }
 };
 
-// ✅ Lấy danh sách bài theo category (phân trang)
+// ✅ Lấy danh sách bài viết theo category (phân trang)
 export const getArticlesByCategory = async (
   categoryId: string,
   page = 0,
@@ -79,11 +79,10 @@ export const getArticlesByCategory = async (
 };
 
 // ✅ Tạo mới bài viết (multipart/form-data)
-// ✅ Tạo mới bài viết (có thể gắn vào series)
-export const createArticle = async (formData: FormData): Promise<ArticleDto | null> => {
+export const createArticle = async (
+  formData: FormData
+): Promise<ArticleDto | null> => {
   try {
-    // formData có thể chứa:
-    // title, contentMarkdown, categoryId, authorId, tags[], thumbnail, difficulty, seriesId
     const response = await axiosInstance.post(API_URL, formData, {
       headers: { "Content-Type": "multipart/form-data" },
     });
@@ -94,3 +93,29 @@ export const createArticle = async (formData: FormData): Promise<ArticleDto | nu
   }
 };
 
+// ✅ Cập nhật bài viết (multipart/form-data)
+export const updateArticle = async (
+  slug: string,
+  formData: FormData
+): Promise<ArticleDto | null> => {
+  try {
+    const response = await axiosInstance.put(`${API_URL}/${slug}`, formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+    return response.data;
+  } catch (error) {
+    handleApiError(error, "Failed to update article");
+    return null;
+  }
+};
+
+// ✅ Xóa bài viết theo ID
+export const deleteArticle = async (id: string): Promise<boolean> => {
+  try {
+    await axiosInstance.delete(`${API_URL}/${id}`);
+    return true;
+  } catch (error) {
+    handleApiError(error, "Failed to delete article");
+    return false;
+  }
+};

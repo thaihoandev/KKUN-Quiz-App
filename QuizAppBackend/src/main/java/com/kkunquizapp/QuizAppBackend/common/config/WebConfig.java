@@ -25,7 +25,7 @@ public class WebConfig implements WebMvcConfigurer {
     public void addInterceptors(InterceptorRegistry registry) {
         // Áp dụng JwtInterceptor cho tất cả các endpoint trong /api/**
         registry.addInterceptor(jwtInterceptor)
-                .addPathPatterns("/api/users/**", "/api/quizzes/**")
+                .addPathPatterns("/api/users/**", "/api/quizzes/**","/api/articles/**")
                 .excludePathPatterns("/api/quizzes/published");;
         registry.addInterceptor(quizPermissionInterceptor)
                 .addPathPatterns(
