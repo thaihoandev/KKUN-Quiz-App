@@ -1,10 +1,12 @@
 package com.kkunquizapp.QuizAppBackend.question.controller;
 
+import com.kkunquizapp.QuizAppBackend.common.security.RequireQuizEdit;
+import com.kkunquizapp.QuizAppBackend.common.security.RequireQuizView;
 import com.kkunquizapp.QuizAppBackend.question.dto.QuestionRequestDTO;
 import com.kkunquizapp.QuizAppBackend.question.dto.QuestionResponseDTO;
 import com.kkunquizapp.QuizAppBackend.fileUpload.service.FileUploadService;
 import com.kkunquizapp.QuizAppBackend.question.service.QuestionService;
-import org.springframework.beans.factory.annotation.Autowired;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -16,15 +18,15 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/quizzes/{quizId}/questions")
+@RequiredArgsConstructor
 public class QuestionController {
 
-    @Autowired
-    private QuestionService questionService;
+    private final QuestionService questionService;
+    private final FileUploadService fileUploadService;
 
-    @Autowired
-    private FileUploadService fileUploadService;
-
+    // ✅ Require HOST or EDITOR
     @PostMapping(value = "/create", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @RequireQuizEdit
     public ResponseEntity<QuestionResponseDTO> addQuestion(
             @PathVariable UUID quizId,
             @RequestPart("question") QuestionRequestDTO questionRequestDTO,
@@ -43,20 +45,26 @@ public class QuestionController {
         }
     }
 
+    // ✅ Require HOST or EDITOR
     @PostMapping("/bulk")
+    @RequireQuizEdit
     public ResponseEntity<List<QuestionResponseDTO>> addQuestionsBulk(
             @PathVariable UUID quizId,
-            @RequestBody List<QuestionRequestDTO> questionDTOs
-    ) {
-        // đảm bảo quizId đồng nhất theo path param
-        questionDTOs.forEach(dto -> dto.setQuizId(quizId));
-        List<QuestionResponseDTO> result = questionService.addQuestions(questionDTOs);
-        return ResponseEntity.ok(result);
+            @RequestBody List<QuestionRequestDTO> questionDTOs) {
+        try {
+            // Đảm bảo quizId đồng nhất theo path param
+            questionDTOs.forEach(dto -> dto.setQuizId(quizId));
+            List<QuestionResponseDTO> result = questionService.addQuestions(questionDTOs);
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(null);
+        }
     }
 
-    // Lấy thông tin câu hỏi theo ID
+    // ✅ Public - không cần authentication (hoặc thêm @RequireQuizView nếu muốn restrict)
     @GetMapping("/{questionId}")
     public ResponseEntity<QuestionResponseDTO> getQuestionById(
+            @PathVariable UUID quizId,
             @PathVariable UUID questionId) {
         try {
             QuestionResponseDTO responseDTO = questionService.getQuestionById(questionId);
@@ -66,7 +74,9 @@ public class QuestionController {
         }
     }
 
+    // ✅ Require HOST or EDITOR
     @PutMapping(value = "/{questionId}/edit", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @RequireQuizEdit
     public ResponseEntity<QuestionResponseDTO> updateQuestion(
             @PathVariable UUID quizId,
             @PathVariable UUID questionId,
@@ -86,10 +96,9 @@ public class QuestionController {
         }
     }
 
-
-
-    // Xóa câu hỏi
+    // ✅ Require HOST or EDITOR
     @PatchMapping("/{questionId}/soft-delete")
+    @RequireQuizEdit
     public ResponseEntity<QuestionResponseDTO> softDeleteQuestion(
             @PathVariable UUID quizId,
             @PathVariable UUID questionId) {

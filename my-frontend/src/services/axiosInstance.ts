@@ -1,67 +1,50 @@
 // src/utils/axiosInstance.ts
-
 import axios, { AxiosError, InternalAxiosRequestConfig } from "axios";
-import { useAuthStore } from "@/store/authStore";
 import Cookies from "js-cookie";
+import { useAuthStore } from "@/store/authStore";
 import { redirectToLogin } from "@/utils/navigationHelper";
-/**
- * Extend the Axios request config to track retry state
- */
+
+/** Extend the Axios config to track retry state */
 interface CustomAxiosRequestConfig extends InternalAxiosRequestConfig {
   _retry?: boolean;
 }
 
-/**
- * Create a “refresh” instance without interceptors, used only for the refresh-token call
- */
+/** Base URL từ .env */
+const baseURL = import.meta.env.VITE_BASE_API_URL || "http://localhost:8080/api";
+
+/** Tạo instance riêng cho refresh token */
 const refreshInstance = axios.create({
-  baseURL: import.meta.env.VITE_BASE_API_URL || "http://localhost:8080/api",
+  baseURL,
   withCredentials: true,
   timeout: 10000,
 });
 
-/**
- * Main Axios instance for all API calls
- */
+/** Tạo instance chính cho toàn app */
 const axiosInstance = axios.create({
-  baseURL: import.meta.env.VITE_BASE_API_URL || "http://localhost:8080/api",
-  withCredentials: true, // send HttpOnly cookies
+  baseURL,
+  withCredentials: true,
   timeout: 10000,
 });
 
-/**
- * Attempt to refresh the access token by calling /auth/refresh-token.
- * On failure, force logout.
- */
+/** Gọi refresh token API */
 export const refreshToken = async (): Promise<boolean> => {
   try {
-    // Use the bare instance so we don't trigger our own interceptor
     await refreshInstance.post("/auth/refresh-token", {});
+    console.info("[axiosInstance] ✅ Access token refreshed");
     return true;
   } catch (err) {
-    console.error("Error refreshing token:", err);
-    useAuthStore.getState().logout();
+    console.error("[axiosInstance] ❌ Refresh token failed:", err);
     return false;
   }
 };
 
-/**
- * Request interceptor (optional): you could add Authorization header here if using bearer tokens
- */
+/** Request interceptor */
 axiosInstance.interceptors.request.use(
-  (config) => {
-    // e.g. const token = useAuthStore.getState().user?.accessToken;
-    // if (token) config.headers!['Authorization'] = `Bearer ${token}`;
-    return config;
-  },
+  (config) => config,
   (error) => Promise.reject(error)
 );
 
-/**
- * Response interceptor:
- * - On 401, try to call refreshToken() once
- * - Retry the original request if refresh succeeded
- */
+/** Response interceptor */
 axiosInstance.interceptors.response.use(
   (response) => response,
   async (error: unknown) => {
@@ -72,38 +55,36 @@ axiosInstance.interceptors.response.use(
     const originalRequest = error.config as CustomAxiosRequestConfig;
     const is401 = error.response?.status === 401;
     const isRefreshCall = originalRequest.url?.endsWith("/auth/refresh-token");
-
-    // Lấy cookie refresh-token
     const hasRefreshCookie = Boolean(Cookies.get("refreshToken"));
 
-    // Chỉ thử refresh nếu:
-    // - Lần đầu gặp 401
-    // - Không phải call /auth/refresh-token
-    // - Và vẫn còn cookie refresh-token
+    // ✅ Trường hợp 1: accessToken hết hạn nhưng vẫn có refreshToken
     if (is401 && !originalRequest._retry && !isRefreshCall && hasRefreshCookie) {
       originalRequest._retry = true;
-
       const ok = await refreshToken();
-      if (ok) {
-        return axiosInstance(originalRequest);
-      } else {
-        useAuthStore.getState().logout();
-        redirectToLogin();
 
+      if (ok) {
+        // Đợi backend set cookie mới (~100ms)
+        await new Promise((r) => setTimeout(r, 150));
+        console.info("[axiosInstance] Retrying original request after refresh");
+        return axiosInstance(originalRequest);
       }
+
+      // ❌ Refresh thất bại thật → xóa session
+      console.warn("[axiosInstance] Refresh failed — logging out...");
+      useAuthStore.getState().logout();
+      return Promise.reject(error);
     }
 
-    // Nếu không còn cookie refresh-token, logout luôn
+    // ✅ Trường hợp 2: không có refreshToken (đăng xuất)
     if (is401 && !isRefreshCall && !hasRefreshCookie) {
+      console.log("[axiosInstance] No refresh cookie left, force logout");
       useAuthStore.getState().logout();
       redirectToLogin();
-      return; // ngăn axios tiếp tục retry
+      return Promise.reject(error);
     }
 
     return Promise.reject(error);
   }
 );
-
-
 
 export default axiosInstance;

@@ -26,8 +26,8 @@ const UserProfilePage = () => {
 
   const isOwner = useMemo(() => {
     if (!currentUser) return false;
-    // Xem trang của mình khi:
-    // - Không có routeUserId (đi đường /dashboard hoặc /profile)
+    // Trang của chính mình nếu:
+    // - Không có routeUserId
     // - Hoặc routeUserId === currentUser.userId
     return !routeUserId || routeUserId === currentUser.userId;
   }, [routeUserId, currentUser]);
@@ -50,6 +50,7 @@ const UserProfilePage = () => {
     [isOwner]
   );
 
+  // Load user hiện tại và profile được xem
   useEffect(() => {
     let cancelled = false;
 
@@ -57,12 +58,10 @@ const UserProfilePage = () => {
       setLoading(true);
       setError(null);
       try {
-        // 1) Luôn lấy current user để biết quyền
         const me = await getCurrentUser();
         if (cancelled) return;
         setCurrentUser(me);
 
-        // 2) Quyết định fetch profile hiển thị
         if (!routeUserId || routeUserId === me?.userId) {
           setProfile(me);
         } else {
@@ -85,36 +84,44 @@ const UserProfilePage = () => {
     };
   }, [routeUserId]);
 
-  // Đổi user xem → nên quay lại tab “profile”
+  // Mỗi lần đổi user xem → reset về tab "profile"
   useEffect(() => {
     setActiveTab("profile");
   }, [routeUserId]);
 
   const handleUpdateProfile = (updated: UserResponseDTO) => {
     setProfile(updated);
-    // Nếu sửa avatar/hồ sơ của chính mình, đồng bộ currentUser
     if (isOwner) setCurrentUser(updated);
   };
+
+  // ✅ Nếu là owner → truyền currentUser vào ProfileTab để luôn đúng dữ liệu
+  const targetProfile = isOwner ? currentUser : profile;
 
   const renderTabContent = () => {
     switch (activeTab) {
       case "profile":
-        return isOwner ? (
-          <ProfileTab profile={profile} onEditProfile={() => setShowProfileModal(true)} />
-        ) : (
-          <ViewProfileTab profile={profile} />
+        return (
+          <ProfileTab
+            profile={targetProfile}
+            currentUser={currentUser}
+            isOwner={isOwner}
+            onEditProfile={() => setShowProfileModal(true)}
+          />
         );
       case "classes":
-        return <ClassesTab /* có thể truyền userId nếu cần */ />;
+        return <ClassesTab />;
       case "courses":
-        return <CoursesTab /* có thể truyền userId nếu cần */ />;
+        return <CoursesTab />;
       case "quizzes":
-        return isOwner ? <QuizzesTab profile={profile} /> : <ViewProfileTab profile={profile} />;
+        return isOwner ? <QuizzesTab profile={targetProfile} /> : <ViewProfileTab profile={targetProfile} />;
       default:
-        return isOwner ? (
-          <ProfileTab profile={profile} onEditProfile={() => setShowProfileModal(true)} />
-        ) : (
-          <ViewProfileTab profile={profile} />
+        return (
+          <ProfileTab
+            profile={targetProfile}
+            currentUser={currentUser}
+            isOwner={isOwner}
+            onEditProfile={() => setShowProfileModal(true)}
+          />
         );
     }
   };
@@ -123,12 +130,16 @@ const UserProfilePage = () => {
     <div className="container-xxl flex-grow-1 container-p-y">
       {/* Header */}
       <HeaderProfile
-        profile={profile}
+        profile={targetProfile}
         onEditAvatar={isOwner ? () => setShowAvatarModal(true) : () => {}}
       />
 
       {/* Navbar pills */}
-      <NavigationMenu menuItems={menuItems} activeTab={activeTab} onTabChange={setActiveTab} />
+      <NavigationMenu
+        menuItems={menuItems}
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+      />
 
       {/* Tab Content */}
       {loading ? (
@@ -139,17 +150,17 @@ const UserProfilePage = () => {
         renderTabContent()
       )}
 
-      {/* Only owner gets edit modals */}
-      {isOwner && showProfileModal && profile && (
+      {/* Modals chỉ dành cho chủ sở hữu */}
+      {isOwner && showProfileModal && targetProfile && (
         <EditProfileModal
-          profile={profile}
+          profile={targetProfile}
           onClose={() => setShowProfileModal(false)}
           onUpdate={handleUpdateProfile}
         />
       )}
-      {isOwner && showAvatarModal && profile && (
+      {isOwner && showAvatarModal && targetProfile && (
         <EditAvatarModal
-          profile={profile}
+          profile={targetProfile}
           onClose={() => setShowAvatarModal(false)}
           onUpdate={handleUpdateProfile}
         />

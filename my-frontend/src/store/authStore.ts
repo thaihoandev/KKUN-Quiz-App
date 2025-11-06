@@ -18,24 +18,19 @@ interface User {
 
 interface AuthState {
   user: User | null;
-
-  // cache meta
   lastFetchedAt: number | null;
-  staleTime: number;              // ms, ví dụ 60s
+  staleTime: number;
   isFetchingMe: boolean;
   inFlightMe: Promise<void> | null;
-  etag: string | null;            // nếu BE hỗ trợ ETag
+  etag: string | null;
 
-  // actions cơ bản
   setUser: (user: User | null) => void;
   updateUserPartial: (patch: Partial<User>) => void;
 
-  // fetch helpers
   refreshMe: () => Promise<void>;
   refreshMeIfStale: () => Promise<void>;
   ensureMe: () => Promise<User | null>;
 
-  // auth flow
   login: (username: string, password: string) => Promise<void>;
   register: (name: string, username: string, email: string, password: string) => Promise<void>;
   loginWithGoogle: (tokenResponse: TokenResponse) => Promise<void>;
@@ -56,10 +51,8 @@ export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
       user: null,
-
-      // cache meta
       lastFetchedAt: null,
-      staleTime: 60_000,      // 1 phút
+      staleTime: 60_000,
       isFetchingMe: false,
       inFlightMe: null,
       etag: null,
@@ -72,7 +65,6 @@ export const useAuthStore = create<AuthState>()(
           const patched: User = {
             ...state.user,
             ...patch,
-            // cache-busting avatar nếu BE chưa có version trong URL
             ...(patch.avatar
               ? { avatar: `${patch.avatar}${patch.avatar.includes("?") ? "&" : "?"}t=${Date.now()}` }
               : {}),
@@ -80,9 +72,10 @@ export const useAuthStore = create<AuthState>()(
           return { user: patched };
         }),
 
+      // ================== refreshMe ==================
       refreshMe: async () => {
         const { inFlightMe } = get();
-        if (inFlightMe) return inFlightMe; // dedupe
+        if (inFlightMe) return inFlightMe;
 
         const p = (async () => {
           set({ isFetchingMe: true });
@@ -93,7 +86,7 @@ export const useAuthStore = create<AuthState>()(
 
             const resp = await axiosInstance.get("/users/me", {
               headers,
-              validateStatus: (s) => s === 200 || s === 304 || s === 401
+              validateStatus: (s) => s === 200 || s === 304 || s === 401,
             });
 
             if (resp.status === 200) {
@@ -103,7 +96,8 @@ export const useAuthStore = create<AuthState>()(
             } else if (resp.status === 304) {
               set({ lastFetchedAt: Date.now() });
             } else if (resp.status === 401) {
-              // Không có phiên đăng nhập → đánh dấu đã fetch để tránh spam
+              // Không logout — chỉ đánh dấu stale
+              console.warn("[authStore] /me unauthorized — keep session intact");
               set({ lastFetchedAt: Date.now() });
             }
           } finally {
@@ -117,10 +111,7 @@ export const useAuthStore = create<AuthState>()(
 
       refreshMeIfStale: async () => {
         const { lastFetchedAt, staleTime, user } = get();
-        // Chưa có user → fetch ngay
         if (!user) return get().refreshMe();
-
-        // Có user rồi mà quá hạn → revalidate
         if (!lastFetchedAt || Date.now() - lastFetchedAt > staleTime) {
           return get().refreshMe();
         }
@@ -132,114 +123,79 @@ export const useAuthStore = create<AuthState>()(
           await get().refreshMe();
           return get().user;
         }
-        // có user rồi thì revalidate nền nếu stale
         get().refreshMeIfStale();
         return user;
       },
 
-      // ===== Auth flow =====
+      // ================== login / register ==================
       login: async (username, password) => {
         try {
           const response = await loginApi(username, password);
-          const userData: User = {
-            userId: response.userData.userId,
-            username: response.userData.username,
-            email: response.userData.email,
-            avatar: response.userData.avatar || "",
-            name: response.userData.name || "",
-            roles: response.userData.roles || [],
-          };
+          const userData = mapMeDtoToUser(response.userData);
           set({ user: userData, lastFetchedAt: Date.now(), etag: null });
         } catch (error) {
           handleApiError(error, "Login failed");
-          throw new Error("An unexpected error occurred");
+          throw error;
         }
       },
 
       register: async (name, username, email, password) => {
         try {
           const response = await registerApi({ name, username, email, password });
-          const userData: User = {
-            userId: response.userId,
-            username: response.username,
-            email: response.email,
-            avatar: response.avatar || "",
-            name: response.name || "",
-            roles: response.roles || [],
-          };
+          const userData = mapMeDtoToUser(response);
           set({ user: userData, lastFetchedAt: Date.now(), etag: null });
         } catch (error) {
           handleApiError(error, "Registration failed");
-          throw new Error("An unexpected error occurred");
+          throw error;
         }
       },
 
       loginWithGoogle: async (tokenResponse: TokenResponse) => {
         try {
-          if (!tokenResponse.access_token) {
-            throw new Error("Google login failed. No access token received.");
-          }
+          if (!tokenResponse.access_token) throw new Error("Google login failed: no token");
           const response = await loginGoogleApi(tokenResponse.access_token);
-          
-          const userData: User = {
-            userId: response.userData.userId,
-            username: response.userData.username,
-            email: response.userData.email,
-            avatar: response.userData.avatar || "",
-            name: response.userData.name || "",
-            roles: response.userData.roles || [],
-          };
+          const userData = mapMeDtoToUser(response.userData);
           set({ user: userData, lastFetchedAt: Date.now(), etag: null });
         } catch (error) {
           handleApiError(error, "Google login failed");
-          throw new Error("Google login failed. Try again!");
+          throw error;
         }
       },
 
+      // ================== refresh token ==================
       refreshAccessToken: async () => {
         try {
-          await axios.post(
-            `${import.meta.env.VITE_BASE_API_URL}/auth/refresh-token`,
-            {},
-            { withCredentials: true }
-          );
+          await axios.post(`${import.meta.env.VITE_BASE_API_URL}/auth/refresh-token`, {}, {
+            withCredentials: true,
+          });
+          console.info("[authStore] Access token refreshed successfully");
         } catch (error) {
-          console.error("Refresh token failed:", error);
-          get().logout();
+          console.error("[authStore] Refresh token failed:", error);
+          // ❌ KHÔNG gọi logout ở đây nữa — interceptor sẽ xử lý
         }
       },
 
+      // ================== logout ==================
       logout: async () => {
         try {
-          await axios.post(
-            `${import.meta.env.VITE_BASE_API_URL}/auth/logout`,
-            {},
-            { withCredentials: true }
-          );
+          await axios.post(`${import.meta.env.VITE_BASE_API_URL}/auth/logout`, {}, {
+            withCredentials: true,
+          });
         } catch (e) {
           console.warn("Logout API failed:", e);
         }
 
-        // Clear state
+        // Dọn local state
         set({ user: null, lastFetchedAt: null, etag: null, inFlightMe: null });
-
-        // Clear localStorage (persist storage)
         localStorage.removeItem("auth-storage");
-        
-        // Clear any leftover tokens (nếu có)
-        localStorage.removeItem("access-token");
-        localStorage.removeItem("refresh-token");
-        
-        // Clear axios default headers
-        delete axios.defaults.headers.common["Authorization"];
       },
     }),
     {
       name: "auth-storage",
-      storage: createJSONStorage(() => localStorage), // ✅ Dùng localStorage thay vì cookieStorage
+      storage: createJSONStorage(() => localStorage),
     }
   )
 );
 
-// ✅ Enable credentials cho tất cả axios requests
+// ✅ Mặc định mọi request đều gửi cookie
 axios.defaults.withCredentials = true;

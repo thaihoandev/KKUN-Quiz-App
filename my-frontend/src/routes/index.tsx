@@ -39,6 +39,7 @@ import SeriesDetailPage from "@/pages/series/SeriesDetailPage";
 import AuthorSeriesPage from "@/pages/series/AuthorSeriesPage";
 import CreateSeriesPage from "@/pages/series/CreateSeriesPage";
 import EditSeriesPage from "@/pages/series/EditSeriesPage";
+import ArticleEditPage from "@/pages/article/ArticleEditPage";
 
 const AppRoutes: React.FC = () => (
   <>
@@ -94,6 +95,7 @@ const AppRoutes: React.FC = () => (
           {/* ARTICLES */}
           <Route path="articles" element={<ArticlesPage />} />
           <Route path="articles/create" element={<CreateArticlePage />} />
+          <Route path="articles/edit/:slug" element={<ArticleEditPage />} />
           <Route path="articles/:slug" element={<ArticleDetailPage />} />
           
           {/* CHAT */}

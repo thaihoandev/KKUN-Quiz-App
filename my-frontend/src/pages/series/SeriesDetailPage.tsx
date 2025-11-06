@@ -121,13 +121,26 @@ export default function SeriesDetailPage() {
           <h4 className="fw-bold d-flex align-items-center gap-2 mb-0">
             <BookOutlined /> Bài viết trong series
           </h4>
-          <button
-            className="btn btn-primary"
-            onClick={() => navigate(`/articles/create?seriesId=${series.id}`)}
-          >
-            <PlusOutlined /> Thêm bài viết
-          </button>
+
+          <div className="d-flex gap-2">
+            {/* 🔄 Nút chỉnh sửa series */}
+            <button
+              className="btn btn-outline-secondary"
+              onClick={() => navigate(`/series/edit/${series.slug}`)}
+            >
+              ✏️ Chỉnh sửa series
+            </button>
+
+            {/* ➕ Nút thêm bài viết */}
+            <button
+              className="btn btn-primary"
+              onClick={() => navigate(`/articles/create?seriesId=${series.id}`)}
+            >
+              <PlusOutlined /> Thêm bài viết
+            </button>
+          </div>
         </div>
+
 
         {series.articles && series.articles.length > 0 ? (
           <div className="row g-3">

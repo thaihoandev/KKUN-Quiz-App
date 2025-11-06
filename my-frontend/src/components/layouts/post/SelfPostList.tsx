@@ -5,6 +5,7 @@ import PostCard from "./PostCard";
 
 type Props = {
   profile: UserResponseDTO | null;
+  currentUser?: UserResponseDTO | null; 
   className?: string;
   onUpdate: (updatedPost: PostDTO) => void; // nhận từ ViewProfileTab
   userId: string;                            // userId của profile đang xem
@@ -16,6 +17,7 @@ const DEFAULT_SORT = "createdAt,desc";
 
 export default function SelfPostList({
   profile,
+  currentUser,
   className = "",
   onUpdate,
   userId,
@@ -148,6 +150,7 @@ export default function SelfPostList({
               key={p.postId}
               post={p}
               profile={profile}
+              currentUser={currentUser}
               onUpdate={onUpdate}
             />
           ))}

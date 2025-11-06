@@ -1,5 +1,6 @@
 package com.kkunquizapp.QuizAppBackend.article.service;
 
+import com.kkunquizapp.QuizAppBackend.article.dto.ArticleDto;
 import com.kkunquizapp.QuizAppBackend.article.dto.SeriesDto;
 
 import org.springframework.data.domain.Page;
@@ -29,5 +30,7 @@ public interface SeriesService {
     void updateArticleOrder(UUID seriesId, List<UUID> orderedArticleIds);
 
     void moveArticleToSeries(UUID articleId, UUID newSeriesId);
+
+    Page<ArticleDto> getUnassignedArticlesByAuthor(UUID authorId, Pageable pageable);
 
 }
