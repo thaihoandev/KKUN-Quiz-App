@@ -1,4 +1,4 @@
-import { UserRequestDTO } from "@/interfaces";
+import { UserRequestDTO } from "@/types/users";
 import axiosInstance from "./axiosInstance";
 import {handleApiError} from "@/utils/apiErrorHandler";
 

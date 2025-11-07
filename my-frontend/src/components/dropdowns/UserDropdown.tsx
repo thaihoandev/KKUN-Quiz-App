@@ -48,9 +48,17 @@ const UserDropdown = ({ profile }: { profile: any }) => {
     return () => mediaQuery.removeEventListener("change", handleChange);
   }, []);
 
-  const handleLogout = () => {
-    logout();
-    navigate("/login");
+  const handleLogout = async () => {
+    try {
+      await logout();
+
+      // ✅ đảm bảo navigate chạy sau khi Zustand update
+      requestAnimationFrame(() => {
+        navigate("/login", { replace: true });
+      });
+    } catch (err) {
+      console.error("Logout failed:", err);
+    }
   };
 
   return (

@@ -1,5 +1,4 @@
 import { formatDateOnly } from "@/utils/dateUtils";
-import { UserResponseDTO } from "@/interfaces";
 import SelfPostList from "../layouts/post/SelfPostList";
 import { useCallback, useEffect, useState } from "react";
 import { PostDTO } from "@/services/postService";
@@ -7,9 +6,10 @@ import { getSeriesByAuthor } from "@/services/seriesService";
 import { Card, Button, Spin, Empty } from "antd";
 import { BookOutlined, RightOutlined } from "@ant-design/icons";
 import { useNavigate } from "react-router-dom";
+import { User } from "@/types/users";
 
 interface ViewProfileTabProps {
-  profile: UserResponseDTO | null;
+  profile: User | null;
 }
 
 interface SeriesDto {

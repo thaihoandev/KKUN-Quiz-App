@@ -6,15 +6,8 @@ import axios from "axios";
 import { TokenResponse } from "@react-oauth/google";
 import { handleApiError } from "@/utils/apiErrorHandler";
 import axiosInstance from "@/services/axiosInstance";
-
-interface User {
-  userId: string;
-  username: string;
-  email: string;
-  avatar: string;
-  name: string;
-  roles: string[];
-}
+import { User } from "@/types/users";
+import Cookies from "js-cookie";
 
 interface AuthState {
   user: User | null;
@@ -45,6 +38,9 @@ const mapMeDtoToUser = (dto: any): User => ({
   avatar: dto.avatar || "",
   name: dto.name || "",
   roles: dto.roles || [],
+  school: dto.school || "",
+  createdAt: dto.createdAt,
+  isActive: dto.isActive,
 });
 
 export const useAuthStore = create<AuthState>()(
@@ -77,6 +73,13 @@ export const useAuthStore = create<AuthState>()(
         const { inFlightMe } = get();
         if (inFlightMe) return inFlightMe;
 
+        // 🚫 Nếu không có refreshToken → không gọi /me
+        const hasRefresh = Boolean(Cookies.get("refreshToken"));
+        if (!hasRefresh) {
+          console.info("[authStore] Skip /me — no refresh token found");
+          return;
+        }
+
         const p = (async () => {
           set({ isFetchingMe: true });
           try {
@@ -86,7 +89,7 @@ export const useAuthStore = create<AuthState>()(
 
             const resp = await axiosInstance.get("/users/me", {
               headers,
-              validateStatus: (s) => s === 200 || s === 304 || s === 401,
+              validateStatus: (s) => [200, 304, 401].includes(s),
             });
 
             if (resp.status === 200) {
@@ -96,9 +99,8 @@ export const useAuthStore = create<AuthState>()(
             } else if (resp.status === 304) {
               set({ lastFetchedAt: Date.now() });
             } else if (resp.status === 401) {
-              // Không logout — chỉ đánh dấu stale
-              console.warn("[authStore] /me unauthorized — keep session intact");
-              set({ lastFetchedAt: Date.now() });
+              console.warn("[authStore] /me unauthorized — likely expired session");
+              set({ user: null, lastFetchedAt: null });
             }
           } finally {
             set({ isFetchingMe: false, inFlightMe: null });
@@ -109,22 +111,34 @@ export const useAuthStore = create<AuthState>()(
         return p;
       },
 
+      // ================== refreshMeIfStale ==================
       refreshMeIfStale: async () => {
         const { lastFetchedAt, staleTime, user } = get();
-        if (!user) return get().refreshMe();
-        if (!lastFetchedAt || Date.now() - lastFetchedAt > staleTime) {
+        const hasRefresh = Boolean(Cookies.get("refreshToken"));
+        if (!hasRefresh) {
+          console.info("[authStore] Skip refreshMeIfStale — no refresh token");
+          return;
+        }
+
+        if (!user || !lastFetchedAt || Date.now() - lastFetchedAt > staleTime) {
           return get().refreshMe();
         }
       },
 
+      // ================== ensureMe ==================
       ensureMe: async () => {
         const { user } = get();
-        if (!user) {
-          await get().refreshMe();
-          return get().user;
+
+        if (user) return user;
+
+        const hasRefresh = Boolean(Cookies.get("refreshToken"));
+        if (!hasRefresh) {
+          console.info("[authStore] No refresh token — skip /me");
+          return null;
         }
-        get().refreshMeIfStale();
-        return user;
+
+        await get().refreshMe();
+        return get().user;
       },
 
       // ================== login / register ==================
@@ -171,7 +185,6 @@ export const useAuthStore = create<AuthState>()(
           console.info("[authStore] Access token refreshed successfully");
         } catch (error) {
           console.error("[authStore] Refresh token failed:", error);
-          // ❌ KHÔNG gọi logout ở đây nữa — interceptor sẽ xử lý
         }
       },
 
@@ -185,9 +198,14 @@ export const useAuthStore = create<AuthState>()(
           console.warn("Logout API failed:", e);
         }
 
-        // Dọn local state
-        set({ user: null, lastFetchedAt: null, etag: null, inFlightMe: null });
-        localStorage.removeItem("auth-storage");
+        set({
+          user: null,
+          lastFetchedAt: null,
+          etag: null,
+          inFlightMe: null,
+        });
+
+        Cookies.remove("refreshToken");
       },
     }),
     {

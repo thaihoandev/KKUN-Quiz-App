@@ -71,52 +71,90 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        // WebSocket - public
-                        .requestMatchers("/ws/**").permitAll()
-
-                        // Auth endpoints - public
+                        // ==================== PUBLIC ====================
                         .requestMatchers(
-                                "/api/auth/refresh-token",
-                                "/api/auth/logout",
-                                "/api/auth/login",
-                                "/api/auth/register",
-                                "/api/auth/login-success"
-                        ).permitAll()
-
-                        // Public quiz endpoints
-                        .requestMatchers(
+                                "/ws/**",
+                                "/api/auth/**",
                                 "/api/quizzes/published",
+                                "/api/quizzes/users/**",
+                                "/api/articles",
+                                "/api/articles/category/**",
+                                "/api/articles/{slug}",
+                                "/api/article-categories/**",
+                                "/api/tags/**",
+                                "/api/search/**",
                                 "/api/games/join",
-                                "/api/games/{gameId}/answer"
+                                "/api/games/{gameId}/answer",
+                                "/api/users/me/confirm-email-change"
                         ).permitAll()
 
-                        // Email confirmation
-                        .requestMatchers("/api/users/me/confirm-email-change").permitAll()
+                        // ==================== AI / Chatbot ====================
+                        // => chỉ USER hoặc ADMIN được phép sinh câu hỏi tự động
+                        .requestMatchers("/api/ai/**")
+                        .hasAnyAuthority(UserRole.USER.name(), UserRole.ADMIN.name())
 
-                        // Quiz, Questions, Articles - require USER or ADMIN
+                        // ==================== QUIZ & QUESTION ====================
+                        // => Xem công khai, sửa thì cần quyền
                         .requestMatchers(
                                 "/api/quizzes/**",
-                                "/api/questions/**",
-                                "/api/files/upload/**",
-                                "/api/articles/**"
+                                "/api/questions/**"
                         ).hasAnyAuthority(UserRole.USER.name(), UserRole.ADMIN.name())
 
-                        // Admin endpoints - ADMIN only
-                        .requestMatchers("/api/admin/**").hasAuthority(UserRole.ADMIN.name())
-
-                        // Profile endpoints - USER only
-                        .requestMatchers("/api/profile/**").hasAuthority(UserRole.USER.name())
-
-                        // User endpoints - require authenticated
+                        // ==================== POST & COMMENT (SOCIAL) ====================
                         .requestMatchers(
-                                "/api/users/**",
+                                "/api/posts/public",
+                                "/api/posts/{postId}",
+                                "/api/comments/post/**"
+                        ).permitAll()
+                        .requestMatchers(
+                                "/api/posts/**",
+                                "/api/comments/**"
+                        ).hasAnyAuthority(UserRole.USER.name(), UserRole.ADMIN.name())
+
+                        // ==================== SERIES & ARTICLE ====================
+                        .requestMatchers(
+                                "/api/series/**",
+                                "/api/articles/**",
+                                "/api/files/upload/**"
+                        ).hasAnyAuthority(UserRole.USER.name(), UserRole.ADMIN.name())
+
+                        // ==================== CHAT SYSTEM ====================
+                        .requestMatchers("/api/chat/**")
+                        .hasAnyAuthority(UserRole.USER.name(), UserRole.ADMIN.name())
+
+                        // ==================== GAME ====================
+                        .requestMatchers(
                                 "/api/games/create",
                                 "/api/games/{gameId}/start",
-                                "/api/games/{gameId}/end",
-                                "/api/auth/change-password"
-                        ).authenticated()
+                                "/api/games/{gameId}/end"
+                        ).hasAnyAuthority(UserRole.USER.name(), UserRole.ADMIN.name())
+                        .requestMatchers(
+                                "/api/games/{gameId}/players",
+                                "/api/games/{gameId}/details",
+                                "/api/games/{gameId}/leaderboard"
+                        ).permitAll()
 
-                        // Everything else - public
+                        // ==================== NOTIFICATIONS ====================
+                        .requestMatchers("/api/notifications/**")
+                        .hasAnyAuthority(UserRole.USER.name(), UserRole.ADMIN.name())
+
+                        // ==================== PLAYER ====================
+                        .requestMatchers("/api/players/**")
+                        .hasAnyAuthority(UserRole.USER.name(), UserRole.ADMIN.name())
+
+                        // ==================== USER PROFILE ====================
+                        .requestMatchers(
+                                "/api/users/me/**",
+                                "/api/users/me/friends/**",
+                                "/api/users/me/friend-requests/**"
+                        ).hasAnyAuthority(UserRole.USER.name(), UserRole.ADMIN.name())
+                        // Admin quản lý user
+                        .requestMatchers(
+                                "/api/users/**",
+                                "/api/admin/**"
+                        ).hasAuthority(UserRole.ADMIN.name())
+
+                        // ==================== MẶC ĐỊNH ====================
                         .anyRequest().permitAll()
                 )
                 .exceptionHandling(ex -> ex
@@ -134,12 +172,13 @@ public class SecurityConfig {
                         .defaultSuccessUrl("/api/auth/login-success", true)
                 )
                 .oauth2ResourceServer(rs -> rs
-                        .bearerTokenResolver(new CookieJwtAuthConverter()) // ✅ đọc JWT từ cookie
-                        .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtToUserPrincipalConverter)) // ✅ map JWT -> UserPrincipal
+                        .bearerTokenResolver(new CookieJwtAuthConverter())
+                        .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtToUserPrincipalConverter))
                 );
 
         return http.build();
     }
+
 
     // ===================== JWT DECODER =====================
     @Bean

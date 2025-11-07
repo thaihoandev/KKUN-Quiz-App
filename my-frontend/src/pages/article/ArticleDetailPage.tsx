@@ -169,7 +169,7 @@ export default function ArticleDetailPage() {
           {/* Sidebar */}
           <div className="col-xl-3 col-lg-3">
             <div className="d-flex flex-column h-100">
-              <div className="sticky-top" style={{ top: "20px" }}>
+              <div className="" style={{ top: "20px" }}>
                 {/* ✅ Bài viết trong series */}
                 {seriesArticles.length > 0 && (
                   <Card

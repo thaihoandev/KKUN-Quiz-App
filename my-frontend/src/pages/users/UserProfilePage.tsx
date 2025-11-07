@@ -1,7 +1,7 @@
 import "@/assets/vendor/css/pages/page-profile.css";
 import HeaderProfile from "@/components/headers/HeaderProfile";
 import { useEffect, useMemo, useState } from "react";
-import { getCurrentUser, getUserById } from "@/services/userService";
+import { getUserById } from "@/services/userService";
 import ProfileTab from "@/components/tabs/ProfileTab";
 import ViewProfileTab from "@/components/tabs/ViewProfileTab";
 import ClassesTab from "@/components/tabs/ClassesTab";
@@ -10,29 +10,34 @@ import CoursesTab from "@/components/tabs/CourseTab";
 import NavigationMenu from "@/components/NavigationMenuProfile";
 import EditProfileModal from "@/components/modals/EditProfileModal";
 import EditAvatarModal from "@/components/modals/EditAvatarModal";
-import { UserResponseDTO } from "@/interfaces";
 import { useParams } from "react-router-dom";
+import { useAuthStore } from "@/store/authStore";
+import { User } from "@/types/users";
+
+// ✅ Kiểu gộp giúp linh hoạt giữa dữ liệu từ store (User) và từ API (UserResponseDTO)
 
 const UserProfilePage = () => {
   const { userId: routeUserId } = useParams<{ userId?: string }>();
 
-  const [currentUser, setCurrentUser] = useState<UserResponseDTO | null>(null);
-  const [profile, setProfile] = useState<UserResponseDTO | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<string>("profile");
-  const [showProfileModal, setShowProfileModal] = useState<boolean>(false);
-  const [showAvatarModal, setShowAvatarModal] = useState<boolean>(false);
+  const ensureMe = useAuthStore((s) => s.ensureMe);
+  const refreshMe = useAuthStore((s) => s.refreshMe);
+  const storeUser = useAuthStore((s) => s.user);
 
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [profile, setProfile] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState("profile");
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [showAvatarModal, setShowAvatarModal] = useState(false);
+
+  // ✅ Xác định có phải đang xem trang của chính mình
   const isOwner = useMemo(() => {
     if (!currentUser) return false;
-    // Trang của chính mình nếu:
-    // - Không có routeUserId
-    // - Hoặc routeUserId === currentUser.userId
     return !routeUserId || routeUserId === currentUser.userId;
   }, [routeUserId, currentUser]);
 
-  // Menu động theo quyền
+  // ✅ Menu động theo quyền
   const menuItems = useMemo(
     () =>
       isOwner
@@ -50,7 +55,7 @@ const UserProfilePage = () => {
     [isOwner]
   );
 
-  // Load user hiện tại và profile được xem
+  // ✅ Load thông tin user hiện tại và profile đang xem
   useEffect(() => {
     let cancelled = false;
 
@@ -58,21 +63,23 @@ const UserProfilePage = () => {
       setLoading(true);
       setError(null);
       try {
-        const me = await getCurrentUser();
+        const me = await ensureMe();
         if (cancelled) return;
         setCurrentUser(me);
 
+        // Nếu đang xem trang cá nhân
         if (!routeUserId || routeUserId === me?.userId) {
           setProfile(me);
         } else {
+          // Nếu đang xem trang người khác
           const other = await getUserById(routeUserId);
-          if (cancelled) return;
-          setProfile(other);
+          if (!cancelled) setProfile(other);
         }
       } catch (e) {
-        if (cancelled) return;
-        setError("Không thể tải thông tin người dùng");
-        setProfile(null);
+        if (!cancelled) {
+          setError("Không thể tải thông tin người dùng");
+          setProfile(null);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -82,20 +89,23 @@ const UserProfilePage = () => {
     return () => {
       cancelled = true;
     };
-  }, [routeUserId]);
+  }, [routeUserId, ensureMe]);
 
-  // Mỗi lần đổi user xem → reset về tab "profile"
+  // ✅ Reset tab khi đổi user
   useEffect(() => {
     setActiveTab("profile");
   }, [routeUserId]);
 
-  const handleUpdateProfile = (updated: UserResponseDTO) => {
+  const handleUpdateProfile = (updated: User) => {
     setProfile(updated);
-    if (isOwner) setCurrentUser(updated);
+    if (isOwner) {
+      setCurrentUser(updated);
+      refreshMe(); // đồng bộ lại store
+    }
   };
 
-  // ✅ Nếu là owner → truyền currentUser vào ProfileTab để luôn đúng dữ liệu
-  const targetProfile = isOwner ? currentUser : profile;
+  // ✅ Nếu là owner → dùng currentUser để luôn khớp với store
+  const targetProfile = isOwner ? currentUser || storeUser : profile;
 
   const renderTabContent = () => {
     switch (activeTab) {
@@ -113,7 +123,11 @@ const UserProfilePage = () => {
       case "courses":
         return <CoursesTab />;
       case "quizzes":
-        return isOwner ? <QuizzesTab profile={targetProfile} /> : <ViewProfileTab profile={targetProfile} />;
+        return isOwner ? (
+          <QuizzesTab profile={targetProfile} />
+        ) : (
+          <ViewProfileTab profile={targetProfile} />
+        );
       default:
         return (
           <ProfileTab
@@ -141,9 +155,13 @@ const UserProfilePage = () => {
         onTabChange={setActiveTab}
       />
 
-      {/* Tab Content */}
+      {/* Nội dung tab */}
       {loading ? (
-        <div>Loading...</div>
+        <div className="text-center py-5">
+          <div className="spinner-border text-primary" role="status">
+            <span className="visually-hidden">Đang tải...</span>
+          </div>
+        </div>
       ) : error ? (
         <div className="alert alert-danger">{error}</div>
       ) : (
@@ -158,6 +176,7 @@ const UserProfilePage = () => {
           onUpdate={handleUpdateProfile}
         />
       )}
+
       {isOwner && showAvatarModal && targetProfile && (
         <EditAvatarModal
           profile={targetProfile}

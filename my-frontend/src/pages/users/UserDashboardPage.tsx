@@ -1,15 +1,15 @@
 import "@/assets/vendor/css/pages/page-profile.css";
 import HeaderProfile from "@/components/headers/HeaderProfile";
 import { useEffect, useState } from "react";
-import { getCurrentUser } from "@/services/userService";
+import { useAuthStore } from "@/store/authStore";
 import ProfileTab from "@/components/tabs/ProfileTab";
 import ClassesTab from "@/components/tabs/ClassesTab";
 import QuizzesTab from "@/components/tabs/QuizzesTab";
 import EditProfileModal from "@/components/modals/EditProfileModal";
-import { UserResponseDTO } from "@/interfaces";
 import CoursesTab from "@/components/tabs/CourseTab";
 import NavigationMenu from "@/components/NavigationMenuProfile";
 import EditAvatarModal from "@/components/modals/EditAvatarModal";
+import { User } from "@/types/users";
 
 const UserDashboardPage = () => {
   const profileMenuItems = [
@@ -19,36 +19,48 @@ const UserDashboardPage = () => {
     { path: "quizzes", icon: "bx-task", label: "Quizzes" },
   ];
 
-  const [profile, setProfile] = useState<UserResponseDTO | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<string>("profile");
-  const [showProfileModal, setShowProfileModal] = useState<boolean>(false);
-  const [showAvatarModal, setShowAvatarModal] = useState<boolean>(false);
+  const ensureMe = useAuthStore((s) => s.ensureMe);
+  const refreshMe = useAuthStore((s) => s.refreshMe);
+  const userFromStore = useAuthStore((s) => s.user);
 
+  const [profile, setProfile] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState("profile");
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [showAvatarModal, setShowAvatarModal] = useState(false);
+
+  // ✅ Lấy user từ store hoặc API (qua ensureMe)
   useEffect(() => {
-    const fetchUserProfile = async () => {
+    const loadUser = async () => {
       try {
-        const data = await getCurrentUser();
-        setProfile(data);
-      } catch (err: any) {
+        const me = await ensureMe();
+        if (me) setProfile(me);
+        else setError("Không thể tải thông tin người dùng");
+      } catch (err) {
+        console.error("Lỗi tải user:", err);
         setError("Không thể tải thông tin người dùng");
       } finally {
         setLoading(false);
       }
     };
+    loadUser();
+  }, [ensureMe]);
 
-    fetchUserProfile();
-  }, []);
-
-  const handleUpdateProfile = (updatedProfile: UserResponseDTO) => {
+  const handleUpdateProfile = (updatedProfile: User) => {
     setProfile(updatedProfile);
+    refreshMe(); // đồng bộ lại store
   };
 
   const renderTabContent = () => {
     switch (activeTab) {
       case "profile":
-        return <ProfileTab profile={profile} onEditProfile={() => setShowProfileModal(true)} />;
+        return (
+          <ProfileTab
+            profile={profile}
+            onEditProfile={() => setShowProfileModal(true)}
+          />
+        );
       case "classes":
         return <ClassesTab />;
       case "courses":
@@ -56,34 +68,44 @@ const UserDashboardPage = () => {
       case "quizzes":
         return <QuizzesTab profile={profile} />;
       default:
-        return <ProfileTab profile={profile} onEditProfile={() => setShowProfileModal(true)} />;
+        return (
+          <ProfileTab
+            profile={profile}
+            onEditProfile={() => setShowProfileModal(true)}
+          />
+        );
     }
   };
 
   return (
     <div className="container-xxl flex-grow-1 container-p-y">
-      {/* <!-- Header --> */}
-      <HeaderProfile profile={profile} onEditAvatar={() => setShowAvatarModal(true)} />
-      {/* <!--/ Header --> */}
+      {/* Header */}
+      <HeaderProfile
+        profile={profile ?? userFromStore}
+        onEditAvatar={() => setShowAvatarModal(true)}
+      />
 
-      {/* <!-- Navbar pills --> */}
+      {/* Navbar pills */}
       <NavigationMenu
         menuItems={profileMenuItems}
         activeTab={activeTab}
         onTabChange={setActiveTab}
       />
-      {/* <!--/ Navbar pills --> */}
 
-      {/* <!-- Tab Content --> */}
+      {/* Nội dung tab */}
       {loading ? (
-        <div>Loading...</div>
+        <div className="text-center py-5">
+          <div className="spinner-border text-primary" role="status">
+            <span className="visually-hidden">Đang tải...</span>
+          </div>
+        </div>
       ) : error ? (
         <div className="alert alert-danger">{error}</div>
       ) : (
         renderTabContent()
       )}
-      {/* <!--/ Tab Content --> */}
 
+      {/* Modals */}
       {showProfileModal && profile && (
         <EditProfileModal
           profile={profile}
