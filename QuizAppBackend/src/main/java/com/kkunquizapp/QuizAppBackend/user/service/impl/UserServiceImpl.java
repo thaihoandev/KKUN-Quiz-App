@@ -422,11 +422,11 @@ public class UserServiceImpl implements UserService {
     // ===================== UPDATE AVATAR =====================
     @Override
     @Transactional
-    public UserResponseDTO updateUserAvatar(UUID id, MultipartFile file, String token) {
+    public UserResponseDTO updateUserAvatar(UUID id, MultipartFile file) {
         User user = getUserOrThrow(id);
         try {
-            Map uploadResult = cloudinaryService.upload(file, "user_avatars/" + id);
-            String avatarUrl = (String) uploadResult.get("secure_url");
+            Map result = cloudinaryService.uploadWithPublicId(file, "user_avatars/" + id);
+            String avatarUrl = (String) result.get("secure_url");
             user.setAvatar(avatarUrl);
             user.setUpdatedAt(LocalDateTime.now());
             userRepo.save(user);
