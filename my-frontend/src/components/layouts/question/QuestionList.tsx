@@ -1,8 +1,8 @@
 // src/components/QuestionList.tsx
 import React from "react";
-import { Pagination } from "antd";
 import QuestionCard from "@/components/cards/QuestionCard";
 import { Question } from "@/interfaces";
+import CustomPagination from "@/components/paginations/CustomPagination";
 
 interface QuestionListProps {
   questions: Question[];         // items of the current page
@@ -31,21 +31,16 @@ const QuestionList: React.FC<QuestionListProps> = ({
   const start = total === 0 ? 0 : page * size + 1;
   const end = Math.min(total, page * size + questions.length);
 
-  const handleChange = (uiPage: number, pageSize?: number) => {
-    const newSize = pageSize ?? size;
-    // If size changed, reset to first page
-    if (newSize !== size) {
-      onPageChange(0, newSize);
-    } else {
-      onPageChange(uiPage - 1, newSize); // convert 1-based -> 0-based
-    }
+  const handleChange = (uiPage: number) => {
+    onPageChange(uiPage - 1, size); // ✅ convert 1-based → 0-based
   };
 
   return (
     <div className="card shadow-sm p-3 mt-2">
-      <div className="d-flex justify-content-between align-items-center p-2">
-        <h6 className="fw-bold mb-0">
-          {start}-{end} of {total} QUESTIONS
+      {/* Header */}
+      <div className="d-flex justify-content-between align-items-center p-2 border-bottom">
+        <h6 className="fw-bold mb-0 text-uppercase">
+          {start}-{end} of {total} Questions
         </h6>
         <div className="form-check form-switch mb-0">
           <input
@@ -59,10 +54,11 @@ const QuestionList: React.FC<QuestionListProps> = ({
         </div>
       </div>
 
+      {/* Content */}
       {loading ? (
-        <p className="text-center text-muted">Loading questions...</p>
+        <p className="text-center text-muted mt-3">Loading questions...</p>
       ) : questions.length === 0 ? (
-        <p className="text-center text-muted">No questions found.</p>
+        <p className="text-center text-muted mt-3">No questions found.</p>
       ) : (
         questions.map((question, index) => (
           <QuestionCard
@@ -74,18 +70,17 @@ const QuestionList: React.FC<QuestionListProps> = ({
         ))
       )}
 
-      {/* Pagination */}
-      <div className="d-flex justify-content-end mt-3">
-        <Pagination
-          current={page + 1}           // Antd is 1-based
-          pageSize={size}
-          total={total}
-          onChange={handleChange}
-          showSizeChanger
-          pageSizeOptions={[5, 10, 20, 50]}
-          showTotal={(t, range) => `${range[0]}-${range[1]} of ${t} items`}
-        />
-      </div>
+      {/* ✅ Custom Pagination */}
+      {total > 0 && (
+        <div className="d-flex justify-content-end mt-4">
+          <CustomPagination
+            current={page + 1}
+            total={total}
+            pageSize={size}
+            onChange={handleChange}
+          />
+        </div>
+      )}
     </div>
   );
 };

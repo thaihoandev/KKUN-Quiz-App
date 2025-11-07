@@ -2,10 +2,10 @@ import React, { useEffect, useState } from "react";
 import { getArticles, getArticlesByCategory, PageResponse } from "@/services/articleService";
 import { ArticleDto } from "@/types/article";
 import { FolderOutlined } from "@ant-design/icons";
-import { Row, Col, Empty, Spin, Space, Typography, Pagination, message } from "antd";
+import { Row, Col, Empty, Spin, Space, Typography, message } from "antd";
 import "bootstrap/dist/css/bootstrap.min.css";
-import ArticleCard from "./ArticleCard";
 import ArticleCardHorizontal from "./ArticleCardHorizontal";
+import CustomPagination from "@/components/paginations/CustomPagination";
 
 const { Text } = Typography;
 
@@ -18,7 +18,7 @@ const ArticleList: React.FC<ArticleListProps> = ({ categoryId, searchQuery }) =>
   const [articlesPage, setArticlesPage] = useState<PageResponse<ArticleDto> | null>(null);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(8);
+  const pageSize = 8; // ✅ pageSize cố định, CustomPagination không hỗ trợ thay đổi size
 
   useEffect(() => {
     const fetchArticles = async () => {
@@ -49,7 +49,7 @@ const ArticleList: React.FC<ArticleListProps> = ({ categoryId, searchQuery }) =>
       }
     };
     fetchArticles();
-  }, [page, pageSize, categoryId, searchQuery]);
+  }, [page, categoryId, searchQuery]);
 
   if (loading) {
     return (
@@ -84,20 +84,13 @@ const ArticleList: React.FC<ArticleListProps> = ({ categoryId, searchQuery }) =>
         ))}
       </Row>
 
-
+      {/* ✅ Custom pagination */}
       <div className="d-flex justify-content-center mt-5">
-        <Pagination
+        <CustomPagination
           current={page}
-          pageSize={pageSize}
           total={articlesPage.totalElements}
-          onChange={(p, size) => {
-            setPage(p);
-            setPageSize(size);
-          }}
-          showSizeChanger
-          pageSizeOptions={[6, 8, 12, 16]}
-          showTotal={(total) => `Tổng cộng ${total} bài viết`}
-          className="bg-white p-3 rounded-3 shadow-sm"
+          pageSize={pageSize}
+          onChange={(p) => setPage(p)}
         />
       </div>
     </div>
