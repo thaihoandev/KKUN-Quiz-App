@@ -78,7 +78,10 @@ const AppRoutes: React.FC = () => (
           {/* Public articles */}
           <Route path="articles" element={<ArticlesPage />} />
           <Route path="articles/:slug" element={<ArticleDetailPage />} />
-
+                    {/* Articles (create/edit) */}
+          <Route path="articles/create" element={<CreateArticlePage />} />
+          <Route path="articles/edit/:slug" element={<ArticleEditPage />} />
+          
           {/* Public series */}
           <Route path="series/:slug" element={<SeriesDetailPage />} />
           <Route path="author/:authorId/series" element={<AuthorSeriesPage />} />
@@ -110,9 +113,7 @@ const AppRoutes: React.FC = () => (
           <Route path="quizzes/:quizId/questions/create" element={<QuestionCreatePage />} />
           <Route path="quizzes/:quizId/questions/:questionId/edit" element={<QuestionEditorPage />} />
 
-          {/* Articles (create/edit) */}
-          <Route path="articles/create" element={<CreateArticlePage />} />
-          <Route path="articles/edit/:slug" element={<ArticleEditPage />} />
+
 
           {/* Series (manage by author) */}
           <Route path="me/series" element={<SeriesPage />} />
