@@ -1,351 +1,261 @@
-import React, { useRef, useEffect, useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
+import ReactDOM from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { QuizStatus } from "@/interfaces";
 import { createQuiz, createQuizFromFile } from "@/services/quizService";
+import { UserProfile } from "@/types/users";
 
-// Define a type for the quiz creation payload
-interface QuizCreatePayload {
-  title: string;
-  description?: string;
-  status: QuizStatus;
-  userId?: string;
+/* ======================================================
+   📘 CreateQuizButton — Portal-based modal trigger
+====================================================== */
+
+interface CreateQuizButtonProps {
+  profile: UserProfile | null;
+  disabled?: boolean;
 }
 
-interface UserProfile {
-  userId: string;
-  email?: string;
-}
+const CreateQuizButton: React.FC<CreateQuizButtonProps> = ({ profile, disabled = false }) => {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        className="btn btn-primary shadow-quiz d-flex align-items-center gap-2 animate-slide-in"
+        disabled={disabled}
+      >
+        <i className="bx bx-edit-alt fs-5"></i>
+        <span className="fw-semibold">Create New Quiz</span>
+      </button>
+
+      {open && <QuizCreateModal open={open} onClose={() => setOpen(false)} profile={profile} />}
+    </>
+  );
+};
+
+export default CreateQuizButton;
+
+/* ======================================================
+   🧩 QuizCreateModal — Modern UI with default close btn
+====================================================== */
 
 interface QuizCreateModalProps {
-  show: boolean;
+  open: boolean;
   onClose: () => void;
   profile: UserProfile | null;
-  loading?: boolean; // Optional parent-controlled loading prop
 }
 
-const QuizCreateModal: React.FC<QuizCreateModalProps> = ({
-  show,
-  onClose,
-  profile,
-  loading: parentLoading = false, // Fallback to false if not provided
-}) => {
+const QuizCreateModal: React.FC<QuizCreateModalProps> = ({ open, onClose, profile }) => {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false); // Local loading state
-  const modalRef = useRef<HTMLDivElement>(null);
-  const titleInputRef = useRef<HTMLInputElement>(null);
+  const [loading, setLoading] = useState(false);
+  const titleRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
 
-  // Combine parentLoading and isLoading to determine loading state
-  const effectiveLoading = parentLoading || isLoading;
+  const modalRoot = document.getElementById("modal-root") || document.body;
 
   useEffect(() => {
-    if (show && titleInputRef.current) {
-      titleInputRef.current.focus();
-    }
-  }, [show]);
+    if (open && titleRef.current) titleRef.current.focus();
+  }, [open]);
 
   useEffect(() => {
-    const handleEsc = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !effectiveLoading) onClose();
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !loading) onClose();
     };
     window.addEventListener("keydown", handleEsc);
     return () => window.removeEventListener("keydown", handleEsc);
-  }, [effectiveLoading, onClose]);
+  }, [loading, onClose]);
 
-  const resetForm = () => {
-    setTitle("");
-    setDescription("");
-    setFile(null);
-    setError(null);
-    setIsLoading(false); // Reset local loading state
-    onClose();
-  };
+  if (!open) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) {
-      setError("Quiz title is required");
+      setError("Quiz title is required.");
       return;
     }
 
-    const quizMeta: QuizCreatePayload = {
-      title: title.trim(),
-      description: description.trim() || "",
-      status: QuizStatus.DRAFT,
-    };
-
     try {
-      setIsLoading(true); // Set loading state to true
+      setLoading(true);
+      const quizMeta = {
+        title: title.trim(),
+        description: description.trim(),
+        status: QuizStatus.DRAFT,
+        userId: profile?.userId,
+      };
+
       let createdQuiz;
       if (file) {
         const formData = new FormData();
         formData.append("file", file);
-        formData.append(
-          "quiz",
-          new Blob([JSON.stringify(quizMeta)], { type: "application/json" })
-        );
-
+        formData.append("quiz", new Blob([JSON.stringify(quizMeta)], { type: "application/json" }));
         createdQuiz = await createQuizFromFile(formData);
       } else {
         createdQuiz = await createQuiz(quizMeta);
       }
 
-      resetForm();
-      navigate(`/quizzes/${createdQuiz?.quizId}`);
+      navigate(`/quizzes/${createdQuiz.quizId}`);
+      setLoading(false);
+      onClose();
     } catch (err) {
-      console.error("Error submitting quiz:", err);
+      console.error(err);
       setError("Failed to create quiz. Please try again.");
-      setIsLoading(false); // Reset loading state on error
-    }
-  };
-
-  const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
-    setTitle(value);
-    if (value.trim()) {
-      setError(null);
+      setLoading(false);
     }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files?.[0] || null;
-    if (selected?.type !== "application/pdf") {
-      setError("Please select a PDF file");
+    if (selected && selected.type !== "application/pdf") {
+      setError("Please upload a valid PDF file.");
       return;
     }
     setFile(selected);
     setError(null);
   };
 
-  if (!show) return null;
-
-  const isSubmitDisabled = effectiveLoading || !title.trim();
-
-  return (
+  const modalContent = (
     <div
-      className="modal fade show d-block position-fixed"
-      tabIndex={-1}
+      className="position-fixed top-0 start-0 w-100 h-100 d-flex justify-content-center align-items-center"
       style={{
-        top: 0,
-        left: 0,
-        width: "100vw",
-        height: "100vh",
-        backgroundColor: "rgba(0, 0, 0, 0.75)",
-        backdropFilter: "blur(5px)",
-        zIndex: 1100,
-        display: "flex",
-        justifyContent: "center",
-        alignItems: "center",
-        overflow: "auto",
+        background: "rgba(0,0,0,0.6)",
+        backdropFilter: "blur(8px)",
+        zIndex: 2000,
+        animation: "fadeIn 0.3s ease",
       }}
       onClick={onClose}
     >
       <div
         className="modal-dialog modal-dialog-centered modal-lg"
+        style={{
+          maxWidth: "600px",
+          width: "100%",
+          transform: "translateY(10px)",
+          animation: "slideUp 0.35s ease forwards",
+        }}
         onClick={(e) => e.stopPropagation()}
-        ref={modalRef}
-        style={{ maxWidth: "600px", width: "100%", position: "relative" }}
       >
-        <div
-          className="modal-content border-0 shadow-lg"
-          style={{ borderRadius: "12px", position: "relative" }}
-        >
-          {/* Loading Overlay */}
-          {effectiveLoading && (
-            <div
-              style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                width: "100%",
-                height: "100%",
-                backgroundColor: "rgba(255, 255, 255, 0.9)",
-                zIndex: 1103,
-                display: "flex",
-                flexDirection: "column",
-                justifyContent: "center",
-                alignItems: "center",
-                borderRadius: "12px",
-                transition: "opacity 0.3s ease",
-                opacity: effectiveLoading ? 1 : 0,
-              }}
-            >
-              <div
-                className="spinner-border text-primary"
-                style={{
-                  width: "3rem",
-                  height: "3rem",
-                  borderWidth: "0.4em",
-                  animation: "spin 1s linear infinite",
-                }}
-                role="status"
-              >
-                <span className="visually-hidden">Loading...</span>
-              </div>
-              <p
-                className="mt-3 fw-semibold text-dark"
-                style={{ fontSize: "1.2rem" }}
-              >
-                Creating Quiz...
-              </p>
-            </div>
-          )}
-
+        <div className="modal-content border-0 shadow-quiz rounded-4 overflow-hidden bg-surface position-relative ">
+          {/* Header */}
           <div
-            className="modal-header bg-gradient-primary text-white px-4 py-3 position-relative"
+            className="modal-header border-0"
             style={{
-              background: "linear-gradient(45deg, #6a11cb, #2575fc)",
-              zIndex: 1101,
+              background: "linear-gradient(120deg, #6366f1, #3b82f6)",
             }}
           >
-            <h5 className="modal-title fw-bold d-flex align-items-center">
-              <i
-                className="bx bx-plus-circle me-2"
-                style={{ fontSize: "1.2em" }}
-              />
-              Create New Quiz
+            <h5 className="modal-title fw-bold d-flex align-items-center gap-2 mb-0">
+              <i className="bx bx-plus-circle fs-5"></i> Create New Quiz
             </h5>
-            <button
-              type="button"
-              className="btn btn-close btn-close-white position-absolute top-0 end-0 mt-2 me-2"
-              onClick={onClose}
-              disabled={effectiveLoading}
-              aria-label="Close"
-              style={{ zIndex: 1102, opacity: 0.8, transition: "opacity 0.2s ease" }}
-            />
           </div>
+
+          {/* Body */}
           <form onSubmit={handleSubmit} encType="multipart/form-data">
-            <div className="modal-body p-4 bg-light" style={{ backgroundColor: "#f8f9fa" }}>
+            <div className="modal-body p-4">
               <div className="mb-4">
-                <label
-                  htmlFor="quizFile"
-                  className="form-label fw-semibold text-dark mb-2"
-                >
+                <label htmlFor="quizFile" className="form-label fw-semibold">
                   Upload PDF (optional)
                 </label>
                 <input
                   type="file"
                   accept="application/pdf"
-                  className="form-control shadow-sm"
                   id="quizFile"
+                  className="form-control"
                   onChange={handleFileChange}
-                  disabled={effectiveLoading}
+                  disabled={loading}
                 />
-                <small className="text-muted d-block mt-1">
-                  Optional. Upload a PDF to auto-generate questions.
+                <small className="text-muted">
+                  Optional — upload a PDF to auto-generate questions.
                 </small>
               </div>
 
               <div className="mb-4">
-                <label
-                  htmlFor="quizTitle"
-                  className="form-label fw-semibold text-dark mb-2"
-                >
-                  Quiz Title
-                  <span className="text-danger ms-1">*</span>
+                <label htmlFor="quizTitle" className="form-label fw-semibold">
+                  Quiz Title <span className="text-danger">*</span>
                 </label>
                 <div className="input-group">
-                  <span className="input-group-text bg-white">
-                    <i className="bx bx-pencil text-muted" />
+                  <span className="input-group-text bg-surface">
+                    <i className="bx bx-pencil text-muted"></i>
                   </span>
                   <input
-                    ref={titleInputRef}
-                    type="text"
-                    className="form-control form-control-lg shadow-sm"
                     id="quizTitle"
+                    ref={titleRef}
+                    type="text"
+                    className="form-control"
+                    placeholder="Enter quiz title"
                     value={title}
-                    onChange={handleTitleChange}
-                    placeholder="Enter a captivating quiz title"
-                    disabled={effectiveLoading}
+                    onChange={(e) => setTitle(e.target.value)}
+                    disabled={loading}
                     maxLength={100}
-                    style={{ borderRadius: "0 8px 8px 0" }}
                   />
                 </div>
-                <small className="text-muted d-block mt-1">
-                  {title.length}/100 characters
-                </small>
+                <small className="text-muted">{title.length}/100 characters</small>
               </div>
 
               <div className="mb-4">
-                <label
-                  htmlFor="quizDescription"
-                  className="form-label fw-semibold text-dark mb-2"
-                >
-                  Description
-                  <span className="text-muted ms-1 fw-normal">(optional)</span>
+                <label htmlFor="quizDescription" className="form-label fw-semibold">
+                  Description <span className="text-muted fw-normal">(optional)</span>
                 </label>
                 <textarea
-                  className="form-control shadow-sm"
                   id="quizDescription"
+                  className="form-control"
+                  rows={4}
+                  placeholder="Describe your quiz briefly..."
+                  maxLength={500}
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  rows={4}
-                  placeholder="Describe your quiz - what makes it special?"
-                  disabled={effectiveLoading}
-                  maxLength={500}
-                  style={{ resize: "vertical", borderRadius: "8px", backgroundColor: "white" }}
+                  disabled={loading}
                 />
-                <small className="text-muted d-block mt-1">
-                  {description.length}/500 characters
-                </small>
+                <small className="text-muted">{description.length}/500 characters</small>
               </div>
 
-              {/* Error Message Display */}
-              {error && (
-                <div className="alert alert-danger mt-3 mb-0" role="alert">
-                  {error}
-                </div>
-              )}
+              {error && <div className="alert alert-danger shadow-sm">{error}</div>}
             </div>
-            <div
-              className="modal-footer bg-white px-4 py-3 border-top"
-              style={{ borderColor: "#e9ecef" }}
-            >
+
+            {/* Footer */}
+            <div className="modal-footer bg-surface border-top mx-2">
               <button
                 type="button"
-                className="btn btn-outline-secondary px-4 py-2 fw-medium"
+                className="btn btn-outline-secondary fw-medium px-4"
                 onClick={onClose}
-                disabled={effectiveLoading}
-                style={{ borderRadius: "8px", transition: "all 0.2s ease" }}
+                disabled={loading}
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                className="btn btn-primary px-4 py-2 fw-medium"
-                disabled={isSubmitDisabled}
-                style={{
-                  borderRadius: "8px",
-                  transition: "all 0.2s ease",
-                  background: "linear-gradient(45deg, #6a11cb, #2575fc)",
-                }}
+                className="btn btn-primary fw-medium px-4"
+                disabled={loading || !title.trim()}
               >
-                {effectiveLoading ? (
+                {loading ? (
                   <>
-                    <span
-                      className="spinner-border spinner-border-sm me-2"
-                      role="status"
-                      aria-hidden="true"
-                      style={{ borderColor: "white", borderRightColor: "transparent" }}
-                    />
+                    <span className="spinner-border spinner-border-sm me-2" />
                     Creating...
                   </>
                 ) : (
                   <>
-                    <i className="bx bx-check me-1" />
-                    Create Quiz
+                    <i className="bx bx-check me-1" /> Create Quiz
                   </>
                 )}
               </button>
             </div>
           </form>
+
+          {/* Loading overlay */}
+          {loading && (
+            <div
+              className="position-absolute top-0 start-0 w-100 h-100 d-flex flex-column justify-content-center align-items-center bg-light bg-opacity-75"
+              style={{ zIndex: 2200, borderRadius: "inherit" }}
+            >
+              <div className="spinner-border text-primary mb-3" style={{ width: "3rem", height: "3rem" }} />
+              <p className="fw-semibold text-primary">Creating Quiz...</p>
+            </div>
+          )}
         </div>
       </div>
     </div>
   );
-};
 
-export default QuizCreateModal;
+  return ReactDOM.createPortal(modalContent, modalRoot);
+};

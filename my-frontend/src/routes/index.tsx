@@ -73,6 +73,8 @@ const AppRoutes: React.FC = () => (
           <Route path="game-session/:gameId" element={<WaitingRoomSessionPage />} />
           <Route path="game-play/:gameId" element={<GamePlayPage />} />
 
+          <Route path="chat" element={<ChatPage />} />
+
           {/* Public articles */}
           <Route path="articles" element={<ArticlesPage />} />
           <Route path="articles/:slug" element={<ArticleDetailPage />} />
@@ -97,7 +99,6 @@ const AppRoutes: React.FC = () => (
           <Route path="settings" element={<SettingProfilePage />} />
           <Route path="change-password" element={<ChangePasswordPage />} />
           <Route path="friends" element={<FriendConnectionsPage />} />
-          <Route path="chat" element={<ChatPage />} />
           <Route path="dashboard" element={<UserDashboardPage />} />
 
           {/* Posts & Home Feed */}

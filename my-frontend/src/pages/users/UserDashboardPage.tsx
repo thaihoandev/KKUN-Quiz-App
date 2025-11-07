@@ -29,8 +29,23 @@ const UserDashboardPage = () => {
   const [activeTab, setActiveTab] = useState("profile");
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showAvatarModal, setShowAvatarModal] = useState(false);
+  const [isDark, setIsDark] = useState(false);
 
-  // ✅ Lấy user từ store hoặc API (qua ensureMe)
+  // Detect dark mode
+  useEffect(() => {
+    const checkDarkMode = () => {
+      setIsDark(document.body.classList.contains("dark-mode"));
+    };
+
+    checkDarkMode();
+
+    const observer = new MutationObserver(checkDarkMode);
+    observer.observe(document.body, { attributes: true, attributeFilter: ["class"] });
+
+    return () => observer.disconnect();
+  }, []);
+
+  // Load user từ store hoặc API
   useEffect(() => {
     const loadUser = async () => {
       try {
@@ -49,7 +64,7 @@ const UserDashboardPage = () => {
 
   const handleUpdateProfile = (updatedProfile: User) => {
     setProfile(updatedProfile);
-    refreshMe(); // đồng bộ lại store
+    refreshMe();
   };
 
   const renderTabContent = () => {
@@ -78,31 +93,91 @@ const UserDashboardPage = () => {
   };
 
   return (
-    <div className="container-xxl flex-grow-1 container-p-y">
+    <div
+      className="container-xxl flex-grow-1 container-p-y"
+      style={{
+        background: "var(--background-color)",
+        transition: "background 0.4s ease, color 0.25s ease",
+      }}
+    >
       {/* Header */}
       <HeaderProfile
         profile={profile ?? userFromStore}
         onEditAvatar={() => setShowAvatarModal(true)}
       />
 
-      {/* Navbar pills */}
+      {/* Navigation Menu */}
       <NavigationMenu
         menuItems={profileMenuItems}
         activeTab={activeTab}
         onTabChange={setActiveTab}
       />
 
-      {/* Nội dung tab */}
+      {/* Tab Content */}
       {loading ? (
-        <div className="text-center py-5">
-          <div className="spinner-border text-primary" role="status">
+        <div
+          className="text-center py-5"
+          style={{
+            minHeight: "400px",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "1rem",
+          }}
+        >
+          <div
+            className="spinner-border"
+            role="status"
+            style={{
+              borderColor: "var(--border-color)",
+              borderRightColor: "var(--primary-color)",
+              width: "2.5rem",
+              height: "2.5rem",
+            }}
+          >
             <span className="visually-hidden">Đang tải...</span>
           </div>
+          <p
+            style={{
+              color: "var(--text-muted)",
+              fontSize: "0.95rem",
+              margin: 0,
+            }}
+          >
+            Đang tải thông tin người dùng...
+          </p>
         </div>
       ) : error ? (
-        <div className="alert alert-danger">{error}</div>
+        <div
+          className="alert"
+          style={{
+            background: "var(--surface-color)",
+            borderLeft: "4px solid var(--danger-color)",
+            color: "var(--danger-color)",
+            padding: "1.25rem",
+            borderRadius: "14px",
+            marginBottom: "2rem",
+            animation: "slideInUp 0.3s ease forwards",
+          }}
+        >
+          <i
+            className="bx bx-error-circle"
+            style={{
+              marginRight: "0.5rem",
+              fontSize: "1.1rem",
+            }}
+          />
+          {error}
+        </div>
       ) : (
-        renderTabContent()
+        <div
+          style={{
+            animation: "slideInUp 0.5s ease forwards",
+          }}
+        >
+          {renderTabContent()}
+        </div>
       )}
 
       {/* Modals */}
@@ -120,6 +195,19 @@ const UserDashboardPage = () => {
           onUpdate={handleUpdateProfile}
         />
       )}
+
+      <style>{`
+        @keyframes slideInUp {
+          from {
+            opacity: 0;
+            transform: translateY(20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+      `}</style>
     </div>
   );
 };

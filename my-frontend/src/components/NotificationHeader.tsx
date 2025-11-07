@@ -70,7 +70,9 @@ const NotificationHeader: React.FC<NotificationHeaderProps> = ({ profile }) => {
   const [hasMore, setHasMore] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const scrollRef = useRef<HTMLUListElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Reset khi đổi user
   useEffect(() => {
@@ -144,7 +146,7 @@ const NotificationHeader: React.FC<NotificationHeaderProps> = ({ profile }) => {
     const cb = (payload: any) => {
       const n = normalizeNotification(payload);
       setNotifications((prev) => [n, ...prev.filter((x) => x.id !== n.id)]);
-      setTotalCount((c) => c + 1); // tăng count khi có thông báo mới
+      setTotalCount((c) => c + 1);
     };
     webSocketService.registerNotificationCallback(cb);
     return () => {
@@ -162,74 +164,235 @@ const NotificationHeader: React.FC<NotificationHeaderProps> = ({ profile }) => {
     return () => window.clearInterval(t);
   }, []);
 
+  // Toggle dropdown
+  const toggleDropdown = () => {
+    setIsDropdownOpen(!isDropdownOpen);
+  };
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsDropdownOpen(false);
+      }
+    };
+
+    if (isDropdownOpen) {
+      document.addEventListener("click", handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener("click", handleClickOutside);
+    };
+  }, [isDropdownOpen]);
+
+  // Close dropdown on ESC key
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsDropdownOpen(false);
+      }
+    };
+
+    if (isDropdownOpen) {
+      document.addEventListener("keydown", handleKeyDown);
+    }
+
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isDropdownOpen]);
+
   return (
-    <div className="nav-item dropdown-notifications navbar-dropdown dropdown me-3 me-xl-2">
-      <a className="nav-link dropdown-toggle hide-arrow" href="#" data-bs-toggle="dropdown">
-        <span
-          className="position-relative d-inline-flex align-items-center justify-content-center"
-          style={{ width: "40px", height: "40px" }} // 👈 để khớp nút dark mode
-        >
-          <i className="bx bx-bell fs-4"></i>
-          {totalCount > 0 && (
-            <span
-              className="badge rounded-pill bg-danger position-absolute top-25 start-100 translate-middle"
-              style={{
-                fontSize: "0.75rem",
-                transform: "translate(-35%, 35%)",
-                padding: "3px 6px",
-              }}
-            >
-              {totalCount > 10 ? "10+" : totalCount}
-            </span>
-          )}
-        </span>
-
-      </a>
-
-      <ul
-        className="dropdown-menu dropdown-menu-end p-0"
-        style={{ minWidth: DROPDOWN_MIN_WIDTH }} // 👈 thêm min-width cho dropdown
+    <div
+      ref={dropdownRef}
+      className="dropdown"
+      style={{ display: "inline-block", position: "relative" }}
+    >
+      {/* Notification Button */}
+      <button
+        className="dropdown-btn"
+        onClick={toggleDropdown}
+        style={{
+          width: "40px",
+          height: "40px",
+          padding: "0",
+          borderRadius: "50%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          position: "relative",
+        }}
       >
-        <li className="dropdown-menu-header border-bottom">
-          <div className="dropdown-header d-flex align-items-center py-3">
-            <h6 className="mb-0 me-auto">Notifications</h6>
-            <span className="badge bg-label-primary me-2">
-              {totalCount > 10 ? "10+" : totalCount} New
-            </span>
-          </div>
-        </li>
-
-        <li className="dropdown-notifications-list">
-          <ul
-            ref={scrollRef}
-            onScroll={handleScroll}
-            className="list-group list-group-flush"
-            style={{ maxHeight: 440, overflowY: "auto" }}
+        <i className="bx bx-bell" style={{ fontSize: "1.25rem" }}></i>
+        {totalCount > 0 && (
+          <span
+            className="badge bg-danger"
+            style={{
+              position: "absolute",
+              top: "-5px",
+              right: "-5px",
+              borderRadius: "50%",
+              fontSize: "0.65rem",
+              minWidth: "20px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: "2px",
+            }}
           >
-            {notifications.map((n) => (
-              <li key={n.id} className="list-group-item dropdown-notifications-item">
-                <div className="d-flex">
-                  <div className="flex-shrink-0 me-3">
-                    <img src={n.avatar} className="rounded-circle" width={40} height={40} alt="avatar" />
-                  </div>
-                  <div className="flex-grow-1">
-                    <small
-                      className="d-block"
-                      dangerouslySetInnerHTML={{ __html: n.message }}
-                    />
-                    <small className="text-body-secondary">{n.time}</small>
-                  </div>
+            {totalCount > 10 ? "10+" : totalCount}
+          </span>
+        )}
+      </button>
+
+      {/* Dropdown Menu */}
+      <div
+        className={`dropdown-content ${isDropdownOpen ? "show" : ""}`}
+        style={{
+          minWidth: DROPDOWN_MIN_WIDTH,
+          right: 0,
+          left: "auto",
+        }}
+      >
+        {/* Header */}
+        <div
+          className="dropdown-header"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "1rem",
+          }}
+        >
+          <h6 style={{ margin: 0, fontWeight: 600 }}>Thông báo</h6>
+          <span
+            className="badge bg-label-primary"
+            style={{
+              backgroundColor: "rgba(96, 165, 250, 0.2)",
+              color: "var(--primary-color)",
+              fontSize: "0.75rem",
+              fontWeight: 600,
+              padding: "0.35rem 0.65rem",
+              borderRadius: "50px",
+            }}
+          >
+            {totalCount > 10 ? "10+" : totalCount} Mới
+          </span>
+        </div>
+
+        {/* Notifications List */}
+        <ul
+          ref={scrollRef}
+          onScroll={handleScroll}
+          style={{
+            maxHeight: 440,
+            overflowY: "auto",
+            listStyle: "none",
+            margin: 0,
+            padding: 0,
+            borderTop: "1px solid var(--border-color)",
+          }}
+        >
+          {notifications.length > 0 ? (
+            notifications.map((n) => (
+              <li
+                key={n.id}
+                className="dropdown-item"
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: "0.75rem",
+                  padding: "1rem",
+                  borderBottom: "1px solid var(--border-color)",
+                  cursor: "default",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "var(--gradient-primary)";
+                  e.currentTarget.style.color = "white";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "transparent";
+                  e.currentTarget.style.color = "var(--text-color)";
+                }}
+              >
+                {/* Avatar */}
+                <div style={{ flexShrink: 0 }}>
+                  <img
+                    src={n.avatar}
+                    className="rounded-circle"
+                    width={40}
+                    height={40}
+                    alt="avatar"
+                    style={{ objectFit: "cover" }}
+                  />
+                </div>
+
+                {/* Content */}
+                <div style={{ flexGrow: 1, minWidth: 0 }}>
+                  <small
+                    style={{
+                      display: "block",
+                      marginBottom: "0.35rem",
+                      wordBreak: "break-word",
+                    }}
+                    dangerouslySetInnerHTML={{ __html: n.message }}
+                  />
+                  <small
+                    style={{
+                      display: "block",
+                      fontSize: "0.8rem",
+                      opacity: 0.7,
+                    }}
+                  >
+                    {n.time}
+                  </small>
                 </div>
               </li>
-            ))}
+            ))
+          ) : null}
 
-            {isLoading && <li className="text-center py-2">Loading more…</li>}
-            {!hasMore && !isLoading && notifications.length === 0 && (
-              <li className="text-center py-3">No notifications</li>
-            )}
-          </ul>
-        </li>
-      </ul>
+          {/* Loading State */}
+          {isLoading && (
+            <li
+              style={{
+                textAlign: "center",
+                padding: "1rem",
+                color: "var(--text-muted)",
+              }}
+            >
+              <small>Đang tải thêm…</small>
+            </li>
+          )}
+
+          {/* Empty State */}
+          {!hasMore && !isLoading && notifications.length === 0 && (
+            <li
+              style={{
+                textAlign: "center",
+                padding: "1.5rem",
+                color: "var(--text-muted)",
+              }}
+            >
+              <small>Không có thông báo</small>
+            </li>
+          )}
+
+          {/* End of List */}
+          {!hasMore && notifications.length > 0 && !isLoading && (
+            <li
+              style={{
+                textAlign: "center",
+                padding: "0.75rem",
+                color: "var(--text-muted)",
+                fontSize: "0.8rem",
+              }}
+            >
+              <small>Đã hiển thị tất cả thông báo</small>
+            </li>
+          )}
+        </ul>
+      </div>
     </div>
   );
 };

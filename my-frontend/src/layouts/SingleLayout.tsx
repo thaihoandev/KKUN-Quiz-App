@@ -44,7 +44,14 @@ const SingleLayout: React.FC = () => {
       </div>
 
       {/* 🌈 Nội dung trang */}
-      <main className="container-fluid py-0 px-0" style={{ minHeight: "100vh" }}>
+      <main
+        className="py-0 px-0"
+        style={{
+          minHeight: "100vh",
+          width: "100%",          // ✅ thay vì maxWidth: 100vw
+          overflowX: "clip",
+        }}
+      >
         <Outlet />
       </main>
     </>

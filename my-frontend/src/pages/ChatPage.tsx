@@ -12,10 +12,11 @@ import {
   removeReaction,
   getOrCreateDirect,
 } from "@/services/chatService";
-import { PageResponse, UserDto, UserResponseDTO } from "@/interfaces";
+import { PageResponse, UserDto } from "@/interfaces";
 import { useAuthStore } from "@/store/authStore";
 import { getMyFriends } from "@/services/userService";
 import Tooltip from 'bootstrap/js/dist/tooltip';  // chỉ import Tooltip
+import { User } from "@/types/users";
 
 const PAGE_SIZE_CONV = 20;
 const PAGE_SIZE_MSG = 30;
@@ -99,8 +100,8 @@ const ChatPage: React.FC = () => {
   const [selectedConv, setSelectedConv] = useState<ConversationDTO | null>(null);
   const [loadingConvs, setLoadingConvs] = useState(false);
 
-  const [friends, setFriends] = useState<UserResponseDTO[]>([]);
-  const [friendsPage, setFriendsPage] = useState<PageResponse<UserResponseDTO> | null>(null);
+  const [friends, setFriends] = useState<User[]>([]);
+  const [friendsPage, setFriendsPage] = useState<PageResponse<User> | null>(null);
   const [friendPageIndex, setFriendPageIndex] = useState(0);
   const [loadingFriends, setLoadingFriends] = useState(false);
   const [friendQuery, setFriendQuery] = useState("");
@@ -222,7 +223,6 @@ const ChatPage: React.FC = () => {
       heartbeatIncoming: 10000,
       heartbeatOutgoing: 10000,
     });
-
 
     client.onConnect = (_frame: IFrame) => {
       try { inboxSubRef.current?.unsubscribe?.(); } catch {}
@@ -348,7 +348,7 @@ const ChatPage: React.FC = () => {
 
   const filteredFriends = useMemo(() => {
     const q = friendQuery.trim().toLowerCase();
-    if (!q) return [] as UserResponseDTO[];
+    if (!q) return [] as User[];
     return friends.filter((f) => [f.name, f.username, f.email].filter(Boolean).some((s) => (s as string).toLowerCase().includes(q)));
   }, [friendQuery, friends]);
 
@@ -437,9 +437,6 @@ const ChatPage: React.FC = () => {
       //    - /topic/conv.{conversationId}
       //    Event sẽ mang MessageDTO có cùng clientId → upsertMessage() đã xử lý.
 
-      // 4) Có thể cập nhật tạm convs (tuỳ thích), nhưng tốt nhất cũng đợi event.
-      // setConvs(...)  // bỏ qua
-
     } catch (e) {
       console.error("[SEND] error", e);
       // Rollback optimistic nếu fail enqueue
@@ -447,7 +444,6 @@ const ChatPage: React.FC = () => {
       showToast("danger", "Gửi tin nhắn thất bại");
     }
   };
-
 
   const startDirectChat = async (friendId: string) => {
     if (!currentUserId) return;
@@ -522,7 +518,7 @@ const ChatPage: React.FC = () => {
 
   if (!currentUserId) {
     return (
-      <div style={{ padding: 24, textAlign: "center", color: "#888" }}>
+      <div style={{ padding: 24, textAlign: "center", color: "var(--text-muted)", background: "var(--background-color)", minHeight: "100vh" }}>
         Vui lòng đăng nhập để sử dụng chat.
       </div>
     );
@@ -535,14 +531,16 @@ const ChatPage: React.FC = () => {
         width: "100%",
         display: "flex",
         overflow: "hidden",
-        background: "linear-gradient(135deg, #f0f4f8 0%, #d9e2ec 100%)"
+        background: "var(--background-color)",
+        color: "var(--text-color)"
       }}
     >
       {/* Sidebar */}
-      <div className="d-flex flex-column bg-white border-end" style={{ width: "33%", maxWidth: 400, minWidth: 300 }}>
+      <div className="d-flex flex-column border-end"
+           style={{ width: "33%", maxWidth: 400, minWidth: 300, background: "var(--surface-color)", borderColor: "var(--border-color)" }}>
         <div className="d-flex flex-column h-100 p-3">
           <div className="mb-3">
-            <h4 className="m-0">Hội thoại</h4>
+            <h4 className="m-0" style={{ color: "var(--text-color)" }}>Hội thoại</h4>
           </div>
 
           <div className="mb-3 position-relative">
@@ -551,6 +549,7 @@ const ChatPage: React.FC = () => {
               <input
                 type="text"
                 className="form-control"
+                style={{ background: "var(--surface-alt)", color: "var(--text-color)", borderColor: "var(--border-color)" }}
                 placeholder="Tìm bạn để chat"
                 value={friendQuery}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFriendQuery(e.target.value)}
@@ -569,28 +568,30 @@ const ChatPage: React.FC = () => {
             </div>
 
             {friendDropdownOpen && friendQuery.trim().length === 0 && (
-              <div className="position-absolute w-100 mt-1 p-2 bg-white border rounded-3 shadow-sm text-muted small">
+              <div className="position-absolute w-100 mt-1 p-2 border rounded-3 shadow-sm small"
+                   style={{ background: "var(--surface-color)", color: "var(--text-muted)", borderColor: "var(--border-color)" }}>
                 Nhập tên để tìm bạn…
               </div>
             )}
 
             {friendDropdownOpen && friendQuery.trim().length > 0 && (
-              <div className="position-absolute w-100 mt-1 bg-white border rounded-3 shadow-sm" style={{ maxHeight: 280, overflowY: "auto", zIndex: 10 }}>
+              <div className="position-absolute w-100 mt-1 border rounded-3 shadow-sm"
+                   style={{ maxHeight: 280, overflowY: "auto", zIndex: 10, background: "var(--surface-color)", borderColor: "var(--border-color)" }}>
                 {loadingFriends && (
                   <div className="d-flex align-items-center justify-content-center py-2">
                     <div className="spinner-border spinner-border-sm me-2" role="status"></div>
-                    <span className="small text-muted">Đang tải…</span>
+                    <span className="small" style={{ color: "var(--text-muted)" }}>Đang tải…</span>
                   </div>
                 )}
                 {!loadingFriends && filteredFriends.length === 0 && (
-                  <div className="p-2 text-muted small">Không tìm thấy bạn bè</div>
+                  <div className="p-2 small" style={{ color: "var(--text-muted)" }}>Không tìm thấy bạn bè</div>
                 )}
-                <ul className="list-group list-group-flush">
+                <ul className="list-group list-group-flush" style={{ background: "transparent" }}>
                   {filteredFriends.map((f) => (
                     <li
                       key={f.userId}
                       className="list-group-item list-group-item-action d-flex align-items-center"
-                      style={{ cursor: "pointer" }}
+                      style={{ cursor: "pointer", background: "var(--surface-color)", color: "var(--text-color)", borderColor: "var(--border-color)" }}
                       onMouseDown={(e: React.MouseEvent) => e.preventDefault()}
                       onClick={() => {
                         setFriendQuery("");
@@ -614,7 +615,7 @@ const ChatPage: React.FC = () => {
           </div>
 
           <div className="d-flex justify-content-between align-items-center px-2 pb-2">
-            <strong>Danh sách</strong>
+            <strong style={{ color: "var(--text-color)" }}>Danh sách</strong>
             {!loadingConvs && convPage && !convPage.last && (
               <button className="btn btn-sm btn-outline-secondary" onClick={loadMoreConvs}>
                 Tải thêm
@@ -624,15 +625,15 @@ const ChatPage: React.FC = () => {
 
           <div className="flex-grow-1 overflow-auto">
             {loadingConvs && convs.length === 0 && (
-              <div className="text-center text-muted py-3">
+              <div className="text-center py-3" style={{ color: "var(--text-muted)" }}>
                 <div className="spinner-border spinner-border-sm me-2" role="status"></div>
                 Đang tải…
               </div>
             )}
             {!loadingConvs && convs.length === 0 && (
-              <div className="text-center text-muted py-3">Chưa có hội thoại</div>
+              <div className="text-center py-3" style={{ color: "var(--text-muted)" }}>Chưa có hội thoại</div>
             )}
-            <ul className="list-group">
+            <ul className="list-group" style={{ background: "transparent" }}>
               {convs.map((c) => {
                 const last = c.lastMessage as any;
                 const title = getConversationTitle(c, currentUserId!);
@@ -642,7 +643,12 @@ const ChatPage: React.FC = () => {
                   <li
                     key={c.id}
                     className={`list-group-item ${active ? "active" : ""}`}
-                    style={{ cursor: "pointer" }}
+                    style={{
+                      cursor: "pointer",
+                      background: active ? "var(--primary-color)" : "var(--surface-color)",
+                      color: active ? "var(--text-invert)" : "var(--text-color)",
+                      borderColor: "var(--border-color)"
+                    }}
                     onClick={() => {
                       setSelectedConv(c);
                       setConvs(prev => prev.map(x => (x.id === c.id ? { ...x, unreadCount: 0 } : x)));
@@ -653,38 +659,45 @@ const ChatPage: React.FC = () => {
                         <img
                           src={getConversationAvatar(c, currentUserId!)!}
                           alt=""
-                          className={`rounded-circle me-2 ${active ? "border border-light" : ""}`}
-                          style={{ width: 36, height: 36, objectFit: "cover" }}
+                          className={`rounded-circle me-2 ${active ? "border" : ""}`}
+                          style={{ width: 36, height: 36, objectFit: "cover", borderColor: active ? "rgba(255,255,255,.8)" : "transparent" }}
                         />
                       ) : (
                         <div
-                          className={`rounded-circle bg-secondary text-white d-flex align-items-center justify-content-center me-2 ${active ? "border border-light" : ""}`}
-                          style={{ width: 36, height: 36 }}
+                          className="rounded-circle d-flex align-items-center justify-content-center me-2"
+                          style={{
+                            width: 36, height: 36,
+                            background: "var(--surface-alt)",
+                            color: active ? "var(--text-invert)" : "var(--text-color)",
+                            border: active ? "1px solid rgba(255,255,255,.6)" : "none"
+                          }}
                         >
                           {title?.[0] ?? "?"}
                         </div>
                       )}
                       <div className="flex-grow-1">
-                        <div className="d-flex justify-content-between">
-                          <div
-                            className={`fw-semibold ${active ? "text-white" : ""}`}
-                            style={{ maxWidth: 180, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
-                          >
-                            {title}
-                          </div>
-                          {(c as any).unreadCount > 0 && (
-                            <span className={`badge rounded-pill ${active ? "bg-light text-dark" : "bg-primary"}`}>
-                              {(c as any).unreadCount > 99 ? "99+" : (c as any).unreadCount}
-                            </span>
-                          )}
+                        <div
+                          className="fw-semibold"
+                          style={{ maxWidth: 180, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+                        >
+                          {title}
                         </div>
                         <div
-                          className={`small ${active ? "text-white-50" : "text-muted"}`}
-                          style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+                          className="small"
+                          style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: active ? "rgba(255,255,255,0.85)" : "var(--text-muted)" }}
                         >
                           {preview}
                         </div>
                       </div>
+                      {(c as any).unreadCount > 0 && (
+                        <span className="badge rounded-pill"
+                              style={{
+                                background: active ? "rgba(255,255,255,0.9)" : "var(--primary-color)",
+                                color: active ? "var(--text-invert)" : "#fff"
+                              }}>
+                          {(c as any).unreadCount > 99 ? "99+" : (c as any).unreadCount}
+                        </span>
+                      )}
                     </div>
                   </li>
                 );
@@ -695,29 +708,31 @@ const ChatPage: React.FC = () => {
       </div>
 
       <div className="d-flex flex-column flex-grow-1">
-        <div className="p-3 border-bottom bg-white fw-semibold">
+        <div className="p-3 border-bottom fw-semibold"
+             style={{ background: "var(--surface-color)", borderColor: "var(--border-color)", color: "var(--text-color)" }}>
           {selectedConv ? getConversationTitle(selectedConv, currentUserId!) : "Chọn hội thoại"}
         </div>
 
         <div
           ref={scrollBoxRef}
           onScroll={onScroll}
-          className="flex-grow-1 overflow-auto p-3 bg-white"
+          className="flex-grow-1 overflow-auto p-3"
+          style={{ background: "var(--surface-color)" }}
         >
           <style>{`
             .message-container:hover .reaction-button {
               opacity: 1 !important;
             }
             .tooltip {
-              z-index: 2000 !important; /* Ensure tooltip is above other elements */
+              z-index: 2000 !important;
             }
           `}</style>
 
           {loadingMsgs && messages.length === 0 && (
-            <div className="text-center text-muted">Đang tải…</div>
+            <div className="text-center" style={{ color: "var(--text-muted)" }}>Đang tải…</div>
           )}
           {hasMoreMsgs && messages.length > 0 && (
-            <div className="text-center text-muted small">Kéo lên để xem cũ hơn…</div>
+            <div className="text-center small" style={{ color: "var(--text-muted)" }}>Kéo lên để xem cũ hơn…</div>
           )}
 
           {messages.map((m, idx) => {
@@ -732,7 +747,7 @@ const ChatPage: React.FC = () => {
             return (
               <React.Fragment key={m.id as any}>
                 {showSeparator && (
-                  <div className="text-center small text-muted my-3">
+                  <div className="text-center small my-3" style={{ color: "var(--text-muted)" }}>
                     {formatHm((m as any).createdAt)}
                   </div>
                 )}
@@ -761,8 +776,8 @@ const ChatPage: React.FC = () => {
                       style={{ opacity: 0, transition: "opacity 0.2s" }}
                     >
                       <button
-                        className={`btn btn-sm p-0 px-2 ${m.myReaction ? "text-primary" : "text-secondary"}`}
-                        style={{ fontSize: "1.2em" }}
+                        className={`btn btn-sm p-0 px-2 ${m.myReaction ? "text-primary" : ""}`}
+                        style={{ fontSize: "1.2em", color: m.myReaction ? "var(--primary-color)" : "var(--text-muted)" }}
                         onClick={() => setPickerFor(pickerFor === (m.id as any) ? null : (m.id as any))}
                         onBlur={() => setTimeout(() => setPickerFor(cur => cur === (m.id as any) ? null : cur), 120)}
                         title={m.myReaction ? `Cảm xúc của bạn: ${m.myReaction}` : "Chọn cảm xúc"}
@@ -771,8 +786,8 @@ const ChatPage: React.FC = () => {
                       </button>
                       {pickerFor === (m.id as any) && (
                         <div
-                          className="position-absolute bg-white border rounded-3 shadow-sm p-2"
-                          style={{ zIndex: 10, top: "100%", left: 0 }}
+                          className="position-absolute border rounded-3 shadow-sm p-2"
+                          style={{ zIndex: 10, top: "100%", left: 0, background: "var(--surface-color)", borderColor: "var(--border-color)" }}
                         >
                           <div className="d-flex flex-wrap gap-1" style={{ maxWidth: 240 }}>
                             {EMOJI_CHOICES.map((emo) => (
@@ -800,13 +815,18 @@ const ChatPage: React.FC = () => {
                     </div>
                     <div className={`order-${mine ? 1 : 1}`}>
                       {!mine && showMeta && (
-                        <div className="small text-muted mb-1 text-start">
+                        <div className="small mb-1 text-start" style={{ color: "var(--text-muted)" }}>
                           {(m.sender as any)?.name}
                         </div>
                       )}
                       <div
-                        className={`px-3 py-2 rounded-3 ${mine ? "bg-primary text-white" : "bg-light"}`}
-                        style={{ wordBreak: "break-word" }}
+                        className={`px-3 py-2 rounded-3`}
+                        style={{
+                          wordBreak: "break-word",
+                          background: mine ? "var(--primary-color)" : "var(--surface-alt)",
+                          color: mine ? "var(--text-invert)" : "var(--text-color)",
+                          boxShadow: "var(--card-shadow)"
+                        }}
                         data-bs-toggle="tooltip"
                         data-bs-placement={mine ? "left" : "right"}
                         data-bs-title={formatHm((m as any).createdAt)}
@@ -842,8 +862,8 @@ const ChatPage: React.FC = () => {
                             .map(([emoji, count]) => (
                               <button
                                 key={emoji}
-                                className={`btn btn-sm p-0 px-1 ${m.myReaction === emoji ? "text-primary" : "text-secondary"}`}
-                                style={{ fontSize: "0.8em" }}
+                                className="btn btn-sm p-0 px-1"
+                                style={{ fontSize: "0.8em", color: m.myReaction === emoji ? "var(--primary-color)" : "var(--text-muted)" }}
                                 onClick={() => selectReaction(m, emoji)}
                               >
                                 {emoji} {count as number > 1 ? count : ""}
@@ -859,7 +879,8 @@ const ChatPage: React.FC = () => {
           })}
         </div>
 
-        <div className="p-3 border-top bg-white d-flex align-items-center gap-2">
+        <div className="p-3 border-top d-flex align-items-center gap-2"
+             style={{ background: "var(--surface-color)", borderColor: "var(--border-color)" }}>
           <input
             className="form-control"
             placeholder={selectedConv ? "Nhập tin nhắn…" : "Chọn hội thoại để nhắn"}
@@ -867,6 +888,7 @@ const ChatPage: React.FC = () => {
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setInput(e.target.value)}
             onKeyDown={(e: React.KeyboardEvent) => { if (e.key === "Enter") onSend(); }}
             disabled={!selectedConv}
+            style={{ background: "var(--surface-alt)", color: "var(--text-color)", borderColor: "var(--border-color)" }}
           />
           <button
             className="btn btn-primary"
@@ -880,7 +902,12 @@ const ChatPage: React.FC = () => {
 
       {toast && (
         <div className="position-fixed bottom-0 end-0 p-3" style={{ zIndex: 1080 }}>
-          <div className={`alert alert-${toast.type} shadow-sm mb-0`} role="alert">
+          <div className={`alert alert-${toast.type} shadow-sm mb-0`} role="alert"
+               style={{
+                 background: "var(--surface-color)",
+                 color: "var(--text-color)",
+                 borderLeft: `4px solid ${toast.type === "success" ? "var(--success-color)" : "var(--danger-color)"}`
+               }}>
             {toast.text}
           </div>
         </div>
