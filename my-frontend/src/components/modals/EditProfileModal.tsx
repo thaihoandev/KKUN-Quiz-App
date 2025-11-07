@@ -1,11 +1,11 @@
 import { useState, useMemo, useRef, useEffect } from "react";
-import { updateUser } from "@/services/userService";
-import { UserResponseDTO } from "@/interfaces";
+import { updateMyProfile } from "@/services/userService";
+import { User } from "@/types/users";
 
 interface EditProfileModalProps {
-  profile: UserResponseDTO;
+  profile: User;
   onClose: () => void;
-  onUpdate: (updatedProfile: UserResponseDTO) => void;
+  onUpdate: (updatedProfile: User) => void;
 }
 
 const EditProfileModal = ({ profile, onClose, onUpdate }: EditProfileModalProps) => {
@@ -87,7 +87,7 @@ const EditProfileModal = ({ profile, onClose, onUpdate }: EditProfileModalProps)
     setError(null);
 
     try {
-      const updatedProfile = await updateUser(profile.userId, {
+      const updatedProfile = await updateMyProfile({
         name: formData.name.trim(),
         school: formData.school.trim(),
         // KHÔNG gửi email/role nếu BE không cho phép đổi

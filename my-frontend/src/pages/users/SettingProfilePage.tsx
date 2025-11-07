@@ -3,10 +3,10 @@ import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "@/store/authStore";
 import {
-  updateUser,
   deleteSoftUser,
   requestEmailOtp,
   verifyEmailOtp,
+  updateMyProfile,
 } from "@/services/userService";
 import EditAvatarModal from "@/components/modals/EditAvatarModal";
 
@@ -112,7 +112,7 @@ const SettingProfilePage = () => {
     setSaving(true);
     try {
       const payload: PartialUser = { [fieldName]: newValue } as PartialUser;
-      const updated = await updateUser(String(safeUserId), payload as any);
+      const updated = await updateMyProfile(payload as any);
       setMe(updated); // cập nhật tức thời UI
       showMessage({ type: "success", message: "Cập nhật thông tin thành công." });
       // Đồng bộ store (nếu cần dùng global user đồng nhất)

@@ -10,15 +10,16 @@ export interface UserAuth {
 }
 
 export interface User {
-  userId: string;
-  username: string;
-  email: string;
-  school: string;
-  name: string;
-  avatar: string;
-  roles: string[];
-  createdAt: string;
-  isActive: boolean;
+    userId: string;
+    username: string;
+    email: string;
+    school: string;
+    name: string;
+    avatar: string;
+    phone?: string;
+    roles: string[];
+    createdAt: string;
+    isActive: boolean;
 }
 
 export interface UserRequestDTO {

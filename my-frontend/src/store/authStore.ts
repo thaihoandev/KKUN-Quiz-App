@@ -39,6 +39,7 @@ const mapMeDtoToUser = (dto: any): User => ({
   name: dto.name || "",
   roles: dto.roles || [],
   school: dto.school || "",
+  phone: dto.phone || "",
   createdAt: dto.createdAt,
   isActive: dto.isActive,
 });
@@ -73,10 +74,10 @@ export const useAuthStore = create<AuthState>()(
         const { inFlightMe } = get();
         if (inFlightMe) return inFlightMe;
 
-        // 🚫 Nếu không có refreshToken → không gọi /me
         const hasRefresh = Boolean(Cookies.get("refreshToken"));
         if (!hasRefresh) {
           console.info("[authStore] Skip /me — no refresh token found");
+          // ❌ KHÔNG xóa user, chỉ bỏ qua
           return;
         }
 
@@ -99,8 +100,8 @@ export const useAuthStore = create<AuthState>()(
             } else if (resp.status === 304) {
               set({ lastFetchedAt: Date.now() });
             } else if (resp.status === 401) {
-              console.warn("[authStore] /me unauthorized — likely expired session");
-              set({ user: null, lastFetchedAt: null });
+              console.warn("[authStore] /me unauthorized — token expired");
+              // ⚠️ Chưa logout vội, chỉ thông báo
             }
           } finally {
             set({ isFetchingMe: false, inFlightMe: null });
@@ -110,6 +111,7 @@ export const useAuthStore = create<AuthState>()(
         set({ inFlightMe: p });
         return p;
       },
+
 
       // ================== refreshMeIfStale ==================
       refreshMeIfStale: async () => {

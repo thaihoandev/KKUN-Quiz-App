@@ -1,12 +1,13 @@
 import { useState, useCallback } from "react";
 import Cropper, { Area } from "react-easy-crop";
-import { updateUserAvatar } from "@/services/userService";
-import { UserResponseDTO } from "@/interfaces";
+import { updateMyAvatar, updateUserAvatar } from "@/services/userService";
+import {  } from "@/interfaces";
+import { User } from "@/types/users";
 
 interface EditAvatarModalProps {
-  profile: UserResponseDTO;
+  profile: User;
   onClose: () => void;
-  onUpdate: (updatedProfile: UserResponseDTO) => void;
+  onUpdate: (updatedProfile: User) => void;
 }
 
 const getCroppedImg = async (imageSrc: string, croppedAreaPixels: Area): Promise<File> => {
@@ -97,7 +98,7 @@ const EditAvatarModal = ({ profile, onClose, onUpdate }: EditAvatarModalProps) =
 
     try {
       const croppedImage = await getCroppedImg(imageSrc, croppedAreaPixels);
-      const updatedProfile = await updateUserAvatar(String(profile.userId), croppedImage);
+      const updatedProfile = await updateMyAvatar(croppedImage);
       onUpdate(updatedProfile);
       onClose();
     } catch (err: any) {

@@ -108,6 +108,39 @@ export const updateUser = async (userId: string, patch: Partial<UserRequestDTO>)
   }
   return res.data;
 };
+// ========================== Update my profile ==========================
+export const updateMyProfile = async (patch: Partial<UserRequestDTO>) => {
+  // ✅ Gọi API backend
+  const res = await axiosInstance.put<User>(`/users/me`, patch);
+
+  // ✅ Xóa cache ETag để lần refresh sau luôn lấy dữ liệu mới
+  useAuthStore.setState({ etag: null });
+
+  // ✅ Cập nhật trực tiếp user trong Zustand để UI phản ánh ngay
+  useAuthStore.getState().updateUserPartial(res.data);
+
+  return res.data;
+};
+
+// ========================== Update my avatar ==========================
+export const updateMyAvatar = async (file: File) => {
+  const fd = new FormData();
+  fd.append("file", file);
+
+  // ✅ Backend: /api/users/me/avatar
+  const res = await axiosInstance.post<User>(`/users/me/avatar`, fd, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+
+  // ✅ Xóa ETag để refresh lại bản mới
+  useAuthStore.setState({ etag: null });
+
+  // ✅ Cập nhật store ngay lập tức
+  useAuthStore.getState().updateUserPartial(res.data);
+
+  return res.data;
+};
+
 
 // ========================== Update avatar ==========================
 export const updateUserAvatar = async (userId: string, file: File) => {
