@@ -19,7 +19,7 @@
     /* ==== Màu nền & bề mặt (Light) ==== */
     --background-color: #f8fafc;
     --surface-color: #ffffff;
-    --surface-alt: #f1f5f9;
+    --surface-alt: #d6fbfd;
     --light-bg: #f8fafcb4;
     --overlay-color: rgba(15, 23, 42, 0.4);
 
@@ -40,7 +40,7 @@
 .dark-mode {
     --background-color: #0f172a;
     --surface-color: #1e293b;
-    --surface-alt: #334155;
+    --surface-alt: #2c3b52;
     --light-bg: #1e293b;
     --overlay-color: rgba(0, 0, 0, 0.6);
 

@@ -1,0 +1,994 @@
+/* ===================================================== */
+/*      KKUN QUIZ – NEON GEN-Z THEME 2025 (FULL + CŨ)   */
+/*  ĐÃ GHI LẠI 100% TẤT CẢ CLASS CŨ – KHÔNG MẤT GÌ!      */
+/*  COPY TOÀN BỘ DƯỚI ĐÂY → THAY ĐOẠN CŨ → XONG!         */
+/* ===================================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&family=Inter:wght@400;600;700&display=swap');
+
+/* ==================== 1. ROOT CŨ (GIỮ NGUYÊN) ==================== */
+:root {
+    --primary-color: #60a5fa;
+    --primary-dark: #2563eb;
+    --secondary-color: #a5b4fc;
+    --secondary-dark: #6366f1;
+    --success-color: #4ade80;
+    --success-dark: #16a34a;
+    --danger-color: #f87171;
+    --danger-dark: #dc2626;
+    --warning-color: #fbbf24;
+    --warning-dark: #f59e0b;
+    --info-color: #38bdf8;
+    --info-dark: #0284c7;
+
+    --background-color: #f8fafc;
+    --surface-color: #ffffff;
+    --surface-alt: #f1f5f9;
+    --light-bg: #f8fafcb4;
+    --overlay-color: rgba(15, 23, 42, 0.4);
+
+    --text-color: #1e293b;
+    --text-light: #475569;
+    --text-muted: #94a3b8;
+    --text-invert: #ffffff;
+
+    --border-color: #e2e8f0;
+    --border-hover: #cbd5e1;
+    --card-shadow: 0 6px 20px rgba(96, 165, 250, 0.12);
+    --hover-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+.dark-mode {
+    --background-color: #0f172a;
+    --surface-color: #1e293b;
+    --surface-alt: #334155;
+    --light-bg: #1e293b;
+    --overlay-color: rgba(0, 0, 0, 0.6);
+    --text-color: #f1f5f9;
+    --text-light: #cbd5e1;
+    --text-muted: #c1cfe2;
+    --text-invert: #1e293b;
+    --border-color: #334155;
+    --border-hover: #475569;
+    --card-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+    --hover-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+:root,
+.dark-mode {
+    --border-radius: 14px;
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 18px;
+    --spacing-xs: 4px;
+    --spacing-sm: 8px;
+    --spacing-md: 16px;
+    --spacing-lg: 24px;
+    --spacing-xl: 32px;
+    --font-family: 'Poppins', 'Segoe UI', sans-serif;
+    --font-size-base: 16px;
+    --font-size-sm: 14px;
+    --font-size-lg: 18px;
+    --font-weight-normal: 400;
+    --font-weight-medium: 500;
+    --font-weight-bold: 700;
+    --line-height-base: 1.6;
+    --heading-letter-spacing: -0.5px;
+    --transition: all 0.25s ease;
+    --transition-fast: all 0.15s ease-in-out;
+    --transition-slow: all 0.4s ease;
+    --blur-bg: blur(12px);
+    --gradient-primary: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+    --gradient-success: linear-gradient(135deg, var(--success-color), #34d399);
+    --gradient-danger: linear-gradient(135deg, var(--danger-color), #ef4444);
+    --gradient-info: linear-gradient(135deg, var(--info-color), #0ea5e9);
+    --container-width: 1200px;
+    --sidebar-width: 280px;
+    --navbar-height: 64px;
+    --footer-height: 56px;
+}
+
+/* ==================== 2. KKUN NEON UPGRADE ==================== */
+:root {
+    --k-hot: #ff6b6b;
+    --k-cyan: #4ecdc4;
+    --k-gold: #f9ca24;
+    --k-purple: #9b59b6;
+    --k-sky: #45b7d1;
+    --gradient-k: linear-gradient(135deg, #ff6b6b, #4ecdc4, #45b7d1, #f9ca24);
+    --gradient-neon: linear-gradient(135deg, #ff6b6b, #9b59b6);
+    --gradient-rainbow: linear-gradient(90deg, #ff6b6b, #f9ca24, #6bcf7f, #4ecdc4, #45b7d1, #9b59b6);
+    --glow-pink: 0 0 20px rgba(255, 107, 107, 0.5);
+    --glow-cyan: 0 0 20px rgba(78, 205, 196, 0.5);
+}
+
+/* ==================== 3. GLOBAL & BODY ==================== */
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html {
+    scroll-behavior: smooth;
+}
+
+body {
+    margin: 0;
+    font-family: var(--font-family);
+    background: linear-gradient(135deg, #ecfdf5 0%, #f0f9ff 100%);
+    background-attachment: fixed;
+    color: var(--text-color);
+    min-height: 100vh;
+    font-size: var(--font-size-base);
+    line-height: var(--line-height-base);
+    -webkit-font-smoothing: antialiased;
+    transition: background 0.5s ease, color 0.4s ease;
+    overflow-x: hidden !important;
+}
+
+.dark-mode body {
+    background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+}
+
+body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: var(--gradient-rainbow);
+    background-size: 300% 300%;
+    opacity: 0.06;
+    z-index: -2;
+    animation: rainbowFlow 20s ease infinite;
+    pointer-events: none;
+}
+
+.dark-mode body::before {
+    opacity: 0.12;
+}
+
+@keyframes rainbowFlow {
+
+    0%,
+    100% {
+        background-position: 0% 50%
+    }
+
+    50% {
+        background-position: 100% 50%
+    }
+}
+
+/* ==================== 4. TYPOGRAPHY ==================== */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+    margin: 0 0 1rem;
+    font-weight: 800;
+    letter-spacing: var(--heading-letter-spacing);
+    background: var(--gradient-neon);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    text-shadow: var(--glow-pink);
+    line-height: 1.2;
+}
+
+h1 {
+    font-size: 3rem
+}
+
+h2 {
+    font-size: 2.4rem
+}
+
+h3 {
+    font-size: 1.9rem
+}
+
+h4 {
+    font-size: 1.6rem
+}
+
+p {
+    color: var(--text-light);
+    margin-bottom: 1rem
+}
+
+/* ==================== 5. LINKS ==================== */
+a {
+    text-decoration: none;
+    color: var(--k-hot);
+    font-weight: 600;
+    transition: color 0.25s ease;
+}
+
+a:hover {
+    color: #ff8787;
+}
+
+/* ==================== 6. CARD & GLASS CARD ==================== */
+.card,
+.glass-card {
+    border: none;
+    border-radius: 20px;
+    box-shadow: var(--card-shadow);
+    background: var(--surface-color);
+    margin-bottom: 2rem;
+    overflow: visible;
+    transition: all 0.4s ease;
+    position: relative;
+    backdrop-filter: var(--blur-bg);
+    -webkit-backdrop-filter: var(--blur-bg);
+    border: 1px solid var(--border-color);
+    padding: 1.8rem;
+}
+
+.card::before,
+.glass-card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: var(--gradient-k);
+    opacity: 0;
+    transition: opacity 0.4s ease;
+    z-index: -1;
+    border-radius: 20px;
+}
+
+.card:hover::before,
+.glass-card:hover::before {
+    opacity: 0.08;
+}
+
+.card:hover,
+.glass-card:hover {
+    transform: translateY(-8px);
+    box-shadow: var(--glow-pink), var(--hover-shadow);
+    border-color: var(--k-hot);
+}
+
+.card-header {
+    background: var(--gradient-k);
+    color: var(--text-invert);
+    border: none;
+    padding: 1.5rem;
+    font-weight: 600;
+    border-radius: 20px 20px 0 0;
+}
+
+.card-body {
+    padding: 1.5rem;
+    color: var(--text-color);
+}
+
+/* ==================== 7. BUTTONS ==================== */
+.btn,
+.btn-k {
+    border: none;
+    border-radius: 16px;
+    font-weight: 700;
+    padding: 0.85rem 1.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    font-size: 0.95rem;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+    z-index: 1;
+    box-shadow: var(--card-shadow);
+}
+
+.btn::before,
+.btn-k::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: var(--gradient-k);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    z-index: -1;
+}
+
+.btn:hover::before,
+.btn-k:hover::before {
+    opacity: 1;
+}
+
+.btn:hover,
+.btn-k:hover {
+    color: white !important;
+    transform: translateY(-4px);
+    box-shadow: var(--glow-pink);
+}
+
+.btn:focus,
+.btn-k:focus {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(255, 107, 107, .3), var(--hover-shadow);
+}
+
+.btn-primary {
+    background: white;
+    color: var(--k-hot);
+    border: 2px solid var(--k-hot);
+}
+
+.btn-secondary {
+    background: var(--gradient-neon);
+    color: white;
+}
+
+.btn-success {
+    background: var(--gradient-success);
+    color: white;
+}
+
+.btn-outline-primary {
+    color: var(--k-hot);
+    border: 2px solid var(--k-hot);
+    background: transparent;
+}
+
+.btn-outline-primary:hover {
+    background: var(--k-hot);
+    color: white;
+}
+
+.btn-link {
+    color: var(--k-hot);
+    background: transparent;
+    border: none;
+    padding: 0.5rem 0;
+}
+
+/* ==================== 8. FORM ELEMENTS ==================== */
+.form-control,
+.form-select,
+.input-k {
+    border: 2px solid var(--border-color);
+    border-radius: 16px;
+    font-size: 1rem;
+    background: var(--surface-color) !important;
+    color: var(--text-color);
+    transition: all 0.3s ease;
+    box-shadow: 0 0 0 0px rgba(96, 165, 250, 0);
+    padding: 0.9rem 1.2rem;
+    backdrop-filter: blur(8px);
+}
+
+.form-control::placeholder {
+    color: var(--text-light);
+    font-weight: 500;
+}
+
+.form-control:focus,
+.form-select:focus,
+.input-k:focus {
+    border-color: var(--k-hot);
+    box-shadow: 0 0 0 4px rgba(255, 107, 107, .25);
+    outline: none;
+    transform: scale(1.02);
+}
+
+.form-select {
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23ff6b6b' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M2 5l6 6 6-6'/%3e%3c/svg%3e");
+    background-repeat: no-repeat;
+    background-position: right 0.75rem center;
+    background-size: 1.25rem;
+    padding-right: 2.5rem;
+    appearance: none;
+}
+
+.form-check-input {
+    width: 1.25rem;
+    height: 1.25rem;
+    border-radius: 6px;
+    border: 2px solid var(--border-color);
+    background: var(--surface-color);
+    transition: all 0.25s ease;
+}
+
+.form-check-input:checked {
+    background: var(--k-hot);
+    border-color: var(--k-hot);
+}
+
+.form-check-input:focus {
+    border-color: var(--k-hot);
+    box-shadow: 0 0 0 3px rgba(255, 107, 107, .2);
+}
+
+/* ==================== 9. BADGE & PROGRESS ==================== */
+.badge,
+.badge-k {
+    padding: 0.5rem 1.1rem;
+    border-radius: 50px;
+    font-weight: 700;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    background: var(--gradient-k);
+    color: white;
+    box-shadow: var(--glow-pink);
+}
+
+.progress {
+    height: 12px;
+    border-radius: 12px;
+    background: var(--border-color);
+    overflow: hidden;
+}
+
+.progress-bar {
+    background: var(--gradient-k);
+    border-radius: 12px;
+    transition: width 0.6s ease;
+}
+
+/* ==================== 10. ALERT ==================== */
+.alert {
+    border: none;
+    border-radius: 20px;
+    border-left: 4px solid;
+    padding: 1.25rem;
+    background: var(--surface-alt);
+    color: var(--text-color);
+    box-shadow: var(--card-shadow);
+    transition: box-shadow 0.25s ease;
+}
+
+.alert-success {
+    border-left-color: var(--success-color);
+}
+
+.alert-danger {
+    border-left-color: var(--danger-color);
+}
+
+.alert-info {
+    border-left-color: var(--info-color);
+}
+
+.alert-warning {
+    border-left-color: var(--warning-color);
+}
+
+/* ==================== 11. NAVBAR ==================== */
+.navbar {
+    background: var(--gradient-k) !important;
+    box-shadow: 0 4px 20px rgba(255, 107, 107, .3);
+    backdrop-filter: blur(10px);
+}
+
+.navbar-brand {
+    font-weight: 700;
+    font-size: 1.5rem;
+    color: white !important;
+}
+
+.nav-link {
+    color: rgba(255, 255, 255, .95) !important;
+    font-weight: 600;
+    margin: 0 .5rem;
+    border-radius: 12px;
+    padding: .7rem 1.2rem !important;
+    transition: all 0.3s ease;
+}
+
+.nav-link:hover {
+    background: rgba(255, 255, 255, .2);
+    transform: translateY(-2px);
+}
+
+/* ==================== 12. TABLE ==================== */
+.table {
+    border-collapse: separate;
+    border-spacing: 0 .75rem;
+}
+
+.table th {
+    background: var(--gradient-k);
+    color: white;
+    border: none;
+    padding: 1rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.table td {
+    background: var(--surface-color);
+    border: none;
+    padding: 1rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, .05);
+    color: var(--text-color);
+    transition: all 0.25s ease;
+}
+
+.table tbody tr:hover td {
+    background: var(--surface-alt);
+    box-shadow: 0 4px 12px rgba(96, 165, 250, .15);
+}
+
+/* ==================== 13. PAGINATION ==================== */
+.page-link {
+    border: 2px solid var(--border-color);
+    color: var(--k-hot);
+    font-weight: 600;
+    border-radius: 12px !important;
+    padding: .5rem 1rem;
+    transition: all 0.25s ease;
+}
+
+.page-link:hover {
+    background: var(--k-hot);
+    color: white;
+    border-color: var(--k-hot);
+}
+
+.page-item.active .page-link {
+    background: var(--gradient-k);
+    border-color: transparent;
+    color: white;
+}
+
+/* ==================== 14. DROPDOWN ==================== */
+.dropdown-menu {
+    border: none;
+    border-radius: 20px;
+    box-shadow: var(--card-shadow);
+    padding: .5rem;
+    backdrop-filter: var(--blur-bg);
+    background: var(--surface-color);
+}
+
+.dropdown-item {
+    border-radius: 12px;
+    padding: .75rem 1rem;
+    color: var(--text-color);
+    font-weight: 500;
+    margin-bottom: .25rem;
+    transition: all 0.25s ease;
+}
+
+.dropdown-item:hover {
+    background: var(--gradient-k);
+    color: white;
+}
+
+/* ==================== 15. MODAL ==================== */
+.modal-content {
+    border: none;
+    border-radius: 20px;
+    box-shadow: var(--card-shadow);
+    background: var(--surface-color);
+    color: var(--text-color);
+}
+
+.modal-header {
+    background: var(--gradient-k);
+    color: white;
+    border: none;
+    padding: 1rem 1.25rem;
+    border-radius: 20px 20px 0 0;
+}
+
+.modal-header .btn-close {
+    filter: brightness(0) invert(1);
+}
+
+.modal-footer {
+    border: none;
+    background: var(--surface-alt);
+}
+
+/* ==================== 16. TOAST ==================== */
+.toast {
+    border: none;
+    border-radius: 20px;
+    box-shadow: var(--card-shadow);
+    background: var(--surface-color);
+}
+
+.toast-header {
+    background: var(--gradient-k);
+    color: white;
+    border: none;
+    border-radius: 20px 20px 0 0;
+}
+
+.toast-body {
+    color: var(--text-color);
+    font-weight: 500;
+}
+
+/* ==================== 17. ACCORDION ==================== */
+.accordion-button {
+    background: var(--surface-color);
+    color: var(--text-color);
+    font-weight: 600;
+    border-radius: 20px;
+    padding: 1rem;
+    border: 2px solid var(--border-color);
+    transition: all 0.25s ease;
+}
+
+.accordion-button:not(.collapsed) {
+    background: var(--gradient-k);
+    color: white;
+    border-color: transparent;
+}
+
+.accordion-button:focus {
+    border-color: var(--k-hot);
+    box-shadow: 0 0 0 3px rgba(255, 107, 107, .2);
+}
+
+.accordion-body {
+    padding: 1.5rem;
+    border: 2px solid var(--border-color);
+    border-top: none;
+    border-radius: 0 0 20px 20px;
+    background: var(--surface-color);
+}
+
+/* ==================== 18. LIST GROUP ==================== */
+.list-group-item {
+    border: 2px solid var(--border-color);
+    border-radius: 16px;
+    padding: .5rem 1rem;
+    margin-bottom: .5rem;
+    background: var(--surface-color);
+    color: var(--text-color);
+    transition: all 0.25s ease;
+}
+
+.list-group-item:hover {
+    border-color: var(--k-hot);
+    background: var(--surface-alt);
+}
+
+.list-group-item.active {
+    background: var(--gradient-k);
+    border-color: transparent;
+    color: white;
+}
+
+/* ==================== 19. BREADCRUMB ==================== */
+.breadcrumb {
+    background: transparent;
+    padding: 0;
+    gap: .5rem;
+}
+
+.breadcrumb-item {
+    color: var(--text-light);
+    font-weight: 500;
+}
+
+.breadcrumb-item.active {
+    color: var(--k-hot);
+    font-weight: 600;
+}
+
+.breadcrumb-item+.breadcrumb-item::before {
+    content: '→';
+    color: var(--border-color);
+    padding: 0 .5rem;
+}
+
+/* ==================== 20. OFFCANVAS ==================== */
+.offcanvas {
+    border-radius: 16px 0 0 16px;
+    box-shadow: -4px 0 20px rgba(96, 165, 250, .2);
+    background: var(--surface-color);
+}
+
+.offcanvas-header {
+    background: var(--gradient-k);
+    color: white;
+    border: none;
+}
+
+.offcanvas-header .btn-close {
+    filter: brightness(0) invert(1);
+}
+
+/* ==================== 21. TOOLTIP & POPOVER ==================== */
+.tooltip-inner {
+    background: var(--gradient-k);
+    border-radius: 12px;
+    padding: .75rem 1rem;
+    font-weight: 500;
+}
+
+.bs-tooltip-top .tooltip-arrow::before {
+    border-top-color: var(--k-hot);
+}
+
+.popover {
+    border: none;
+    border-radius: 20px;
+    box-shadow: 0 10px 30px rgba(96, 165, 250, .25);
+    background: var(--surface-color);
+}
+
+.popover-header {
+    background: var(--gradient-k);
+    color: white;
+    border: none;
+    border-radius: 20px 20px 0 0;
+}
+
+/* ==================== 22. BTN CLOSE ==================== */
+.btn-close {
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 8px;
+    background: transparent;
+    border: 2px solid var(--border-color);
+    padding: .25rem;
+    opacity: 1;
+    position: relative;
+    transition: all 0.25s ease;
+}
+
+.btn-close:hover {
+    background: var(--surface-alt);
+    border-color: var(--k-hot);
+}
+
+.btn-close:focus {
+    border-color: var(--k-hot);
+    box-shadow: 0 0 0 3px rgba(255, 107, 107, .1);
+}
+
+.btn-close::after {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-color);
+    content: '×';
+}
+
+/* ==================== 23. INPUT GROUP ==================== */
+.input-group-text {
+    background: var(--surface-color);
+    border: 2px solid var(--border-color);
+    border-radius: 16px;
+    color: var(--text-color);
+    font-weight: 600;
+    transition: all 0.25s ease;
+    padding: .75rem 1rem;
+    cursor: pointer;
+}
+
+.input-group-text:hover {
+    color: var(--k-hot);
+}
+
+.input-group:focus-within .input-group-text {
+    border-color: var(--k-hot);
+    color: var(--k-hot);
+}
+
+/* ==================== 24. NAV PILLS & TABS ==================== */
+.nav-pills .nav-link {
+    border-radius: 16px;
+    color: var(--text-color) !important;
+    font-weight: 600;
+    padding: .75rem 1.5rem;
+    background: transparent;
+    transition: all 0.25s ease;
+}
+
+.nav-pills .nav-link:hover {
+    background: var(--surface-alt);
+}
+
+.nav-pills .nav-link.active {
+    background: var(--gradient-k);
+    color: white !important;
+}
+
+/* ==================== 25. SOCIAL ICONS ==================== */
+.social-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.4rem;
+    color: white;
+    transition: all .4s cubic-bezier(.4, 0, .2, 1);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, .2);
+    border: 2px solid rgba(255, 255, 255, .2);
+}
+
+.social-icon:hover {
+    transform: translateY(-10px) scale(1.15);
+    box-shadow: 0 20px 40px rgba(255, 107, 107, .5);
+}
+
+.social-icon.instagram {
+    background: linear-gradient(45deg, #f09433, #dc2743, #cc2366);
+}
+
+.social-icon.tiktok {
+    background: linear-gradient(45deg, #000, #ff0050, #00f2ea);
+}
+
+.social-icon.youtube {
+    background: #ff0000;
+}
+
+.social-icon.github {
+    background: #333;
+}
+
+/* ==================== 26. ARTICLE CONTENT ==================== */
+.article-content {
+    font-size: 18px;
+    line-height: 1.8;
+    color: var(--text-color);
+}
+
+.article-content h1,
+.article-content h2,
+.article-content h3,
+.article-content h4,
+.article-content h5,
+.article-content h6 {
+    color: var(--text-color);
+    font-weight: 600;
+    margin: 1.5rem 0 1rem 0;
+}
+
+.article-content p {
+    margin-bottom: 1rem;
+}
+
+.article-content a {
+    color: var(--k-hot);
+    font-weight: 600;
+}
+
+.article-content a:hover {
+    color: #ff8787;
+    text-decoration: underline;
+}
+
+.article-content code {
+    background: var(--surface-alt);
+    color: var(--text-color);
+    padding: .2rem .5rem;
+    border-radius: 4px;
+    font-family: 'Courier New', monospace;
+}
+
+.article-content pre {
+    background: var(--surface-alt);
+    color: var(--text-color);
+    padding: 1rem;
+    border-radius: 8px;
+    overflow-x: auto;
+    border: 1px solid var(--border-color);
+}
+
+.article-content blockquote {
+    border-left: 4px solid var(--k-hot);
+    padding-left: 1rem;
+    color: var(--text-light);
+    font-style: italic;
+    margin: 1.5rem 0;
+}
+
+.article-content img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 8px;
+    margin: 1.5rem 0;
+}
+
+.article-content hr {
+    border: none;
+    border-top: 1px solid var(--border-color);
+    margin: 2rem 0;
+}
+
+/* ==================== 27. SCROLLBAR ==================== */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--surface-alt);
+    border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--k-hot);
+    border-radius: 10px;
+    box-shadow: var(--glow-pink);
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #ff8787;
+}
+
+* {
+    scrollbar-color: var(--k-hot) var(--surface-alt);
+    scrollbar-width: thin;
+}
+
+/* ==================== 28. UTILITIES ==================== */
+.text-k {
+    background: var(--gradient-neon);
+    -webkit-text-fill-color: transparent;
+    font-weight: 800;
+    text-shadow: var(--glow-pink);
+}
+
+.glow {
+    box-shadow: var(--glow-pink);
+}
+
+.pulse {
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+
+    0%,
+    100% {
+        opacity: 1
+    }
+
+    50% {
+        opacity: .7
+    }
+}
+
+/* ==================== 29. RESPONSIVE ==================== */
+@media (max-width:768px) {
+    h1 {
+        font-size: 2.4rem
+    }
+
+    h2 {
+        font-size: 2rem
+    }
+
+    .card,
+    .glass-card {
+        padding: 1.4rem
+    }
+
+    .btn,
+    .btn-k {
+        padding: .7rem 1.4rem;
+        font-size: .9rem
+    }
+
+    .social-icon {
+        width: 42px;
+        height: 42px;
+        font-size: 1.2rem
+    }
+}

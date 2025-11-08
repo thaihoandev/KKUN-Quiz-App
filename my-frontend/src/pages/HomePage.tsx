@@ -198,7 +198,6 @@ const HomePage: React.FC = () => {
           }
         `}</style>
       </div>
-      <Footer/>    
     </>
   );
 };

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Outlet } from "react-router-dom";
 import { useAuthStore } from "@/store/authStore";
 import HeaderMain from "@/components/headers/HeaderMain";
+import Footer from "@/components/Footer";
 
 const SingleLayout: React.FC = () => {
   const [profile, setProfile] = useState<any>(null);
@@ -54,6 +55,8 @@ const SingleLayout: React.FC = () => {
       >
         <Outlet />
       </main>
+          <Footer />
+
     </>
   );
 };

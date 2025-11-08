@@ -67,7 +67,7 @@ const SidebarMain: React.FC<{ profile?: Profile }> = ({ profile }) => {
     >
       {/* Logo Section */}
       <div
-        className="app-brand demo d-flex align-items-center justify-content-between px-4 py-4 border-bottom"
+        className="app-brand demo d-flex align-items-center justify-content-between px-4 py-4"
         style={{
           borderColor: "var(--border-color)",
           transition: "border-color 0.25s ease",

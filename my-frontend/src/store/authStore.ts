@@ -76,7 +76,6 @@ export const useAuthStore = create<AuthState>()(
 
         const hasRefresh = Boolean(Cookies.get("refreshToken"));
         if (!hasRefresh) {
-          console.info("[authStore] Skip /me — no refresh token found");
           // ❌ KHÔNG xóa user, chỉ bỏ qua
           return;
         }
@@ -100,7 +99,6 @@ export const useAuthStore = create<AuthState>()(
             } else if (resp.status === 304) {
               set({ lastFetchedAt: Date.now() });
             } else if (resp.status === 401) {
-              console.warn("[authStore] /me unauthorized — token expired");
               // ⚠️ Chưa logout vội, chỉ thông báo
             }
           } finally {
@@ -118,7 +116,6 @@ export const useAuthStore = create<AuthState>()(
         const { lastFetchedAt, staleTime, user } = get();
         const hasRefresh = Boolean(Cookies.get("refreshToken"));
         if (!hasRefresh) {
-          console.info("[authStore] Skip refreshMeIfStale — no refresh token");
           return;
         }
 
@@ -135,7 +132,6 @@ export const useAuthStore = create<AuthState>()(
 
         const hasRefresh = Boolean(Cookies.get("refreshToken"));
         if (!hasRefresh) {
-          console.info("[authStore] No refresh token — skip /me");
           return null;
         }
 
@@ -148,8 +144,11 @@ export const useAuthStore = create<AuthState>()(
         try {
           const response = await loginApi(username, password);
           const userData = mapMeDtoToUser(response.userData);
+          
           set({ user: userData, lastFetchedAt: Date.now(), etag: null });
         } catch (error) {
+          console.log(error);
+
           handleApiError(error, "Login failed");
           throw error;
         }
