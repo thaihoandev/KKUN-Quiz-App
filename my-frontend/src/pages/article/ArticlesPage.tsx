@@ -6,6 +6,7 @@ import {
   MenuOutlined,
   FireOutlined,
   FolderOutlined,
+  BgColorsOutlined,
 } from "@ant-design/icons";
 import {
   Button,
@@ -89,40 +90,91 @@ export default function ArticlesPage() {
     setSidebarVisible(false);
   };
 
-  const toggleSidebar = () => setSidebarVisible(!sidebarVisible);
-
   return (
-    <div className="min-vh-100" style={{ backgroundColor: "#f8f9fa" }}>
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "var(--background-color)",
+        color: "var(--text-color)",
+        transition: "background-color 0.4s ease, color 0.4s ease",
+      }}
+    >
       {/* ==== Hero Banner ==== */}
       <div
-        className="position-relative overflow-hidden"
         style={{
-          background:
-            "linear-gradient(rgba(0,0,0,0.4), rgba(0,0,0,0.6)), url('https://images.unsplash.com/photo-1499750310107-5fef28a666f8?q=80&w=2070') center/cover no-repeat",
-          minHeight: "30vh",
+          position: "relative",
+          overflow: "hidden",
+          minHeight: "35vh",
           display: "flex",
           alignItems: "center",
-          color: "white",
+          justifyContent: "center",
+          background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+          padding: "3rem 1rem",
         }}
       >
-        <div className="container py-5 text-center">
-          <Title level={1} style={{ color: "white", fontSize: 48, fontWeight: 700 }}>
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            background: "rgba(0, 0, 0, 0.4)",
+            zIndex: 0,
+          }}
+        />
+        <div
+          style={{
+            position: "relative",
+            zIndex: 1,
+            textAlign: "center",
+            maxWidth: "900px",
+            width: "100%",
+          }}
+        >
+          <Title
+            level={1}
+            style={{
+              color: "white",
+              fontSize: "3rem",
+              fontWeight: 700,
+              marginBottom: "1rem",
+              textShadow: "0 2px 8px rgba(0, 0, 0, 0.2)",
+            }}
+          >
             Khám Phá Kiến Thức
           </Title>
-          <Text style={{ color: "#f0f0f0", fontSize: 20 }}>
+          <Text
+            style={{
+              color: "rgba(255, 255, 255, 0.9)",
+              fontSize: "1.25rem",
+              display: "block",
+              marginBottom: "2rem",
+            }}
+          >
             Đọc, chia sẻ và học hỏi từ hàng nghìn bài viết chất lượng từ cộng đồng
           </Text>
-          <div className="d-flex flex-column flex-md-row justify-content-center align-items-center gap-3 mt-4">
+
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "1rem",
+              flexDirection: window.innerWidth < 768 ? "column" : "row",
+            }}
+          >
             <Input
               prefix={<SearchOutlined />}
               placeholder="Tìm kiếm bài viết, chủ đề, tác giả..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               size="large"
-              className="rounded-pill"
               style={{
                 maxWidth: "500px",
-                background: "rgba(255,255,255,0.9)",
+                width: "100%",
+                background: "rgba(255, 255, 255, 0.95)",
+                borderRadius: "50px",
+                border: "none",
+                boxShadow: "0 4px 15px rgba(0, 0, 0, 0.1)",
               }}
             />
             <Link to="/articles/create">
@@ -130,12 +182,24 @@ export default function ArticlesPage() {
                 type="primary"
                 icon={<PlusOutlined />}
                 size="large"
-                className="rounded-pill"
                 style={{
-                  fontWeight: 600,
-                  background: "#ff4d4f",
+                  borderRadius: "50px",
+                  background: "linear-gradient(135deg, #ff6b6b, #ff5252)",
                   border: "none",
-                  boxShadow: "0 4px 12px rgba(255,77,79,0.3)",
+                  fontWeight: 600,
+                  padding: "0.75rem 2rem",
+                  boxShadow: "0 4px 12px rgba(255, 107, 107, 0.3)",
+                  transition: "all 0.3s ease",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.transform = "translateY(-2px)";
+                  e.currentTarget.style.boxShadow =
+                    "0 6px 18px rgba(255, 107, 107, 0.4)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = "translateY(0)";
+                  e.currentTarget.style.boxShadow =
+                    "0 4px 12px rgba(255, 107, 107, 0.3)";
                 }}
               >
                 Viết bài mới
@@ -146,17 +210,48 @@ export default function ArticlesPage() {
       </div>
 
       {/* ==== Main Content ==== */}
-      <div className="container-fluid py-5 px-5">
-        <div className="row">
+      <div
+        style={{
+          padding: "2rem 1rem",
+          maxWidth: "1400px",
+          margin: "0 auto",
+        }}
+      >
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "300px 1fr",
+            gap: "2rem",
+            alignItems: "start",
+          }}
+        >
           {/* ==== Sidebar ==== */}
-          <div className="col-lg-3 col-xl-3 d-none d-lg-block">
-            <div
-              className="card rounded-3 shadow-sm p-4 mb-4"
-              style={{ position: "sticky", top: "20px" }}
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "1.5rem",
+              position: "sticky",
+              top: "20px",
+            }}
+            className="d-none d-lg-flex"
+          >
+            {/* Categories Card */}
+            <Card
+              title={
+                <Space>
+                  <MenuOutlined style={{ fontSize: "1.1rem" }} />
+                  <span style={{ fontWeight: 600 }}>Danh mục</span>
+                </Space>
+              }
+              style={{
+                borderRadius: "var(--border-radius)",
+                boxShadow: "var(--card-shadow)",
+                background: "var(--surface-color)",
+                border: "none",
+                overflow: "hidden",
+              }}
             >
-              <Title level={5} className="mb-3 d-flex align-items-center">
-                <MenuOutlined className="me-2" /> Danh mục
-              </Title>
 
               {loading ? (
                 <Spin tip="Đang tải danh mục..." />
@@ -166,38 +261,74 @@ export default function ArticlesPage() {
                   renderItem={(cat) => (
                     <List.Item
                       onClick={() => handleCategorySelect(cat.id)}
-                      className="border-0 px-3 py-2 rounded-2 cursor-pointer"
                       style={{
+                        padding: "0.75rem 1rem",
+                        borderRadius: "10px",
+                        cursor: "pointer",
+                        transition: "all 0.25s ease",
+                        border: "2px solid var(--border-color)",
+                        marginBottom: "0.5rem",
                         background:
-                          selectedCategory === cat.id ? "#e6f7ff" : "transparent",
-                        transition: "all 0.3s",
+                          selectedCategory === cat.id
+                            ? "var(--gradient-primary)"
+                            : "transparent",
+                        color:
+                          selectedCategory === cat.id
+                            ? "white"
+                            : "var(--text-color)",
+                        borderColor:
+                          selectedCategory === cat.id
+                            ? "transparent"
+                            : "var(--border-color)",
+                      }}
+                      onMouseEnter={(e) => {
+                        if (selectedCategory !== cat.id) {
+                          e.currentTarget.style.background = "var(--surface-alt)";
+                          e.currentTarget.style.borderColor = "var(--primary-color)";
+                        }
+                        e.currentTarget.style.transform = "translateX(4px)";
+                      }}
+                      onMouseLeave={(e) => {
+                        if (selectedCategory !== cat.id) {
+                          e.currentTarget.style.background = "transparent";
+                          e.currentTarget.style.borderColor = "var(--border-color)";
+                        }
+                        e.currentTarget.style.transform = "translateX(0)";
                       }}
                     >
+                      <FolderOutlined style={{ marginRight: "0.5rem" }} />
                       <Text
                         strong={selectedCategory === cat.id}
                         style={{
-                          color:
-                            selectedCategory === cat.id ? "#1890ff" : "#262626",
+                          color: "inherit",
+                          fontWeight:
+                            selectedCategory === cat.id ? 600 : 500,
                         }}
                       >
                         {cat.name}
                       </Text>
                     </List.Item>
                   )}
+                  split={false}
                 />
               )}
-            </div>
+            </Card>
 
-            {/* ==== Hot Articles ==== */}
+            {/* Hot Articles Card */}
             <Card
-              className="shadow-sm"
               title={
                 <Space>
                   <FireOutlined style={{ color: "#ff4d4f" }} />
                   <span>Bài viết hot</span>
                 </Space>
               }
-              style={{ borderRadius: "12px" }}
+              style={{
+                borderRadius: "var(--border-radius)",
+                boxShadow: "var(--card-shadow)",
+                background: "var(--surface-color)",
+                border: "none",
+                overflow: "hidden",
+              }}
               loading={sidebarLoading}
             >
               {sidebarLoading ? (
@@ -211,70 +342,87 @@ export default function ArticlesPage() {
                   renderItem={(item, index) => (
                     <List.Item
                       style={{
-                        padding: "8px 0",
-                        transition: "all 0.2s",
+                        padding: "0.75rem 0",
+                        transition: "all 0.2s ease",
                         cursor: "pointer",
                         display: "flex",
                         alignItems: "center",
+                        borderBottom: "1px solid var(--border-color)",
                       }}
-                      onMouseEnter={(e) =>
-                        (e.currentTarget.style.transform = "translateX(5px)")
-                      }
-                      onMouseLeave={(e) =>
-                        (e.currentTarget.style.transform = "translateX(0)")
-                      }
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.transform = "translateX(4px)";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.transform = "translateX(0)";
+                      }}
                     >
                       <Link
                         to={`/articles/${item.slug}`}
-                        className="text-decoration-none w-100"
                         style={{
+                          textDecoration: "none",
                           display: "flex",
                           alignItems: "center",
                           gap: "12px",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                          overflow: "hidden",
+                          width: "100%",
+                          minWidth: 0,
                         }}
                       >
-                        {/* Cột số thứ tự */}
+                        {/* Index */}
                         <div
                           style={{
                             flexShrink: 0,
                             width: "28px",
-                            textAlign: "right",
+                            height: "28px",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
                             fontWeight: 700,
-                            color: "#ff4d4f",
+                            background: "var(--gradient-primary)",
+                            color: "white",
+                            borderRadius: "50%",
+                            fontSize: "0.85rem",
                           }}
                         >
-                          {index + 1}.
+                          {index + 1}
                         </div>
 
-                        {/* Cột tiêu đề */}
+                        {/* Title */}
                         <div
                           style={{
                             flex: 1,
                             overflow: "hidden",
                             textOverflow: "ellipsis",
                             whiteSpace: "nowrap",
-                            color: "#1a1a1a",
+                            color: "var(--text-color)",
                             fontWeight: 500,
+                            fontSize: "0.9rem",
                           }}
                         >
                           {item.title}
                         </div>
+
+                        {/* Views */}
+                        <Tag
+                          color="blue"
+                          style={{
+                            flexShrink: 0,
+                            fontSize: "0.75rem",
+                          }}
+                        >
+                          {item.views}
+                        </Tag>
                       </Link>
                     </List.Item>
                   )}
                   size="small"
                   locale={{ emptyText: "Không có bài viết hot" }}
                 />
-
               )}
             </Card>
           </div>
 
           {/* ==== Article List ==== */}
-          <div className="col-lg-9 col-xl-9">
+          <div style={{ width: "100%" }}>
             <ArticleList
               categoryId={selectedCategory}
               searchQuery={searchQuery}
@@ -286,12 +434,13 @@ export default function ArticlesPage() {
       {/* ==== Mobile Drawer ==== */}
       <Drawer
         title={
-          <Title level={5} className="m-0">
-            <MenuOutlined className="me-2" /> Danh mục
-          </Title>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <MenuOutlined />
+            <span>Danh mục</span>
+          </div>
         }
         placement="left"
-        onClose={toggleSidebar}
+        onClose={() => setSidebarVisible(false)}
         open={sidebarVisible}
         width={280}
       >
@@ -303,17 +452,27 @@ export default function ArticlesPage() {
             renderItem={(cat) => (
               <List.Item
                 onClick={() => handleCategorySelect(cat.id)}
-                className="border-0 px-3 py-2 rounded-2"
                 style={{
+                  padding: "0.75rem 1rem",
+                  borderRadius: "10px",
                   background:
-                    selectedCategory === cat.id ? "#e6f7ff" : "transparent",
+                    selectedCategory === cat.id
+                      ? "var(--gradient-primary)"
+                      : "transparent",
+                  color:
+                    selectedCategory === cat.id
+                      ? "white"
+                      : "var(--text-color)",
+                  cursor: "pointer",
+                  transition: "all 0.25s ease",
+                  marginBottom: "0.5rem",
                 }}
               >
                 <Text
                   strong={selectedCategory === cat.id}
                   style={{
-                    color:
-                      selectedCategory === cat.id ? "#1890ff" : "#262626",
+                    color: "inherit",
+                    fontWeight: selectedCategory === cat.id ? 600 : 500,
                   }}
                 >
                   {cat.name}
@@ -323,6 +482,53 @@ export default function ArticlesPage() {
           />
         )}
       </Drawer>
+
+      {/* Mobile Menu Button */}
+      <Button
+        icon={<MenuOutlined />}
+        onClick={() => setSidebarVisible(true)}
+        style={{
+          position: "fixed",
+          bottom: "2rem",
+          right: "1rem",
+          zIndex: 999,
+          display: "none",
+          width: "56px",
+          height: "56px",
+          borderRadius: "50%",
+          background: "var(--gradient-primary)",
+          border: "none",
+          color: "white",
+          boxShadow: "0 4px 12px rgba(0, 0, 0, 0.15)",
+          fontSize: "1.5rem",
+          transition: "all 0.3s ease",
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.transform = "scale(1.1)";
+          e.currentTarget.style.boxShadow = "0 6px 16px rgba(0, 0, 0, 0.2)";
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.transform = "scale(1)";
+          e.currentTarget.style.boxShadow = "0 4px 12px rgba(0, 0, 0, 0.15)";
+        }}
+        className="d-lg-none"
+      />
+
+      {/* Remove darkMode state declaration if not needed elsewhere */}
+
+      <style>{`
+        @media (max-width: 1024px) {
+          [class*="d-lg-flex"] {
+            display: none !important;
+          }
+          
+          [class*="d-lg-none"] {
+            display: flex !important;
+            align-items: center;
+            justify-content: center;
+          }
+        }
+      `}</style>
     </div>
   );
 }

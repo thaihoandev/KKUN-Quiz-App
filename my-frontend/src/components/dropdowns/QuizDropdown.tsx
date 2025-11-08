@@ -7,7 +7,7 @@ const QuizDropdown: React.FC<{quizId: string}> = ({quizId}) => {
     return (
         <div className="dropdown">
             <button
-                className="btn btn-icon btn-text-secondary rounded-pill border-0"
+                className="btn btn-primary btn-icon show"
                 data-bs-toggle="dropdown"
                 aria-expanded="false"
             >

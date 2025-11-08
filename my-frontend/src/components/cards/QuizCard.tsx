@@ -166,7 +166,7 @@ const QuizCard: React.FC<QuizCardProps> = ({
                         </p>
                     </div>
 
-                    <div className="card-body border-top">
+                    <div className="card-body">
                         <div className="d-flex align-items-center">
                             <div className="d-flex align-items-center">
                                 <ul className="list-unstyled d-flex align-items-center avatar-group mb-0 z-2">

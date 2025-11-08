@@ -5,40 +5,6 @@ import { QuizStatus } from "@/interfaces";
 import { createQuiz, createQuizFromFile } from "@/services/quizService";
 import { UserProfile } from "@/types/users";
 
-/* ======================================================
-   📘 CreateQuizButton — Portal-based modal trigger
-====================================================== */
-
-interface CreateQuizButtonProps {
-  profile: UserProfile | null;
-  disabled?: boolean;
-}
-
-const CreateQuizButton: React.FC<CreateQuizButtonProps> = ({ profile, disabled = false }) => {
-  const [open, setOpen] = useState(false);
-
-  return (
-    <>
-      <button
-        onClick={() => setOpen(true)}
-        className="btn btn-primary shadow-quiz d-flex align-items-center gap-2 animate-slide-in"
-        disabled={disabled}
-      >
-        <i className="bx bx-edit-alt fs-5"></i>
-        <span className="fw-semibold">Create New Quiz</span>
-      </button>
-
-      {open && <QuizCreateModal open={open} onClose={() => setOpen(false)} profile={profile} />}
-    </>
-  );
-};
-
-export default CreateQuizButton;
-
-/* ======================================================
-   🧩 QuizCreateModal — Modern UI with default close btn
-====================================================== */
-
 interface QuizCreateModalProps {
   open: boolean;
   onClose: () => void;
@@ -118,9 +84,16 @@ const QuizCreateModal: React.FC<QuizCreateModalProps> = ({ open, onClose, profil
 
   const modalContent = (
     <div
-      className="position-fixed top-0 start-0 w-100 h-100 d-flex justify-content-center align-items-center"
       style={{
-        background: "rgba(0,0,0,0.6)",
+        position: "fixed",
+        top: 0,
+        left: 0,
+        width: "100%",
+        height: "100%",
+        display: "flex",
+        justifyContent: "center",
+        alignItems: "center",
+        background: "rgba(0, 0, 0, 0.6)",
         backdropFilter: "blur(8px)",
         zIndex: 2000,
         animation: "fadeIn 0.3s ease",
@@ -128,7 +101,6 @@ const QuizCreateModal: React.FC<QuizCreateModalProps> = ({ open, onClose, profil
       onClick={onClose}
     >
       <div
-        className="modal-dialog modal-dialog-centered modal-lg"
         style={{
           maxWidth: "600px",
           width: "100%",
@@ -137,125 +109,389 @@ const QuizCreateModal: React.FC<QuizCreateModalProps> = ({ open, onClose, profil
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="modal-content border-0 shadow-quiz rounded-4 overflow-hidden bg-surface position-relative ">
+        <div
+          style={{
+            background: "var(--surface-color)",
+            border: "none",
+            borderRadius: "var(--border-radius)",
+            overflow: "hidden",
+            boxShadow: "var(--card-shadow)",
+            position: "relative",
+            color: "var(--text-color)",
+          }}
+        >
           {/* Header */}
           <div
-            className="modal-header border-0"
             style={{
-              background: "linear-gradient(120deg, #6366f1, #3b82f6)",
+              background: "var(--gradient-primary)",
+              borderBottom: "none",
+              padding: "1.5rem",
+              display: "flex",
+              alignItems: "center",
+              gap: "0.75rem",
+              justifyContent: "space-between",
             }}
           >
-            <h5 className="modal-title fw-bold d-flex align-items-center gap-2 mb-0">
-              <i className="bx bx-plus-circle fs-5"></i> Create New Quiz
-            </h5>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+              <span style={{ fontSize: "1.25rem" }}>➕</span>
+              <h5
+                style={{
+                  margin: 0,
+                  fontWeight: 700,
+                  fontSize: "1.25rem",
+                  color: "white",
+                }}
+              >
+                Create New Quiz
+              </h5>
+            </div>
+            
+            {/* Close Button */}
+            <button
+              type="button"
+              className="btn-close"
+              onClick={onClose}
+              disabled={loading}
+              aria-label="Close"
+            ></button>
           </div>
 
           {/* Body */}
           <form onSubmit={handleSubmit} encType="multipart/form-data">
-            <div className="modal-body p-4">
-              <div className="mb-4">
-                <label htmlFor="quizFile" className="form-label fw-semibold">
+            <div style={{ padding: "1.5rem" }}>
+              {/* File Upload */}
+              <div style={{ marginBottom: "1.5rem" }}>
+                <label
+                  htmlFor="quizFile"
+                  style={{
+                    display: "block",
+                    fontWeight: 600,
+                    marginBottom: "0.5rem",
+                    color: "var(--text-color)",
+                    fontSize: "14px",
+                  }}
+                >
                   Upload PDF (optional)
                 </label>
                 <input
                   type="file"
                   accept="application/pdf"
                   id="quizFile"
-                  className="form-control"
+                  style={{
+                    display: "block",
+                    width: "100%",
+                    padding: "0.75rem",
+                    border: "2px solid var(--border-color)",
+                    borderRadius: "10px",
+                    background: "var(--surface-color)",
+                    color: "var(--text-color)",
+                    fontSize: "14px",
+                    cursor: "pointer",
+                    transition: "border-color 0.25s ease",
+                    outline: "none",
+                  }}
                   onChange={handleFileChange}
                   disabled={loading}
+                  onFocus={(e) => {
+                    e.currentTarget.style.borderColor = "var(--primary-color)";
+                    e.currentTarget.style.boxShadow = "0 0 0 3px rgba(99, 102, 241, 0.1)";
+                  }}
+                  onBlur={(e) => {
+                    e.currentTarget.style.borderColor = "var(--border-color)";
+                    e.currentTarget.style.boxShadow = "none";
+                  }}
                 />
-                <small className="text-muted">
+                <small style={{ color: "var(--text-muted)", display: "block", marginTop: "0.5rem" }}>
                   Optional — upload a PDF to auto-generate questions.
                 </small>
               </div>
 
-              <div className="mb-4">
-                <label htmlFor="quizTitle" className="form-label fw-semibold">
-                  Quiz Title <span className="text-danger">*</span>
+              {/* Title Input */}
+              <div style={{ marginBottom: "1.5rem" }}>
+                <label
+                  htmlFor="quizTitle"
+                  style={{
+                    display: "block",
+                    fontWeight: 600,
+                    marginBottom: "0.5rem",
+                    color: "var(--text-color)",
+                    fontSize: "14px",
+                  }}
+                >
+                  Quiz Title <span style={{ color: "var(--danger-color)" }}>*</span>
                 </label>
-                <div className="input-group">
-                  <span className="input-group-text bg-surface">
-                    <i className="bx bx-pencil text-muted"></i>
+                <div style={{ display: "flex", gap: "0.5rem" }}>
+                  <span
+                    style={{
+                      padding: "0.75rem 1rem",
+                      background: "var(--surface-alt)",
+                      borderRadius: "10px 0 0 10px",
+                      border: "2px solid var(--border-color)",
+                      borderRight: "none",
+                      color: "var(--text-muted)",
+                      display: "flex",
+                      alignItems: "center",
+                    }}
+                  >
+                    ✏️
                   </span>
                   <input
                     id="quizTitle"
                     ref={titleRef}
                     type="text"
-                    className="form-control"
+                    style={{
+                      flex: 1,
+                      padding: "0.75rem 1rem",
+                      border: "2px solid var(--border-color)",
+                      borderRadius: "0 10px 10px 0",
+                      background: "var(--surface-color)",
+                      color: "var(--text-color)",
+                      fontSize: "14px",
+                      transition: "all 0.25s ease",
+                      outline: "none",
+                    }}
                     placeholder="Enter quiz title"
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
                     disabled={loading}
                     maxLength={100}
+                    onFocus={(e) => {
+                      e.currentTarget.style.borderColor = "var(--primary-color)";
+                      e.currentTarget.style.boxShadow = "0 0 0 3px rgba(99, 102, 241, 0.1)";
+                      e.currentTarget.parentElement!.querySelector("span")!.style.borderColor =
+                        "var(--primary-color)";
+                    }}
+                    onBlur={(e) => {
+                      e.currentTarget.style.borderColor = "var(--border-color)";
+                      e.currentTarget.style.boxShadow = "none";
+                      e.currentTarget.parentElement!.querySelector("span")!.style.borderColor =
+                        "var(--border-color)";
+                    }}
                   />
                 </div>
-                <small className="text-muted">{title.length}/100 characters</small>
+                <small style={{ color: "var(--text-muted)", display: "block", marginTop: "0.5rem" }}>
+                  {title.length}/100 characters
+                </small>
               </div>
 
-              <div className="mb-4">
-                <label htmlFor="quizDescription" className="form-label fw-semibold">
-                  Description <span className="text-muted fw-normal">(optional)</span>
+              {/* Description Textarea */}
+              <div style={{ marginBottom: "1.5rem" }}>
+                <label
+                  htmlFor="quizDescription"
+                  style={{
+                    display: "block",
+                    fontWeight: 600,
+                    marginBottom: "0.5rem",
+                    color: "var(--text-color)",
+                    fontSize: "14px",
+                  }}
+                >
+                  Description <span style={{ color: "var(--text-muted)", fontWeight: 400 }}>(optional)</span>
                 </label>
                 <textarea
                   id="quizDescription"
-                  className="form-control"
+                  style={{
+                    width: "100%",
+                    padding: "0.75rem 1rem",
+                    border: "2px solid var(--border-color)",
+                    borderRadius: "10px",
+                    background: "var(--surface-color)",
+                    color: "var(--text-color)",
+                    fontSize: "14px",
+                    fontFamily: "inherit",
+                    resize: "vertical",
+                    minHeight: "120px",
+                    transition: "all 0.25s ease",
+                    outline: "none",
+                  }}
                   rows={4}
                   placeholder="Describe your quiz briefly..."
                   maxLength={500}
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   disabled={loading}
+                  onFocus={(e) => {
+                    e.currentTarget.style.borderColor = "var(--primary-color)";
+                    e.currentTarget.style.boxShadow = "0 0 0 3px rgba(99, 102, 241, 0.1)";
+                  }}
+                  onBlur={(e) => {
+                    e.currentTarget.style.borderColor = "var(--border-color)";
+                    e.currentTarget.style.boxShadow = "none";
+                  }}
                 />
-                <small className="text-muted">{description.length}/500 characters</small>
+                <small style={{ color: "var(--text-muted)", display: "block", marginTop: "0.5rem" }}>
+                  {description.length}/500 characters
+                </small>
               </div>
 
-              {error && <div className="alert alert-danger shadow-sm">{error}</div>}
+              {/* Error Alert */}
+              {error && (
+                <div
+                  style={{
+                    padding: "1rem",
+                    background: "var(--danger-color)",
+                    color: "white",
+                    borderRadius: "10px",
+                    marginBottom: "1rem",
+                    fontSize: "14px",
+                    fontWeight: 500,
+                  }}
+                >
+                  {error}
+                </div>
+              )}
             </div>
 
             {/* Footer */}
-            <div className="modal-footer bg-surface border-top mx-2">
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: "1rem",
+                padding: "1rem 1.5rem",
+                background: "var(--surface-alt)",
+                borderTop: "1px solid var(--border-color)",
+              }}
+            >
               <button
                 type="button"
-                className="btn btn-outline-secondary fw-medium px-4"
+                style={{
+                  padding: "0.75rem 1.5rem",
+                  border: "2px solid var(--border-color)",
+                  borderRadius: "10px",
+                  background: "transparent",
+                  color: "var(--text-color)",
+                  fontWeight: 600,
+                  cursor: loading ? "not-allowed" : "pointer",
+                  opacity: loading ? 0.5 : 1,
+                  transition: "all 0.25s ease",
+                }}
                 onClick={onClose}
                 disabled={loading}
+                onMouseEnter={(e) => {
+                  if (!loading) {
+                    e.currentTarget.style.background = "var(--surface-color)";
+                    e.currentTarget.style.borderColor = "var(--text-color)";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "transparent";
+                  e.currentTarget.style.borderColor = "var(--border-color)";
+                }}
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                className="btn btn-primary fw-medium px-4"
+                style={{
+                  padding: "0.75rem 1.5rem",
+                  border: "none",
+                  borderRadius: "10px",
+                  background: "var(--gradient-primary)",
+                  color: "white",
+                  fontWeight: 600,
+                  cursor: loading || !title.trim() ? "not-allowed" : "pointer",
+                  opacity: loading || !title.trim() ? 0.5 : 1,
+                  transition: "all 0.25s ease",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.5rem",
+                }}
                 disabled={loading || !title.trim()}
+                onMouseEnter={(e) => {
+                  if (!loading && title.trim()) {
+                    e.currentTarget.style.boxShadow = "var(--hover-shadow)";
+                    e.currentTarget.style.transform = "translateY(-2px)";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.boxShadow = "none";
+                  e.currentTarget.style.transform = "translateY(0)";
+                }}
               >
-                {loading ? (
-                  <>
-                    <span className="spinner-border spinner-border-sm me-2" />
-                    Creating...
-                  </>
-                ) : (
-                  <>
-                    <i className="bx bx-check me-1" /> Create Quiz
-                  </>
-                )}
+                <span>✓</span>
+                <span>{loading ? "Creating..." : "Create Quiz"}</span>
               </button>
             </div>
           </form>
 
-          {/* Loading overlay */}
+          {/* Loading Overlay */}
           {loading && (
             <div
-              className="position-absolute top-0 start-0 w-100 h-100 d-flex flex-column justify-content-center align-items-center bg-light bg-opacity-75"
-              style={{ zIndex: 2200, borderRadius: "inherit" }}
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                width: "100%",
+                height: "100%",
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "center",
+                alignItems: "center",
+                background: "rgba(0, 0, 0, 0.7)",
+                zIndex: 2200,
+                borderRadius: "inherit",
+              }}
             >
-              <div className="spinner-border text-primary mb-3" style={{ width: "3rem", height: "3rem" }} />
-              <p className="fw-semibold text-primary">Creating Quiz...</p>
+              <div
+                style={{
+                  width: "48px",
+                  height: "48px",
+                  border: "4px solid rgba(255, 255, 255, 0.2)",
+                  borderTop: "4px solid var(--primary-color)",
+                  borderRadius: "50%",
+                  animation: "spin 1s linear infinite",
+                  marginBottom: "1rem",
+                }}
+              />
+              <p
+                style={{
+                  fontWeight: 600,
+                  color: "white",
+                  margin: 0,
+                }}
+              >
+                Creating Quiz...
+              </p>
             </div>
           )}
         </div>
       </div>
+
+      <style>{`
+        @keyframes fadeIn {
+          from {
+            opacity: 0;
+          }
+          to {
+            opacity: 1;
+          }
+        }
+
+        @keyframes slideUp {
+          from {
+            opacity: 0;
+            transform: translateY(30px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
+        @keyframes spin {
+          from {
+            transform: rotate(0deg);
+          }
+          to {
+            transform: rotate(360deg);
+          }
+        }
+      `}</style>
     </div>
   );
 
   return ReactDOM.createPortal(modalContent, modalRoot);
 };
+
+export { QuizCreateModal };

@@ -21,7 +21,6 @@ const EditProfileModal = ({ profile, onClose, onUpdate }: EditProfileModalProps)
   const schoolInputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // ✅ Sync lại form khi profile thay đổi
   useEffect(() => {
     setFormData({
       email: profile?.email || "",
@@ -90,11 +89,6 @@ const EditProfileModal = ({ profile, onClose, onUpdate }: EditProfileModalProps)
       const updatedProfile = await updateMyProfile({
         name: formData.name.trim(),
         school: formData.school.trim(),
-        // KHÔNG gửi email/role nếu BE không cho phép đổi
-        // email: formData.email,
-        // role: profile.roles?.[0],
-        // username: profile.username,
-        // avatar: profile.avatar,
       });
       onUpdate(updatedProfile);
       onClose();
@@ -105,153 +99,434 @@ const EditProfileModal = ({ profile, onClose, onUpdate }: EditProfileModalProps)
     }
   };
 
-  const isSaveDisabled = loading 
+  const isSaveDisabled = loading || !formData.name.trim();
 
   return (
     <div
-      className="modal fade show d-block"
-      tabIndex={-1}
-      style={{ backgroundColor: "rgba(0,0,0,0.5)" }}
-      aria-labelledby="editProfileModalLabel"
-      aria-hidden={false}
+      style={{
+        position: "fixed",
+        top: 0,
+        left: 0,
+        width: "100%",
+        height: "100%",
+        display: "flex",
+        justifyContent: "center",
+        alignItems: "center",
+        background: "rgba(0, 0, 0, 0.6)",
+        backdropFilter: "blur(8px)",
+        zIndex: 2000,
+        animation: "fadeIn 0.3s ease",
+      }}
+      onClick={onClose}
     >
-      <div className="modal-dialog modal-dialog-centered modal-md">
-        <div className="modal-content border-0 shadow-lg rounded-3">
-          <div className="modal-header border-0 pb-0">
-            <h5 className="modal-title fw-bold" id="editProfileModalLabel">
+      <div
+        style={{
+          maxWidth: "500px",
+          width: "100%",
+          transform: "translateY(10px)",
+          animation: "slideUp 0.35s ease forwards",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div
+          style={{
+            background: "var(--surface-color)",
+            border: "none",
+            borderRadius: "var(--border-radius)",
+            overflow: "hidden",
+            boxShadow: "var(--card-shadow)",
+            position: "relative",
+            color: "var(--text-color)",
+          }}
+        >
+          {/* Header */}
+          <div
+            style={{
+              background: "var(--gradient-primary)",
+              borderBottom: "none",
+              padding: "1.5rem",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+            }}
+          >
+            <h5
+              style={{
+                margin: 0,
+                fontWeight: 700,
+                fontSize: "1.25rem",
+                color: "white",
+              }}
+            >
               Edit Profile
             </h5>
+            
+            {/* Close Button - Bootstrap style */}
             <button
               type="button"
-              className="btn btn-close"
+              className="btn-close"
               onClick={onClose}
               disabled={loading}
               aria-label="Close"
             ></button>
           </div>
 
+          {/* Body */}
           <form onSubmit={handleSubmit}>
-            <div className="modal-body pt-3">
+            <div style={{ padding: "1.5rem" }}>
+              {/* Error Alert */}
               {error && (
-                <div className="alert alert-danger alert-dismissible fade show" role="alert">
-                  {error}
+                <div
+                  style={{
+                    padding: "1rem",
+                    background: "var(--danger-color)",
+                    color: "white",
+                    borderRadius: "10px",
+                    marginBottom: "1rem",
+                    fontSize: "14px",
+                    fontWeight: 500,
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                  }}
+                >
+                  <span>{error}</span>
                   <button
                     type="button"
-                    className="btn btn-close"
                     onClick={() => setError(null)}
-                    aria-label="Dismiss error"
-                  ></button>
+                    style={{
+                      background: "none",
+                      border: "none",
+                      color: "white",
+                      fontSize: "18px",
+                      cursor: "pointer",
+                      padding: 0,
+                    }}
+                  >
+                    ✕
+                  </button>
                 </div>
               )}
 
-              <div className="mb-4">
-                <label htmlFor="email" className="form-label fw-medium text-dark">
-                  Email <span className="text-danger">*</span>
+              {/* Email Field */}
+              <div style={{ marginBottom: "1.5rem" }}>
+                <label
+                  htmlFor="email"
+                  style={{
+                    display: "block",
+                    fontWeight: 600,
+                    marginBottom: "0.5rem",
+                    color: "var(--text-color)",
+                    fontSize: "14px",
+                  }}
+                >
+                  Email <span style={{ color: "var(--danger-color)" }}>*</span>
                 </label>
                 <input
                   type="email"
-                  className="form-control form-control-lg rounded-3 shadow-sm"
                   id="email"
                   name="email"
                   value={formData.email}
-                  onChange={handleChange}
                   readOnly
-                  // ❌ không cần disabled; để user thấy rõ vẫn có value
+                  style={{
+                    display: "block",
+                    width: "100%",
+                    padding: "0.75rem 1rem",
+                    border: "2px solid var(--border-color)",
+                    borderRadius: "10px",
+                    background: "var(--surface-alt)",
+                    color: "var(--text-muted)",
+                    fontSize: "14px",
+                    cursor: "not-allowed",
+                  }}
                   placeholder="Your email"
                 />
-                <div id="emailHelp" className="form-text text-muted">
+                <small style={{ color: "var(--text-muted)", display: "block", marginTop: "0.5rem" }}>
                   Email cannot be changed.
-                </div>
+                </small>
               </div>
 
-              <div className="mb-4">
-                <label htmlFor="name" className="form-label fw-medium text-dark">
-                  Full Name <span className="text-danger">*</span>
+              {/* Name Field */}
+              <div style={{ marginBottom: "1.5rem" }}>
+                <label
+                  htmlFor="name"
+                  style={{
+                    display: "block",
+                    fontWeight: 600,
+                    marginBottom: "0.5rem",
+                    color: "var(--text-color)",
+                    fontSize: "14px",
+                  }}
+                >
+                  Full Name <span style={{ color: "var(--danger-color)" }}>*</span>
                 </label>
                 <input
                   type="text"
-                  className="form-control form-control-lg rounded-3 shadow-sm"
                   id="name"
                   name="name"
                   value={formData.name}
                   onChange={handleChange}
                   disabled={loading}
+                  style={{
+                    display: "block",
+                    width: "100%",
+                    padding: "0.75rem 1rem",
+                    border: "2px solid var(--border-color)",
+                    borderRadius: "10px",
+                    background: "var(--surface-color)",
+                    color: "var(--text-color)",
+                    fontSize: "14px",
+                    transition: "all 0.25s ease",
+                    outline: "none",
+                    opacity: loading ? 0.6 : 1,
+                    cursor: loading ? "not-allowed" : "text",
+                  }}
                   placeholder="Enter your full name"
+                  onFocus={(e) => {
+                    e.currentTarget.style.borderColor = "var(--primary-color)";
+                    e.currentTarget.style.boxShadow = "0 0 0 3px rgba(99, 102, 241, 0.1)";
+                  }}
+                  onBlur={(e) => {
+                    e.currentTarget.style.borderColor = "var(--border-color)";
+                    e.currentTarget.style.boxShadow = "none";
+                  }}
                 />
               </div>
 
-              <div className="mb-4 position-relative">
-                <label htmlFor="school" className="form-label fw-medium text-dark">
+              {/* School Field */}
+              <div style={{ marginBottom: "1.5rem", position: "relative" }}>
+                <label
+                  htmlFor="school"
+                  style={{
+                    display: "block",
+                    fontWeight: 600,
+                    marginBottom: "0.5rem",
+                    color: "var(--text-color)",
+                    fontSize: "14px",
+                  }}
+                >
                   School
                 </label>
                 <input
                   type="text"
-                  className="form-control form-control-lg rounded-3 shadow-sm"
                   id="school"
                   name="school"
                   value={schoolSearch}
                   onChange={handleChange}
-                  onFocus={() => setShowDropdown(true)}
-                  onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
                   disabled={loading}
+                  ref={schoolInputRef}
+                  style={{
+                    display: "block",
+                    width: "100%",
+                    padding: "0.75rem 1rem",
+                    border: "2px solid var(--border-color)",
+                    borderRadius: "10px",
+                    background: "var(--surface-color)",
+                    color: "var(--text-color)",
+                    fontSize: "14px",
+                    transition: "all 0.25s ease",
+                    outline: "none",
+                    opacity: loading ? 0.6 : 1,
+                    cursor: loading ? "not-allowed" : "text",
+                  }}
                   placeholder="Search or type school name..."
                   autoComplete="off"
-                  ref={schoolInputRef}
-                  aria-controls="schoolDropdown"
+                  onFocus={(e) => {
+                    e.currentTarget.style.borderColor = "var(--primary-color)";
+                    e.currentTarget.style.boxShadow = "0 0 0 3px rgba(99, 102, 241, 0.1)";
+                  }}
+                  onBlur={(e) => {
+                    e.currentTarget.style.borderColor = "var(--border-color)";
+                    e.currentTarget.style.boxShadow = "none";
+                  }}
                 />
+
+                {/* School Dropdown */}
                 {showDropdown && (
                   <div
-                    className="dropdown-menu show w-100 border-0 shadow-sm rounded-3 mt-1"
                     ref={dropdownRef}
-                    style={{ maxHeight: "200px", overflowY: "auto" }}
-                    id="schoolDropdown"
+                    style={{
+                      position: "absolute",
+                      top: "calc(100% + 0.5rem)",
+                      left: 0,
+                      right: 0,
+                      background: "var(--surface-color)",
+                      border: "2px solid var(--border-color)",
+                      borderRadius: "10px",
+                      maxHeight: "200px",
+                      overflowY: "auto",
+                      boxShadow: "var(--card-shadow)",
+                      zIndex: 10,
+                    }}
                   >
                     {filteredSchools.length > 0 ? (
                       filteredSchools.map((school) => (
                         <button
                           key={school}
                           type="button"
-                          className="dropdown-item"
                           onClick={() => handleSchoolSelect(school)}
+                          style={{
+                            display: "block",
+                            width: "100%",
+                            padding: "0.75rem 1rem",
+                            border: "none",
+                            background: "transparent",
+                            color: "var(--text-color)",
+                            textAlign: "left",
+                            cursor: "pointer",
+                            transition: "all 0.25s ease",
+                            fontSize: "14px",
+                            borderBottom: "1px solid var(--border-color)",
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.background = "var(--surface-alt)";
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background = "transparent";
+                          }}
                         >
                           {school}
                         </button>
                       ))
                     ) : (
-                      <div className="dropdown-item text-muted">No schools found</div>
+                      <div
+                        style={{
+                          padding: "0.75rem 1rem",
+                          color: "var(--text-muted)",
+                          fontSize: "14px",
+                        }}
+                      >
+                        No schools found
+                      </div>
                     )}
                   </div>
                 )}
               </div>
             </div>
 
-            <div className="modal-footer border-0 pt-0">
+            {/* Footer */}
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: "1rem",
+                padding: "1rem 1.5rem",
+                background: "var(--surface-alt)",
+                borderTop: "1px solid var(--border-color)",
+              }}
+            >
               <button
                 type="button"
-                className="btn btn-outline-secondary btn-sm px-4"
                 onClick={onClose}
                 disabled={loading}
+                style={{
+                  padding: "0.75rem 1.5rem",
+                  border: "2px solid var(--border-color)",
+                  borderRadius: "10px",
+                  background: "transparent",
+                  color: "var(--text-color)",
+                  fontWeight: 600,
+                  cursor: loading ? "not-allowed" : "pointer",
+                  opacity: loading ? 0.5 : 1,
+                  transition: "all 0.25s ease",
+                }}
+                onMouseEnter={(e) => {
+                  if (!loading) {
+                    e.currentTarget.style.background = "var(--surface-color)";
+                    e.currentTarget.style.borderColor = "var(--text-color)";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "transparent";
+                  e.currentTarget.style.borderColor = "var(--border-color)";
+                }}
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                className="btn btn-primary btn-sm px-4"
                 disabled={isSaveDisabled}
+                style={{
+                  padding: "0.75rem 1.5rem",
+                  border: "none",
+                  borderRadius: "10px",
+                  background: "var(--gradient-primary)",
+                  color: "white",
+                  fontWeight: 600,
+                  cursor: isSaveDisabled ? "not-allowed" : "pointer",
+                  opacity: isSaveDisabled ? 0.5 : 1,
+                  transition: "all 0.25s ease",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.5rem",
+                }}
+                onMouseEnter={(e) => {
+                  if (!isSaveDisabled) {
+                    e.currentTarget.style.boxShadow = "var(--hover-shadow)";
+                    e.currentTarget.style.transform = "translateY(-2px)";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.boxShadow = "none";
+                  e.currentTarget.style.transform = "translateY(0)";
+                }}
               >
                 {loading ? (
                   <>
-                    <span className="spinner-border spinner-border-sm me-2" role="status" />
-                    Saving...
+                    <div
+                      style={{
+                        width: "16px",
+                        height: "16px",
+                        border: "2px solid rgba(255, 255, 255, 0.3)",
+                        borderTop: "2px solid white",
+                        borderRadius: "50%",
+                        animation: "spin 1s linear infinite",
+                      }}
+                    />
+                    <span>Saving...</span>
                   </>
                 ) : (
-                  "Save Changes"
+                  <>
+                    <span>✓</span>
+                    <span>Save Changes</span>
+                  </>
                 )}
               </button>
             </div>
           </form>
         </div>
       </div>
+
+      <style>{`
+        @keyframes fadeIn {
+          from {
+            opacity: 0;
+          }
+          to {
+            opacity: 1;
+          }
+        }
+
+        @keyframes slideUp {
+          from {
+            opacity: 0;
+            transform: translateY(30px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
+        @keyframes spin {
+          from {
+            transform: rotate(0deg);
+          }
+          to {
+            transform: rotate(360deg);
+          }
+        }
+      `}</style>
     </div>
   );
 };

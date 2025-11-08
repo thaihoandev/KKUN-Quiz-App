@@ -142,7 +142,6 @@ const ArticleCardHandleSmall: React.FC<ArticleCardHandleSmallProps> = ({
             <h4
               style={{
                 flex: 1,
-                color: "var(--text-invert) !important",
                 display: "-webkit-box",
                 WebkitBoxOrient: "vertical",
                 WebkitLineClamp: 2,

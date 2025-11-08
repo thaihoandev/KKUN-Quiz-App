@@ -1,0 +1,86 @@
+/* ===== Bridge theme → @uiw/react-md-editor ===== */
+
+.w-md-editor,
+.w-md-editor .w-md-editor-content,
+.w-md-editor .w-md-editor-toolbar,
+.w-md-editor .w-md-editor-preview {
+    background: var(--surface-color) !important;
+    color: var(--text-color) !important;
+    border-color: var(--border-color) !important;
+}
+
+.w-md-editor {
+    border: 2px solid var(--border-color) !important;
+    border-radius: var(--border-radius) !important;
+    box-shadow: var(--card-shadow) !important;
+}
+
+/* Toolbar */
+.w-md-editor .w-md-editor-toolbar {
+    border-bottom: 2px solid var(--border-color) !important;
+}
+
+.w-md-editor .w-md-editor-toolbar li>button {
+    color: var(--text-color) !important;
+    border-radius: 8px !important;
+}
+
+.w-md-editor .w-md-editor-toolbar li>button:hover {
+    background: var(--surface-alt) !important;
+}
+
+/* Text input */
+.w-md-editor .w-md-editor-text-input {
+    background: var(--surface-color) !important;
+    color: var(--text-color) !important;
+}
+
+/* Preview & markdown body */
+.w-md-editor .w-md-editor-preview,
+.w-md-editor .w-md-editor-preview .markdown-body {
+    background: var(--surface-color) !important;
+    color: var(--text-color) !important;
+}
+
+/* Code block */
+.w-md-editor .w-md-editor-preview pre,
+.w-md-editor .w-md-editor-preview code {
+    background: var(--surface-alt) !important;
+    color: var(--text-color) !important;
+    border: 1px solid var(--border-color) !important;
+    border-radius: 8px !important;
+}
+
+/* Links */
+.w-md-editor .w-md-editor-preview a {
+    color: var(--primary-color) !important;
+}
+
+.w-md-editor .w-md-editor-preview a:hover {
+    color: var(--primary-dark) !important;
+    text-decoration: underline !important;
+}
+
+/* Nhờ bạn đã map dark-mode qua biến màu, chỉ cần kế thừa */
+.dark-mode .w-md-editor,
+.dark-mode .w-md-editor .w-md-editor-content,
+.dark-mode .w-md-editor .w-md-editor-toolbar,
+.dark-mode .w-md-editor .w-md-editor-preview {
+    background: var(--surface-color) !important;
+    color: var(--text-color) !important;
+    border-color: var(--border-color) !important;
+}
+
+/* Tinh chỉnh đẹp hơn (tuỳ chọn) */
+.w-md-editor .w-md-editor-preview {
+    padding: 1rem !important;
+    border-top: 2px solid var(--border-color) !important;
+}
+
+.w-md-editor .w-md-editor-preview h1,
+.w-md-editor .w-md-editor-preview h2,
+.w-md-editor .w-md-editor-preview h3 {
+    margin-top: 1.5rem !important;
+    margin-bottom: 0.75rem !important;
+    color: var(--text-color) !important;
+}

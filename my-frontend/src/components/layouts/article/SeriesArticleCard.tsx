@@ -98,7 +98,7 @@ export default function SeriesArticleCard({ article }: Props) {
                   
                   {/* Nút “Đọc →” */}
             <button
-                className="btn btn-sm btn-light border rounded-3 py-1 px-2"
+                className="btn btn-sm btn-secondary rounded-3 py-1 px-2"
                 onClick={() => navigate(`/articles/${article.slug}`)}
             >
                 Đọc →

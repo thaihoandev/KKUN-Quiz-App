@@ -1,11 +1,5 @@
 import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
-import { Modal, Button, Tag, Space, Typography, Checkbox, Input, Empty, Alert } from "antd";
 import type { Question } from "@/interfaces";
-import QuestionCard from "../cards/QuestionCard";
-import ErrorBoundary from "../error/ErrorBoundary";
-
-const { Text } = Typography;
-const { Search } = Input;
 
 type Props = {
   show: boolean;
@@ -15,11 +9,10 @@ type Props = {
   onAccept: (selected: Question[]) => void;
 };
 
-// ✅ FIX 1: Đảm bảo getQKey luôn trả về string hợp lệ
 const getQKey = (q: Question, idx: number): string => {
   if (!q) return `fallback-${idx}-${Date.now()}`;
   const key = (q as any).clientKey || (q as any).questionId || `idx-${idx}`;
-  return String(key); // Đảm bảo luôn là string
+  return String(key);
 };
 
 const AiSuggestionModal: React.FC<Props> = ({
@@ -29,7 +22,6 @@ const AiSuggestionModal: React.FC<Props> = ({
   onClose,
   onAccept,
 }) => {
-  // ✅ FIX 2: Validate questions array trước khi dùng
   const validQuestions = useMemo(() => {
     if (!Array.isArray(questions)) return [];
     return questions.filter(q => q && typeof q === 'object');
@@ -37,28 +29,21 @@ const AiSuggestionModal: React.FC<Props> = ({
 
   const total = validQuestions.length;
 
-  // Selection
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const lastClickedKeyRef = useRef<string | null>(null);
-
-  // UI state
   const [query, setQuery] = useState("");
   const [onlySelectedView, setOnlySelectedView] = useState(false);
 
-  // ✅ FIX: Reset state khi modal đóng HOÀN TOÀN
   useEffect(() => {
     if (!show) {
-      // ✅ Khi modal đóng, reset mọi state
       const timer = setTimeout(() => {
         setSelected(new Set());
         setQuery("");
         setOnlySelectedView(false);
         lastClickedKeyRef.current = null;
-      }, 300); // Delay để tránh flash UI
-      
+      }, 300);
       return () => clearTimeout(timer);
     } else {
-      // ✅ Khi modal mở, reset ngay
       setSelected(new Set());
       setQuery("");
       setOnlySelectedView(false);
@@ -66,7 +51,6 @@ const AiSuggestionModal: React.FC<Props> = ({
     }
   }, [show]);
 
-  // ✅ Cleanup khi component unmount
   useEffect(() => {
     return () => {
       setSelected(new Set());
@@ -92,7 +76,6 @@ const AiSuggestionModal: React.FC<Props> = ({
         return;
       }
       
-      // ✅ FIX 4: Safe access với optional chaining
       const questionText = item?.questionText || "";
       const optionsText = (item?.options || [])
         .map((o: any) => o?.optionText || "")
@@ -108,7 +91,6 @@ const AiSuggestionModal: React.FC<Props> = ({
   const visibleIndexes = useMemo(() => {
     if (total === 0) return [];
     if (!onlySelectedView) return filteredIndexes;
-
     return filteredIndexes.filter((i) => {
       const key = getQKey(validQuestions[i], i);
       return selected.has(key);
@@ -212,171 +194,519 @@ const AiSuggestionModal: React.FC<Props> = ({
     visibleSelectedCount === allVisibleKeys.length;
   const partiallyChecked = visibleSelectedCount > 0 && !allVisibleChecked;
 
+  if (!show) return null;
+
   return (
-    <Modal
-      key={show ? 'ai-modal-open' : 'ai-modal-closed'} // ✅ Force re-mount
-      open={show}
-      destroyOnClose
-      title={
-        <div className="d-flex justify-content-between align-items-center gap-2">
-          <span>Gợi ý câu hỏi (AI)</span>
-          <Space size={8} wrap>
-            <Tag color="blue">Tổng: {total}</Tag>
-            <Tag color={filteredIndexes.length ? "geekblue" : "default"}>
-              Khớp bộ lọc: {filteredIndexes.length}
-            </Tag>
-            <Tag color={selectedCount > 0 ? "green" : "default"}>
-              Đã chọn: {selectedCount}
-            </Tag>
-          </Space>
-        </div>
-      }
-      width={980}
-      onCancel={loading ? undefined : onClose}
-      maskClosable={!loading}
-      keyboard={!loading}
-      footer={
-        <Space wrap>
-          <Button 
-            onClick={selectAllVisible} 
-            disabled={loading || allVisibleKeys.length === 0}
-          >
-            Chọn tất cả (đang hiển thị)
-          </Button>
-          <Button 
-            onClick={invertVisible} 
-            disabled={loading || allVisibleKeys.length === 0}
-          >
-            Đảo chọn (đang hiển thị)
-          </Button>
-          <Button 
-            onClick={clearAll} 
-            disabled={loading || selectedCount === 0}
-          >
-            Bỏ chọn tất cả
-          </Button>
-          <Button
-            type="primary"
-            onClick={acceptSelected}
-            disabled={loading || selectedCount === 0}
-          >
-            Thêm các câu đã chọn ({selectedCount})
-          </Button>
-        </Space>
-      }
+    <div
+      style={{
+        position: "fixed",
+        top: 0,
+        left: 0,
+        width: "100%",
+        height: "100%",
+        display: "flex",
+        justifyContent: "center",
+        alignItems: "center",
+        background: "var(--overlay-color)",
+        backdropFilter: "var(--blur-bg)",
+        zIndex: 2000,
+        animation: "fadeIn 0.3s ease",
+      }}
+      onClick={loading ? undefined : onClose}
     >
-      {/* Toolbar */}
       <div
-        className="d-flex align-items-center gap-2"
         style={{
-          position: "sticky",
-          top: 0,
-          zIndex: 2,
-          background: "#fff",
-          padding: "8px 0 12px",
+          maxWidth: "980px",
+          width: "90%",
+          maxHeight: "90vh",
+          transform: "translateY(10px)",
+          animation: "slideUp 0.35s ease forwards",
+          display: "flex",
+          flexDirection: "column",
         }}
+        onClick={(e) => e.stopPropagation()}
       >
-        <Checkbox
-          indeterminate={partiallyChecked}
-          checked={allVisibleChecked}
-          onChange={(e) => 
-            e.target.checked ? selectAllVisible() : invertVisible()
-          }
-          disabled={loading || allVisibleKeys.length === 0}
+        <div
+          style={{
+            background: "var(--surface-color)",
+            border: "none",
+            borderRadius: "var(--border-radius)",
+            overflow: "hidden",
+            boxShadow: "var(--card-shadow)",
+            position: "relative",
+            color: "var(--text-color)",
+            display: "flex",
+            flexDirection: "column",
+            maxHeight: "90vh",
+          }}
         >
-          Chọn tất cả (đang hiển thị)
-        </Checkbox>
+          {/* Header */}
+          <div
+            style={{
+              background: "var(--gradient-primary)",
+              borderBottom: "none",
+              padding: "1.5rem",
+              display: "flex",
+              alignItems: "flex-start",
+              justifyContent: "space-between",
+              flexShrink: 0,
+            }}
+          >
+            <div style={{ flex: 1 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.75rem" }}>
+                <span style={{ fontSize: "1.5rem" }}>🤖</span>
+                <h5
+                  style={{
+                    margin: 0,
+                    fontWeight: 700,
+                    fontSize: "1.25rem",
+                    color: "white",
+                  }}
+                >
+                  Gợi ý câu hỏi (AI)
+                </h5>
+              </div>
+              <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                <span
+                  style={{
+                    padding: "0.35rem 0.75rem",
+                    borderRadius: "6px",
+                    fontSize: "0.85rem",
+                    fontWeight: 500,
+                    background: "rgba(255, 255, 255, 0.25)",
+                    color: "white",
+                  }}
+                >
+                  Tổng: {total}
+                </span>
+                <span
+                  style={{
+                    padding: "0.35rem 0.75rem",
+                    borderRadius: "6px",
+                    fontSize: "0.85rem",
+                    fontWeight: 500,
+                    background: filteredIndexes.length > 0 
+                      ? "rgba(255, 255, 255, 0.25)" 
+                      : "rgba(255, 255, 255, 0.1)",
+                    color: "white",
+                  }}
+                >
+                  Khớp bộ lọc: {filteredIndexes.length}
+                </span>
+                <span
+                  style={{
+                    padding: "0.35rem 0.75rem",
+                    borderRadius: "6px",
+                    fontSize: "0.85rem",
+                    fontWeight: 500,
+                    background: selectedCount > 0 
+                      ? "rgba(74, 222, 128, 0.3)" 
+                      : "rgba(255, 255, 255, 0.1)",
+                    color: "white",
+                  }}
+                >
+                  Đã chọn: {selectedCount}
+                </span>
+              </div>
+            </div>
 
-        <Search
-          placeholder="Lọc theo nội dung/đáp án..."
-          allowClear
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onSearch={(v) => setQuery(v)}
-          style={{ maxWidth: 320 }}
-          disabled={loading || total === 0}
-        />
+            {/* Close Button */}
+            <button
+              type="button"
+              className="btn-close"
+              onClick={onClose}
+              disabled={loading}
+              aria-label="Close"
+              style={{
+                filter: "brightness(0) invert(1)",
+                flexShrink: 0,
+                opacity: loading ? 0.5 : 1,
+                cursor: loading ? "not-allowed" : "pointer",
+              }}
+            />
+          </div>
 
-        <Checkbox
-          checked={onlySelectedView}
-          onChange={(e) => setOnlySelectedView(e.target.checked)}
-          disabled={loading || selectedCount === 0}
-        >
-          Chỉ hiển thị đã chọn
-        </Checkbox>
+          {/* Toolbar */}
+          <div
+            style={{
+              padding: "1rem 1.5rem",
+              background: "var(--surface-alt)",
+              borderBottom: "2px solid var(--border-color)",
+              display: "flex",
+              alignItems: "center",
+              gap: "1rem",
+              flexWrap: "wrap",
+              flexShrink: 0,
+            }}
+          >
+            <label
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "0.5rem",
+                cursor: loading || allVisibleKeys.length === 0 ? "not-allowed" : "pointer",
+                opacity: loading || allVisibleKeys.length === 0 ? 0.5 : 1,
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={allVisibleChecked}
+                ref={(input) => {
+                  if (input) {
+                    input.indeterminate = partiallyChecked;
+                  }
+                }}
+                onChange={(e) => 
+                  e.target.checked ? selectAllVisible() : invertVisible()
+                }
+                disabled={loading || allVisibleKeys.length === 0}
+                className="form-check-input"
+                style={{ margin: 0 }}
+              />
+              <span style={{ fontWeight: 500, fontSize: "14px" }}>
+                Chọn tất cả (đang hiển thị)
+              </span>
+            </label>
+
+            <input
+              type="text"
+              placeholder="Tìm kiếm câu hỏi..."
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              disabled={loading || total === 0}
+              className="form-control"
+              style={{
+                maxWidth: "300px",
+                height: "36px",
+                fontSize: "14px",
+              }}
+            />
+
+            <label
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "0.5rem",
+                cursor: loading || selectedCount === 0 ? "not-allowed" : "pointer",
+                opacity: loading || selectedCount === 0 ? 0.5 : 1,
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={onlySelectedView}
+                onChange={(e) => setOnlySelectedView(e.target.checked)}
+                disabled={loading || selectedCount === 0}
+                className="form-check-input"
+                style={{ margin: 0 }}
+              />
+              <span style={{ fontWeight: 500, fontSize: "14px" }}>
+                📌 Chỉ hiển thị đã chọn
+              </span>
+            </label>
+          </div>
+
+          {/* Body - Scrollable List */}
+          <div
+            style={{
+              padding: "1rem 1.5rem",
+              overflowY: "auto",
+              flex: 1,
+              minHeight: 0,
+            }}
+          >
+            {total === 0 ? (
+              <div
+                style={{
+                  padding: "3rem 1.5rem",
+                  textAlign: "center",
+                  background: "var(--surface-alt)",
+                  borderRadius: "var(--border-radius)",
+                  border: "2px dashed var(--border-color)",
+                }}
+              >
+                <div style={{ fontSize: "3rem", marginBottom: "1rem" }}>📭</div>
+                <p style={{ color: "var(--text-muted)", fontSize: "16px", margin: 0 }}>
+                  Không có gợi ý nào để hiển thị.
+                </p>
+              </div>
+            ) : visibleIndexes.length === 0 ? (
+              <div
+                style={{
+                  padding: "3rem 1.5rem",
+                  textAlign: "center",
+                  background: "var(--surface-alt)",
+                  borderRadius: "var(--border-radius)",
+                  border: "2px dashed var(--border-color)",
+                }}
+              >
+                <div style={{ fontSize: "3rem", marginBottom: "1rem" }}>🔍</div>
+                <p style={{ color: "var(--text-muted)", fontSize: "16px", margin: 0 }}>
+                  Không tìm thấy câu hỏi khớp bộ lọc
+                </p>
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                {visibleIndexes.map((i) => {
+                  const q = validQuestions[i];
+                  const k = getQKey(q, i);
+                  const checked = selected.has(k);
+                  
+                  return (
+                    <div
+                      key={k}
+                      style={{
+                        border: `2px solid ${checked ? "var(--success-color)" : "var(--border-color)"}`,
+                        borderRadius: "10px",
+                        overflow: "hidden",
+                        background: "var(--surface-color)",
+                        transition: "all 0.25s ease",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.borderColor = "var(--primary-color)";
+                        e.currentTarget.style.boxShadow = "0 4px 12px rgba(96, 165, 250, 0.15)";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.borderColor = checked ? "var(--success-color)" : "var(--border-color)";
+                        e.currentTarget.style.boxShadow = "none";
+                      }}
+                    >
+                      {/* Question Header */}
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          padding: "0.75rem 1rem",
+                          background: "var(--surface-alt)",
+                          borderBottom: "2px solid var(--border-color)",
+                        }}
+                      >
+                        <label
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "0.5rem",
+                            cursor: loading ? "not-allowed" : "pointer",
+                            margin: 0,
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            disabled={loading}
+                            onChange={(e) => {
+                              const mouseEvent = e.nativeEvent as MouseEvent;
+                              toggleWithRange(
+                                k, 
+                                i, 
+                                e.target.checked, 
+                                mouseEvent.shiftKey
+                              );
+                            }}
+                            className="form-check-input"
+                            style={{ margin: 0 }}
+                          />
+                          <span style={{ fontSize: "13px", color: "var(--text-muted)", fontWeight: 500 }}>
+                            Câu {i + 1}
+                          </span>
+                        </label>
+                        <span
+                          style={{
+                            padding: "0.25rem 0.75rem",
+                            borderRadius: "6px",
+                            fontSize: "12px",
+                            fontWeight: 500,
+                            background: checked ? "var(--success-color)" : "var(--border-color)",
+                            color: checked ? "white" : "var(--text-muted)",
+                          }}
+                        >
+                          {checked ? "✓ Đã chọn" : "○ Chưa chọn"}
+                        </span>
+                      </div>
+
+                      {/* Question Body */}
+                      <div style={{ padding: "0.75rem 1rem" }}>
+                        <div
+                          style={{
+                            fontSize: "14px",
+                            color: "var(--text-color)",
+                            lineHeight: 1.6,
+                            marginBottom: "0.5rem",
+                          }}
+                        >
+                          <strong>Câu hỏi:</strong> {q?.questionText || "Không có nội dung"}
+                        </div>
+                        {q?.options && q.options.length > 0 && (
+                          <div style={{ fontSize: "13px", color: "var(--text-light)" }}>
+                            <strong>Đáp án:</strong> {q.options.map((o, idx) => o?.optionText || "").join(" | ")}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Footer */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "flex-end",
+              gap: "0.75rem",
+              padding: "1rem 1.5rem",
+              background: "var(--surface-alt)",
+              borderTop: "1px solid var(--border-color)",
+              flexShrink: 0,
+              flexWrap: "wrap",
+            }}
+          >
+            <button
+              type="button"
+              onClick={selectAllVisible}
+              disabled={loading || allVisibleKeys.length === 0}
+              style={{
+                padding: "0.5rem 1rem",
+                border: "2px solid var(--border-color)",
+                borderRadius: "10px",
+                background: "transparent",
+                color: "var(--text-color)",
+                fontWeight: 500,
+                fontSize: "14px",
+                cursor: loading || allVisibleKeys.length === 0 ? "not-allowed" : "pointer",
+                opacity: loading || allVisibleKeys.length === 0 ? 0.5 : 1,
+                transition: "all 0.25s ease",
+              }}
+              onMouseEnter={(e) => {
+                if (!loading && allVisibleKeys.length > 0) {
+                  e.currentTarget.style.background = "var(--surface-color)";
+                  e.currentTarget.style.borderColor = "var(--primary-color)";
+                }
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "transparent";
+                e.currentTarget.style.borderColor = "var(--border-color)";
+              }}
+            >
+              ✓ Chọn tất cả
+            </button>
+
+            <button
+              type="button"
+              onClick={invertVisible}
+              disabled={loading || allVisibleKeys.length === 0}
+              style={{
+                padding: "0.5rem 1rem",
+                border: "2px solid var(--border-color)",
+                borderRadius: "10px",
+                background: "transparent",
+                color: "var(--text-color)",
+                fontWeight: 500,
+                fontSize: "14px",
+                cursor: loading || allVisibleKeys.length === 0 ? "not-allowed" : "pointer",
+                opacity: loading || allVisibleKeys.length === 0 ? 0.5 : 1,
+                transition: "all 0.25s ease",
+              }}
+              onMouseEnter={(e) => {
+                if (!loading && allVisibleKeys.length > 0) {
+                  e.currentTarget.style.background = "var(--surface-color)";
+                  e.currentTarget.style.borderColor = "var(--primary-color)";
+                }
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "transparent";
+                e.currentTarget.style.borderColor = "var(--border-color)";
+              }}
+            >
+              ⇄ Đảo chọn
+            </button>
+
+            <button
+              type="button"
+              onClick={clearAll}
+              disabled={loading || selectedCount === 0}
+              style={{
+                padding: "0.5rem 1rem",
+                border: "2px solid var(--border-color)",
+                borderRadius: "10px",
+                background: "transparent",
+                color: "var(--text-color)",
+                fontWeight: 500,
+                fontSize: "14px",
+                cursor: loading || selectedCount === 0 ? "not-allowed" : "pointer",
+                opacity: loading || selectedCount === 0 ? 0.5 : 1,
+                transition: "all 0.25s ease",
+              }}
+              onMouseEnter={(e) => {
+                if (!loading && selectedCount > 0) {
+                  e.currentTarget.style.background = "var(--surface-color)";
+                  e.currentTarget.style.borderColor = "var(--danger-color)";
+                }
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "transparent";
+                e.currentTarget.style.borderColor = "var(--border-color)";
+              }}
+            >
+              ✕ Bỏ chọn
+            </button>
+
+            <button
+              type="button"
+              onClick={acceptSelected}
+              disabled={loading || selectedCount === 0}
+              style={{
+                padding: "0.5rem 1.5rem",
+                border: "none",
+                borderRadius: "10px",
+                background: "var(--gradient-primary)",
+                color: "white",
+                fontWeight: 600,
+                fontSize: "14px",
+                cursor: loading || selectedCount === 0 ? "not-allowed" : "pointer",
+                opacity: loading || selectedCount === 0 ? 0.5 : 1,
+                transition: "all 0.25s ease",
+              }}
+              onMouseEnter={(e) => {
+                if (!loading && selectedCount > 0) {
+                  e.currentTarget.style.boxShadow = "var(--hover-shadow)";
+                  e.currentTarget.style.transform = "translateY(-2px)";
+                }
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.boxShadow = "none";
+                e.currentTarget.style.transform = "translateY(0)";
+              }}
+            >
+              ➕ Thêm ({selectedCount})
+            </button>
+          </div>
+        </div>
       </div>
 
-      {/* List */}
-      {total === 0 ? (
-        <div style={{ padding: 24 }}>
-          <Text type="secondary">Không có gợi ý nào để hiển thị.</Text>
-        </div>
-      ) : visibleIndexes.length === 0 ? (
-        <div style={{ padding: 24 }}>
-          <Empty description="Không có câu hỏi nào khớp bộ lọc" />
-        </div>
-      ) : (
-        <div style={{ maxHeight: 600, overflowY: "auto", paddingRight: 4 }}>
-          {visibleIndexes.map((i) => {
-            const q = validQuestions[i];
-            const k = getQKey(q, i);
-            const checked = selected.has(k);
-            
-            // ✅ FIX 5: Thêm error boundary cho mỗi card
-            return (
-              <div 
-                key={k} 
-                className="mb-3 border rounded" 
-                style={{ overflow: "hidden" }}
-              >
-                <div className="d-flex align-items-center justify-content-between px-3 py-2 bg-light border-bottom">
-                  <div className="d-flex align-items-center gap-2">
-                    <Checkbox
-                      checked={checked}
-                      disabled={!!loading}
-                      onChange={(e) => 
-                        toggleWithRange(
-                          k, 
-                          i, 
-                          e.target.checked, 
-                          e.nativeEvent.shiftKey
-                        )
-                      }
-                    />
-                    <span className="text-muted small">Chọn câu này</span>
-                  </div>
-                  <Tag color={checked ? "green" : "default"}>
-                    {checked ? "Đã chọn" : "Chưa chọn"}
-                  </Tag>
-                </div>
-                <div className="p-2">
-                  {/* ✅ Wrap QuestionCard với ErrorBoundary để bắt lỗi render */}
-                  <ErrorBoundary
-                    fallback={
-                      <Alert
-                        message="Lỗi render câu hỏi"
-                        description={`Không thể hiển thị câu hỏi #${i + 1}. Dữ liệu có thể bị lỗi.`}
-                        type="warning"
-                        showIcon
-                      />
-                    }
-                    onError={(err) => {
-                      console.error(`Error rendering question #${i}:`, err);
-                    }}
-                  >
-                    <QuestionCard 
-                      question={q} 
-                      index={i} 
-                      showAnswers 
-                    />
-                  </ErrorBoundary>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </Modal>
+      <style>{`
+        @keyframes fadeIn {
+          from {
+            opacity: 0;
+          }
+          to {
+            opacity: 1;
+          }
+        }
+
+        @keyframes slideUp {
+          from {
+            opacity: 0;
+            transform: translateY(30px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+      `}</style>
+    </div>
   );
 };
 

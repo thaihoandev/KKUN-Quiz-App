@@ -18,7 +18,7 @@ const ArticleList: React.FC<ArticleListProps> = ({ categoryId, searchQuery }) =>
   const [articlesPage, setArticlesPage] = useState<PageResponse<ArticleDto> | null>(null);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
-  const pageSize = 8; // ✅ pageSize cố định, CustomPagination không hỗ trợ thay đổi size
+  const pageSize = 8;
 
   useEffect(() => {
     const fetchArticles = async () => {
@@ -53,7 +53,16 @@ const ArticleList: React.FC<ArticleListProps> = ({ categoryId, searchQuery }) =>
 
   if (loading) {
     return (
-      <div className="d-flex justify-content-center align-items-center min-vh-100 bg-light">
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          minHeight: "100vh",
+          background: "var(--background-color)",
+          color: "var(--text-color)",
+        }}
+      >
         <Spin size="large" tip="Đang tải bài viết..." />
       </div>
     );
@@ -61,12 +70,24 @@ const ArticleList: React.FC<ArticleListProps> = ({ categoryId, searchQuery }) =>
 
   if (!articlesPage || articlesPage.content.length === 0) {
     return (
-      <div className="py-5 bg-light">
+      <div
+        style={{
+          padding: "2rem 1rem",
+          background: "var(--background-color)",
+          color: "var(--text-color)",
+          borderRadius: "var(--border-radius)",
+        }}
+      >
         <Empty
           description={
             <Space direction="vertical" align="center">
-              <FolderOutlined style={{ fontSize: "56px", color: "#8c8c8c" }} />
-              <Text type="secondary">Chưa có bài viết nào</Text>
+              <FolderOutlined
+                style={{
+                  fontSize: "56px",
+                  color: "var(--text-color)",
+                }}
+              />
+              <Text style={{ color: "var(--text-light)" }}>Chưa có bài viết nào</Text>
             </Space>
           }
         />
@@ -75,17 +96,29 @@ const ArticleList: React.FC<ArticleListProps> = ({ categoryId, searchQuery }) =>
   }
 
   return (
-    <div className="py-4 bg-light">
+    <div
+      style={{
+        padding: "2rem 0",
+        background: "var(--background-color)",
+        color: "var(--text-color)",
+      }}
+    >
       <Row gutter={[0, 20]}>
-        {articlesPage.content.map((article) => (
-          <Col span={24} key={article.id}>
+        {articlesPage.content.map((article, index) => (
+          <Col span={24} key={article.id} style={{ animation: `slideInUp 0.5s ease forwards`, animationDelay: `${index * 0.05}s` }}>
             <ArticleCardHorizontal article={article} />
           </Col>
         ))}
       </Row>
 
       {/* ✅ Custom pagination */}
-      <div className="d-flex justify-content-center mt-5">
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "center",
+          marginTop: "3rem",
+        }}
+      >
         <CustomPagination
           current={page}
           total={articlesPage.totalElements}
@@ -93,6 +126,19 @@ const ArticleList: React.FC<ArticleListProps> = ({ categoryId, searchQuery }) =>
           onChange={(p) => setPage(p)}
         />
       </div>
+
+      <style>{`
+        @keyframes slideInUp {
+          from {
+            opacity: 0;
+            transform: translateY(20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+      `}</style>
     </div>
   );
 };

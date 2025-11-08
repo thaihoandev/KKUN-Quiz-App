@@ -251,7 +251,7 @@ export default function SeriesPage() {
               </div>
               Series của tôi
             </h2>
-            <p className="text-muted mb-0">{seriesTotal} series</p>
+            <p className=" mb-0" style={{color:"var(--text-muted)"}}>{seriesTotal} series</p>
           </div>
           <Button
             type="primary"
@@ -283,7 +283,7 @@ export default function SeriesPage() {
                       onClick={(e) => e.stopPropagation()}
                     >
                       <Dropdown menu={getSeriesMenu(series)} trigger={["click"]}>
-                        <Button type="text" icon={<EllipsisOutlined />} />
+                        <Button className="btn-icon btn-sm" type="text" icon={<EllipsisOutlined />} />
                       </Dropdown>
                     </div>
 
@@ -305,7 +305,7 @@ export default function SeriesPage() {
 
                     <div className="card-body">
                       <h6 className="fw-bold mb-1">{series.title}</h6>
-                      <p className="text-muted small mb-0 line-clamp-2">
+                      <p className="small mb-0 line-clamp-2">
                         {series.description || "Không có mô tả"}
                       </p>
                     </div>
@@ -326,8 +326,10 @@ export default function SeriesPage() {
         )}
 
         {/* Bài viết chưa thuộc series */}
-        <Divider orientation="left">
-          <FileTextOutlined /> Bài viết chưa thuộc series nào
+        <Divider orientation="left" className="" >
+          <h5 style={{color:"var(--text-light)"}}>
+            <FileTextOutlined /> Bài viết chưa thuộc series nào
+          </h5>
         </Divider>
 
         {unassignedArticles.length === 0 ? (

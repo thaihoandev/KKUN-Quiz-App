@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { getQuizzesByUser } from "@/services/quizService";
 import QuizSubCard from "@/components/cards/QuizSubCard";
-import CreateQuizButtonWithModal from "@/components/buttons/CreateQuizButtonWithModal";
+import CreateQuizButtonWithModal from "@/components/buttons/CreateQuizButton";
 import { Quiz } from "@/interfaces";
 import { User } from "@/types/users";
 

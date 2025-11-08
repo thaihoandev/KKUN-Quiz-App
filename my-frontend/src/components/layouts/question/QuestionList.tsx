@@ -1,20 +1,18 @@
-// src/components/QuestionList.tsx
 import React from "react";
 import QuestionCard from "@/components/cards/QuestionCard";
 import { Question } from "@/interfaces";
 import CustomPagination from "@/components/paginations/CustomPagination";
 
 interface QuestionListProps {
-  questions: Question[];         // items of the current page
+  questions: Question[];
   loading: boolean;
   showAnswers: boolean;
   onToggleShowAnswers: () => void;
 
-  // pagination props
-  total: number;                 // totalElements from backend
-  page: number;                  // 0-based current page (backend style)
-  size: number;                  // page size
-  onPageChange: (page: number, size: number) => void; // expects 0-based page
+  total: number;
+  page: number;
+  size: number;
+  onPageChange: (page: number, size: number) => void;
 }
 
 const QuestionList: React.FC<QuestionListProps> = ({
@@ -27,52 +25,143 @@ const QuestionList: React.FC<QuestionListProps> = ({
   size,
   onPageChange,
 }) => {
-  // Compute "start-end of total"
   const start = total === 0 ? 0 : page * size + 1;
   const end = Math.min(total, page * size + questions.length);
 
   const handleChange = (uiPage: number) => {
-    onPageChange(uiPage - 1, size); // ✅ convert 1-based → 0-based
+    onPageChange(uiPage - 1, size);
   };
 
   return (
-    <div className="card shadow-sm p-3 mt-2">
+    <div
+      style={{
+        background: "var(--surface-color)",
+        border: "none",
+        borderRadius: "var(--border-radius)",
+        overflow: "hidden",
+        boxShadow: "var(--card-shadow)",
+        padding: "1.5rem",
+        marginTop: "1rem",
+      }}
+    >
       {/* Header */}
-      <div className="d-flex justify-content-between align-items-center p-2 border-bottom">
-        <h6 className="fw-bold mb-0 text-uppercase">
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          paddingBottom: "1rem",
+          borderBottom: "2px solid var(--border-color)",
+          marginBottom: "1rem",
+          gap: "1rem",
+          flexWrap: "wrap",
+        }}
+      >
+        <h6
+          style={{
+            margin: 0,
+            fontWeight: 700,
+            fontSize: "14px",
+            textTransform: "uppercase",
+            color: "var(--text-color)",
+            letterSpacing: "0.5px",
+          }}
+        >
           {start}-{end} of {total} Questions
         </h6>
-        <div className="form-check form-switch mb-0">
+
+        {/* Show Answers Toggle */}
+        <label
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "0.75rem",
+            cursor: loading ? "not-allowed" : "pointer",
+            opacity: loading ? 0.5 : 1,
+            userSelect: "none",
+            fontWeight: 600,
+            fontSize: "14px",
+            color: "var(--text-color)",
+          }}
+        >
           <input
-            className="form-check-input"
             type="checkbox"
             checked={showAnswers}
             onChange={onToggleShowAnswers}
             disabled={loading}
+            style={{
+              width: "20px",
+              height: "20px",
+              cursor: loading ? "not-allowed" : "pointer",
+              accentColor: "var(--primary-color)",
+            }}
           />
-          <label className="form-check-label ms-2 fw-bold">Show Answers</label>
-        </div>
+          <span>Show Answers</span>
+        </label>
       </div>
 
       {/* Content */}
-      {loading ? (
-        <p className="text-center text-muted mt-3">Loading questions...</p>
-      ) : questions.length === 0 ? (
-        <p className="text-center text-muted mt-3">No questions found.</p>
-      ) : (
-        questions.map((question, index) => (
-          <QuestionCard
-            key={question.questionId}
-            question={question}
-            index={page * size + index} // global index if needed
-            showAnswers={showAnswers}
-          />
-        ))
-      )}
+      <div style={{ marginBottom: "1.5rem" }}>
+        {loading ? (
+          <p
+            style={{
+              textAlign: "center",
+              color: "var(--text-muted)",
+              margin: "2rem 0",
+              fontSize: "14px",
+            }}
+          >
+            Loading questions...
+          </p>
+        ) : questions.length === 0 ? (
+          <p
+            style={{
+              textAlign: "center",
+              color: "var(--text-muted)",
+              margin: "2rem 0",
+              fontSize: "14px",
+            }}
+          >
+            No questions found.
+          </p>
+        ) : (
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "1rem",
+            }}
+          >
+            {questions.map((question, index) => (
+              <div
+                key={question.questionId}
+                style={{
+                  animation: `slideInUp 0.3s ease forwards`,
+                  animationDelay: `${index * 0.05}s`,
+                }}
+              >
+                <QuestionCard
+                  question={question}
+                  index={page * size + index}
+                  showAnswers={showAnswers}
+                />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
-      {/* ✅ Custom Pagination */}
+      {/* Pagination */}
       {total > 0 && (
-        <div className="d-flex justify-content-end mt-4">
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "flex-end",
+            marginTop: "2rem",
+            paddingTop: "1rem",
+            borderTop: "1px solid var(--border-color)",
+          }}
+        >
           <CustomPagination
             current={page + 1}
             total={total}
@@ -81,6 +170,19 @@ const QuestionList: React.FC<QuestionListProps> = ({
           />
         </div>
       )}
+
+      <style>{`
+        @keyframes slideInUp {
+          from {
+            opacity: 0;
+            transform: translateY(10px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+      `}</style>
     </div>
   );
 };

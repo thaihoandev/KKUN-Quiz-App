@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from "react";
+// src/pages/articles/ArticleCreatePage.tsx (hoặc ArticleForm.tsx)
+import React, { useEffect, useMemo, useState } from "react";
 import MDEditor from "@uiw/react-md-editor";
 import { getCategories } from "@/services/categoryArticleService";
 import { getTags, createTag } from "@/services/tagService";
-import { getSeriesByAuthor, getSeriesList } from "@/services/seriesService";
+import { getSeriesByAuthor } from "@/services/seriesService";
 import { createArticle } from "@/services/articleService";
 import { ArticleCategoryDto } from "@/types/article";
-import { notification } from "antd";
 import {
   Card,
   Form,
@@ -19,6 +19,7 @@ import {
   Row,
   Col,
   Spin,
+  notification,
 } from "antd";
 import {
   FileTextOutlined,
@@ -29,7 +30,6 @@ import {
   TagsOutlined,
   ReadOutlined,
 } from "@ant-design/icons";
-import "bootstrap/dist/css/bootstrap.min.css";
 import { useAuthStore } from "@/store/authStore";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
@@ -41,6 +41,24 @@ interface ArticleFormValues {
   difficulty?: string;
   tags: string[];
   seriesId?: string;
+}
+
+/** Đọc mode từ localStorage (đa key) */
+function resolveModeFromLocalStorage(): "light" | "dark" {
+  try {
+    const keys = ["theme", "color-theme", "app-theme", "mode"];
+    for (const k of keys) {
+      const raw = localStorage.getItem(k);
+      if (!raw) continue;
+      const v = String(raw).toLowerCase().trim();
+      if (v.includes("dark")) return "dark";
+      if (v.includes("light")) return "light";
+      if (v === "1" || v === "true" || v === "darkmode" || v === "enabled") return "dark";
+      if (v === "0" || v === "false" || v === "disabled") return "light";
+    }
+  } catch {}
+  if (document.documentElement.classList.contains("dark-mode")) return "dark";
+  return "light";
 }
 
 const ArticleForm: React.FC = () => {
@@ -63,7 +81,49 @@ const ArticleForm: React.FC = () => {
   const { user, ensureMe } = useAuthStore();
   const navigate = useNavigate();
 
-  // 🧩 Tải categories, tags, series
+  /** Theme cho MDEditor */
+  const [mdColorMode, setMdColorMode] = useState<"light" | "dark">(
+    () => resolveModeFromLocalStorage()
+  );
+  const [mounted, setMounted] = useState(true);
+
+  // Khi mode đổi: set attribute lên <html> + remount editor
+  useEffect(() => {
+    document.documentElement.setAttribute("data-color-mode", mdColorMode);
+    setMounted(false);
+    const t = setTimeout(() => setMounted(true), 0);
+    return () => clearTimeout(t);
+  }, [mdColorMode]);
+
+  // Lắng nghe đổi theme từ tab khác / cùng tab
+  useEffect(() => {
+    const apply = () => setMdColorMode(resolveModeFromLocalStorage());
+
+    const onStorage = (e: StorageEvent) => {
+      if (!e.key) return;
+      if (["theme", "color-theme", "app-theme", "mode"].includes(e.key)) apply();
+    };
+    window.addEventListener("storage", onStorage);
+
+    // Ở nơi toggle, nhớ dispatch:
+    // window.dispatchEvent(new CustomEvent('theme-change', { detail: { mode: 'dark'|'light' } }))
+    const onThemeChange = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.mode === "dark" || detail?.mode === "light") {
+        setMdColorMode(detail.mode);
+      } else {
+        apply();
+      }
+    };
+    window.addEventListener("theme-change", onThemeChange as EventListener);
+
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("theme-change", onThemeChange as EventListener);
+    };
+  }, []);
+
+  // 🧩 Tải categories, tags, series (theo author nếu có)
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -74,12 +134,12 @@ const ArticleForm: React.FC = () => {
         const [catRes, tagRes, seriesRes] = await Promise.all([
           getCategories(0, 50, "name,asc"),
           getTags(0, 50, "name,asc"),
-          getSeriesByAuthor(user?.userId.toString(), 0, 10, "createdAt,desc"),
+          user?.userId ? getSeriesByAuthor(String(user.userId), 0, 20, "createdAt,desc") : Promise.resolve({ content: [] }),
         ]);
 
         setCategories(catRes.content);
         setTags(tagRes.content);
-        setSeries(seriesRes.content);
+        setSeries(seriesRes.content ?? []);
 
         // ✅ Nếu có seriesId từ params, tự động set
         if (seriesIdFromParams) {
@@ -94,9 +154,9 @@ const ArticleForm: React.FC = () => {
       }
     };
 
-    fetchData();
     ensureMe();
-  }, [ensureMe, form, seriesIdFromParams]);
+    fetchData();
+  }, [ensureMe, form, seriesIdFromParams, user?.userId]);
 
   // ✅ Upload ảnh
   const handleThumbnailChange = (info: any) => {
@@ -134,21 +194,10 @@ const ArticleForm: React.FC = () => {
     formData.append("categoryId", values.categoryId);
     formData.append("authorId", user.userId);
 
-    if (values.difficulty) {
-      formData.append("difficulty", values.difficulty);
-    }
-
-    if (values.seriesId) {
-      formData.append("seriesId", values.seriesId);
-    }
-
-    if (thumbnail) {
-      formData.append("thumbnail", thumbnail);
-    }
-
-    if (values.tags?.length > 0) {
-      values.tags.forEach((tag) => formData.append("tags", tag));
-    }
+    if (values.difficulty) formData.append("difficulty", values.difficulty);
+    if (values.seriesId) formData.append("seriesId", values.seriesId);
+    if (thumbnail) formData.append("thumbnail", thumbnail);
+    if (values.tags?.length > 0) values.tags.forEach((tag) => formData.append("tags", tag));
 
     try {
       await createArticle(formData);
@@ -164,11 +213,8 @@ const ArticleForm: React.FC = () => {
       // ✅ Quay về series page nếu có, không thì về articles
       if (seriesIdFromParams) {
         const selectedSeries = series.find((s) => s.id === seriesIdFromParams);
-        if (selectedSeries) {
-          navigate(`/series/${selectedSeries.id}`);
-        } else {
-          navigate("/articles");
-        }
+        if (selectedSeries) navigate(`/series/${selectedSeries.id}`);
+        else navigate("/articles");
       } else {
         navigate("/articles");
       }
@@ -215,16 +261,17 @@ const ArticleForm: React.FC = () => {
           <div className="text-center mb-5">
             <div
               className="d-inline-flex align-items-center justify-content-center bg-primary bg-gradient rounded-circle mb-3"
-              style={{ width: "70px", height: "70px" }}
+              style={{ width: 70, height: 70 }}
             >
-              <FileTextOutlined style={{ fontSize: "32px", color: "white" }} />
+              <FileTextOutlined style={{ fontSize: 32, color: "#fff" }} />
             </div>
-            <Title level={2} className="mb-2">
-              Tạo bài viết mới
-            </Title>
+            <Title level={2} className="mb-1">Tạo bài viết mới</Title>
+            <Text type="secondary">
+              Điền thông tin cơ bản, gắn thẻ và soạn nội dung bằng Markdown.
+            </Text>
           </div>
 
-          <Card className="shadow-lg border-0" style={{ borderRadius: "16px" }}>
+          <Card className="shadow-lg border-0" style={{ borderRadius: 16 }}>
             <Form
               form={form}
               layout="vertical"
@@ -236,16 +283,13 @@ const ArticleForm: React.FC = () => {
                 name="title"
                 label={
                   <Space>
-                    <FileTextOutlined style={{ color: "#1890ff", fontSize: "18px" }} />
-                    <span style={{ fontWeight: 600 }}>Tiêu đề bài viết</span>
+                    <FileTextOutlined />
+                    <strong>Tiêu đề bài viết</strong>
                   </Space>
                 }
                 rules={[{ required: true, message: "Vui lòng nhập tiêu đề!" }]}
               >
-                <Input
-                  size="large"
-                  placeholder="Nhập tiêu đề hấp dẫn cho bài viết..."
-                />
+                <Input size="large" placeholder="Nhập tiêu đề hấp dẫn cho bài viết..." />
               </Form.Item>
 
               {/* Category - Difficulty - Series */}
@@ -256,8 +300,8 @@ const ArticleForm: React.FC = () => {
                     name="categoryId"
                     label={
                       <Space>
-                        <FolderOpenOutlined style={{ color: "#1890ff", fontSize: "18px" }} />
-                        <span style={{ fontWeight: 600 }}>Chuyên mục</span>
+                        <FolderOpenOutlined />
+                        <strong>Chuyên mục</strong>
                       </Space>
                     }
                     rules={[{ required: true, message: "Vui lòng chọn chuyên mục!" }]}
@@ -277,10 +321,7 @@ const ArticleForm: React.FC = () => {
                             .toLowerCase()
                             .includes(input.toLowerCase())
                         }
-                        options={categories.map((c) => ({
-                          label: c.name,
-                          value: c.id,
-                        }))}
+                        options={categories.map((c) => ({ label: c.name, value: c.id }))}
                       />
                     )}
                   </Form.Item>
@@ -292,8 +333,9 @@ const ArticleForm: React.FC = () => {
                     name="difficulty"
                     label={
                       <Space>
-                        <BarChartOutlined style={{ color: "#1890ff", fontSize: "18px" }} />
-                        <span style={{ fontWeight: 600 }}>Độ khó (tùy chọn)</span>
+                        <BarChartOutlined />
+                        <strong>Độ khó</strong>
+                        <Text type="secondary">(tuỳ chọn)</Text>
                       </Space>
                     }
                   >
@@ -324,8 +366,9 @@ const ArticleForm: React.FC = () => {
                     name="seriesId"
                     label={
                       <Space>
-                        <ReadOutlined style={{ color: "#1890ff", fontSize: "18px" }} />
-                        <span style={{ fontWeight: 600 }}>Series (nếu có)</span>
+                        <ReadOutlined />
+                        <strong>Series</strong>
+                        <Text type="secondary">(nếu có)</Text>
                       </Space>
                     }
                   >
@@ -344,28 +387,23 @@ const ArticleForm: React.FC = () => {
                             .toLowerCase()
                             .includes(input.toLowerCase())
                         }
-                        options={series.map((s) => ({
-                          label: s.title,
-                          value: s.id,
-                        }))}
+                        options={series.map((s) => ({ label: s.title, value: s.id }))}
                       />
                     ) : (
-                      <Text type="secondary">
-                        Không có series nào, hãy tạo trước khi gắn bài viết.
-                      </Text>
+                      <Text type="secondary">Không có series nào, hãy tạo trước khi gắn bài viết.</Text>
                     )}
                   </Form.Item>
                 </Col>
               </Row>
-
 
               {/* Tags */}
               <Form.Item
                 name="tags"
                 label={
                   <Space>
-                    <TagsOutlined style={{ color: "#1890ff", fontSize: "18px" }} />
-                    <span style={{ fontWeight: 600 }}>Thẻ tag</span>
+                    <TagsOutlined />
+                    <strong>Thẻ (tags)</strong>
+                    <Text type="secondary">– nhập để tạo mới</Text>
                   </Space>
                 }
               >
@@ -380,10 +418,7 @@ const ArticleForm: React.FC = () => {
                       const input = (e.target as HTMLInputElement).value.trim();
                       if (input) await handleTagCreate(input);
                     }}
-                    options={tags.map((t) => ({
-                      label: t.name,
-                      value: t.name,
-                    }))}
+                    options={tags.map((t) => ({ label: t.name, value: t.name }))}
                   />
                 )}
               </Form.Item>
@@ -392,20 +427,22 @@ const ArticleForm: React.FC = () => {
               <Form.Item
                 label={
                   <Space>
-                    <FileTextOutlined style={{ color: "#1890ff" }} />
-                    <span style={{ fontWeight: 600 }}>Nội dung bài viết</span>
+                    <FileTextOutlined />
+                    <strong>Nội dung bài viết</strong>
                     <Text type="secondary">(Hỗ trợ Markdown)</Text>
                   </Space>
                 }
               >
-                <MDEditor
-                  value={contentMarkdown}
-                  onChange={(v) => setContentMarkdown(v || "")}
-                  height={500}
-                  preview="live"
-                  data-color-mode="light"
-                  textareaProps={{
-                    placeholder: `✍️ Bắt đầu viết bài tại đây...
+                {mounted && (
+                  <div data-color-mode={mdColorMode} key={`wrap-${mdColorMode}`}>
+                    <MDEditor
+                      key={`mde-${mdColorMode}`}
+                      value={contentMarkdown}
+                      onChange={(v) => setContentMarkdown(v || "")}
+                      height={500}
+                      preview="live"
+                      textareaProps={{
+                        placeholder: `✍️ Bắt đầu viết bài tại đây...
 
 # Tiêu đề chính
 Viết phần mở đầu hấp dẫn cho bài viết của bạn.
@@ -415,16 +452,19 @@ Viết phần mở đầu hấp dẫn cho bài viết của bạn.
 - Gạch đầu dòng 2
 
 > Gợi ý: bạn có thể sử dụng **Markdown** để định dạng văn bản.`,
-                  }}
-                />
+                      }}
+                    />
+                  </div>
+                )}
               </Form.Item>
 
               {/* Thumbnail */}
               <Form.Item
                 label={
                   <Space>
-                    <PictureOutlined style={{ color: "#1890ff", fontSize: "18px" }} />
-                    <span style={{ fontWeight: 600 }}>Ảnh thumbnail</span>
+                    <PictureOutlined />
+                    <strong>Ảnh thumbnail</strong>
+                    <Text type="secondary">(không bắt buộc)</Text>
                   </Space>
                 }
               >
@@ -441,7 +481,7 @@ Viết phần mở đầu hấp dẫn cho bài viết của bạn.
                         {thumbnail ? thumbnail.name : "Chọn ảnh thumbnail"}
                       </Button>
                     </Upload>
-                    <Text type="secondary" style={{ fontSize: "13px" }}>
+                    <Text type="secondary" style={{ fontSize: 13 }}>
                       PNG, JPG, GIF tối đa 5MB
                     </Text>
                   </Col>
@@ -453,9 +493,9 @@ Viết phần mở đầu hấp dẫn cho bài viết của bạn.
                         alt="Preview"
                         style={{
                           width: "100%",
-                          height: "150px",
+                          height: 150,
                           objectFit: "cover",
-                          borderRadius: "8px",
+                          borderRadius: 8,
                         }}
                       />
                     </Col>
@@ -469,13 +509,7 @@ Viết phần mở đầu hấp dẫn cho bài viết của bạn.
                   type="primary"
                   htmlType="submit"
                   size="large"
-                  style={{
-                    width: "100%",
-                    height: "50px",
-                    fontSize: "16px",
-                    fontWeight: 600,
-                    borderRadius: "12px",
-                  }}
+                  style={{ width: "100%", height: 50, fontSize: 16, fontWeight: 600, borderRadius: 12 }}
                   disabled={!user}
                 >
                   Xuất bản bài viết

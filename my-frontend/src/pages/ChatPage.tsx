@@ -879,7 +879,7 @@ const ChatPage: React.FC = () => {
           })}
         </div>
 
-        <div className="p-3 border-top d-flex align-items-center gap-2"
+        <div className="p-3 d-flex align-items-center gap-2"
              style={{ background: "var(--surface-color)", borderColor: "var(--border-color)" }}>
           <input
             className="form-control"

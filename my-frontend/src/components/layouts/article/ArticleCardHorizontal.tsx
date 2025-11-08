@@ -131,7 +131,7 @@ const ArticleCardHorizontal: React.FC<ArticleCardHorizontalProps> = ({ article }
             ellipsis={{ rows: 3 }}
             style={{
               fontSize: "16px",
-              color: "#333",
+              color: "var(--text-color)",
               lineHeight: 1.7,
               marginBottom: "20px",
             }}
