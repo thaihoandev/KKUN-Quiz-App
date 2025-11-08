@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { PageResponse, UserResponseDTO } from "@/interfaces";
+import { PageResponse,  } from "@/interfaces";
 import { getPublicPosts, PostDTO } from "@/services/postService";
 import PostCard from "./PostCard";
+import { User } from "@/types/users";
 
 type Props = {
-  profile: UserResponseDTO | null;
+  profile: User | null;
   className?: string;
   onUpdate: (updatedPost: PostDTO) => void; // nhận từ ViewProfileTab
   userId: string;                            // userId của profile đang xem
