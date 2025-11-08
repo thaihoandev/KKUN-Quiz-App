@@ -12,6 +12,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -69,11 +70,12 @@ public class AuthController {
     public ResponseEntity<?> login(@RequestBody UserRequestDTO user, HttpServletResponse response) {
         try {
             Map<String, Object> authResult = authService.verifyAndGenerateTokens(user);
-
             writeCookie(response, "accessToken", (String) authResult.get("accessToken"), 60 * 60, true);
             writeCookie(response, "refreshToken", (String) authResult.get("refreshToken"), 7 * 24 * 60 * 60, true);
-
             return ResponseEntity.ok(authResult);
+        } catch (BadCredentialsException e) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(new ErrorResponse(LocalDateTime.now(), "Login failed", "Invalid username or password"));
         } catch (InvalidRequestException | IllegalArgumentException e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body(new ErrorResponse(LocalDateTime.now(), "Login failed", e.getMessage()));
@@ -82,6 +84,7 @@ public class AuthController {
                     .body(new ErrorResponse(LocalDateTime.now(), "Error logging in", e.getMessage()));
         }
     }
+
 
     // ================= Google login =================
     @PostMapping(value = "/google", consumes = "application/json")

@@ -19,6 +19,7 @@ import org.modelmapper.ModelMapper;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -80,11 +81,10 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     public Map<String, Object> verifyAndGenerateTokens(UserRequestDTO userRequestDTO) {
-        Authentication authentication = authManager.authenticate(
-                new UsernamePasswordAuthenticationToken(userRequestDTO.getUsername(), userRequestDTO.getPassword())
-        );
-
-        if (authentication.isAuthenticated()) {
+        try {
+            Authentication authentication = authManager.authenticate(
+                    new UsernamePasswordAuthenticationToken(userRequestDTO.getUsername(), userRequestDTO.getPassword())
+            );
 
             UserPrincipal userPrincipal = (UserPrincipal) authentication.getPrincipal();
             Map<String, String> tokens = jwtService.generateTokens(userPrincipal);
@@ -93,18 +93,19 @@ public class AuthServiceImpl implements AuthService {
             if (userOpt.isEmpty() || !userOpt.get().isActive()) {
                 throw new InvalidRequestException("This account is deactivated or not found");
             }
+
             UserResponseDTO userResponse = modelMapper.map(userOpt.get(), UserResponseDTO.class);
+            return Map.of(
+                    "accessToken", tokens.get("accessToken"),
+                    "refreshToken", tokens.get("refreshToken"),
+                    "userData", userResponse
+            );
 
-            Map<String, Object> result = new HashMap<>();
-            result.put("accessToken", tokens.get("accessToken"));
-            result.put("refreshToken", tokens.get("refreshToken"));
-            result.put("userData", userResponse);
-
-            return result;
+        } catch (BadCredentialsException e) {
+            throw new InvalidRequestException("Invalid username or password");
         }
-
-        throw new IllegalArgumentException("Invalid username or password");
     }
+
 
     @Override
     @Transactional
