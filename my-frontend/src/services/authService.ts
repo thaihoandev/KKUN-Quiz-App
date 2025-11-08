@@ -1,4 +1,4 @@
-import { UserRequestDTO } from "@/interfaces";
+import { UserRequestDTO } from "@/types/users";
 import axiosInstance from "./axiosInstance";
 import {handleApiError} from "@/utils/apiErrorHandler";
 
@@ -11,7 +11,7 @@ export const loginApi = async (username: string, password: string) => {
             username,
             password,
         });
-        console.log("Login response:", response.data);
+        console.log(response);
         
         return response.data;
     } catch (error) {

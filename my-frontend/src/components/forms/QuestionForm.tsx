@@ -1,4 +1,4 @@
-import React, {useState, useEffect} from "react";
+import React, { useState } from "react";
 import {
     DEFAULT_POINTS,
     DEFAULT_QUESTION_TYPE,
@@ -8,7 +8,7 @@ import {
     QUESTION_TYPES,
     TIME_LIMIT_OPTIONS,
 } from "@/constants/quizConstants";
-import {Option, Question} from "@/interfaces";
+import { Option, Question } from "@/interfaces";
 
 interface QuestionFormProps {
     initialQuestion?: Question;
@@ -45,30 +45,10 @@ const QuestionForm: React.FC<QuestionFormProps> = ({
                     ...baseQuestion,
                     questionText: "Câu hỏi mới (Nhiều lựa chọn)",
                     options: [
-                        {
-                            optionId: "",
-                            optionText: "",
-                            correct: true,
-                            correctAnswer: "",
-                        },
-                        {
-                            optionId: "",
-                            optionText: "",
-                            correct: false,
-                            correctAnswer: "",
-                        },
-                        {
-                            optionId: "",
-                            optionText: "",
-                            correct: false,
-                            correctAnswer: "",
-                        },
-                        {
-                            optionId: "",
-                            optionText: "",
-                            correct: false,
-                            correctAnswer: "",
-                        },
+                        { optionId: "", optionText: "", correct: true, correctAnswer: "" },
+                        { optionId: "", optionText: "", correct: false, correctAnswer: "" },
+                        { optionId: "", optionText: "", correct: false, correctAnswer: "" },
+                        { optionId: "", optionText: "", correct: false, correctAnswer: "" },
                     ],
                 };
             case QUESTION_TYPES.TRUE_FALSE:
@@ -76,18 +56,8 @@ const QuestionForm: React.FC<QuestionFormProps> = ({
                     ...baseQuestion,
                     questionText: "Câu hỏi mới (Đúng/Sai)",
                     options: [
-                        {
-                            optionId: "",
-                            optionText: "Đúng",
-                            correct: true,
-                            correctAnswer: "Đúng",
-                        },
-                        {
-                            optionId: "",
-                            optionText: "Sai",
-                            correct: false,
-                            correctAnswer: "",
-                        },
+                        { optionId: "", optionText: "Đúng", correct: true, correctAnswer: "Đúng" },
+                        { optionId: "", optionText: "Sai", correct: false, correctAnswer: "" },
                     ],
                 };
             case QUESTION_TYPES.FILL_IN_THE_BLANK:
@@ -95,12 +65,7 @@ const QuestionForm: React.FC<QuestionFormProps> = ({
                     ...baseQuestion,
                     questionText: "Câu hỏi mới (Điền vào chỗ trống)",
                     options: [
-                        {
-                            optionId: "",
-                            optionText: "",
-                            correct: true,
-                            correctAnswer: "",
-                        },
+                        { optionId: "", optionText: "", correct: true, correctAnswer: "" },
                     ],
                 };
             case QUESTION_TYPES.SINGLE_CHOICE:
@@ -108,30 +73,10 @@ const QuestionForm: React.FC<QuestionFormProps> = ({
                     ...baseQuestion,
                     questionText: "Câu hỏi mới (Một lựa chọn)",
                     options: [
-                        {
-                            optionId: "",
-                            optionText: "",
-                            correct: true,
-                            correctAnswer: "",
-                        },
-                        {
-                            optionId: "",
-                            optionText: "",
-                            correct: false,
-                            correctAnswer: "",
-                        },
-                        {
-                            optionId: "",
-                            optionText: "",
-                            correct: false,
-                            correctAnswer: "",
-                        },
-                        {
-                            optionId: "",
-                            optionText: "",
-                            correct: false,
-                            correctAnswer: "",
-                        },
+                        { optionId: "", optionText: "", correct: true, correctAnswer: "" },
+                        { optionId: "", optionText: "", correct: false, correctAnswer: "" },
+                        { optionId: "", optionText: "", correct: false, correctAnswer: "" },
+                        { optionId: "", optionText: "", correct: false, correctAnswer: "" },
                     ],
                 };
             default:
@@ -139,7 +84,6 @@ const QuestionForm: React.FC<QuestionFormProps> = ({
         }
     };
 
-    // Khởi tạo question từ initialQuestion hoặc tạo question mới theo initialQuestionType hoặc mặc định
     const [question, setQuestion] = useState<Question>(() => {
         if (initialQuestion) {
             return {
@@ -152,50 +96,40 @@ const QuestionForm: React.FC<QuestionFormProps> = ({
                     DEFAULT_QUESTION_TYPE,
             };
         }
-        return createDefaultQuestion(
-            initialQuestionType || DEFAULT_QUESTION_TYPE,
-        );
+        return createDefaultQuestion(initialQuestionType || DEFAULT_QUESTION_TYPE);
     });
 
-    // Cập nhật question khi loại câu hỏi thay đổi
-    const handleQuestionTypeChange = (
-        e: React.ChangeEvent<HTMLSelectElement>,
-    ) => {
+    const handleQuestionTypeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
         const newType = e.target.value as Question["questionType"];
 
         if (isCreateMode || question.options.length === 0) {
             setQuestion(createDefaultQuestion(newType));
         } else {
-            setQuestion({
-                ...question,
-                questionType: newType,
-            });
+            setQuestion({ ...question, questionType: newType });
         }
     };
 
-    const handleQuestionTextChange = (
-        e: React.ChangeEvent<HTMLInputElement>,
-    ) => {
-        setQuestion({...question, questionText: e.target.value});
+    const handleQuestionTextChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        setQuestion({ ...question, questionText: e.target.value });
     };
 
     const handleOptionChange = (
-        index: number, // Thay optionId bằng index
+        index: number,
         field: keyof Option,
         value: string | boolean,
     ) => {
         const newOptions = question.options.map((option, i) =>
-            i === index ? {...option, [field]: value} : option,
+            i === index ? { ...option, [field]: value } : option,
         );
-        setQuestion({...question, options: newOptions});
+        setQuestion({ ...question, options: newOptions });
     };
 
     const handleTimeLimitChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-        setQuestion({...question, timeLimit: parseInt(e.target.value)});
+        setQuestion({ ...question, timeLimit: parseInt(e.target.value) });
     };
 
     const handlePointsChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-        setQuestion({...question, points: parseInt(e.target.value)});
+        setQuestion({ ...question, points: parseInt(e.target.value) });
     };
 
     const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -203,7 +137,7 @@ const QuestionForm: React.FC<QuestionFormProps> = ({
             const file = e.target.files[0];
             setImageFile(file);
             const imageUrl = URL.createObjectURL(file);
-            setQuestion({...question, imageUrl});
+            setQuestion({ ...question, imageUrl });
         }
     };
 
@@ -211,7 +145,7 @@ const QuestionForm: React.FC<QuestionFormProps> = ({
         const formData = new FormData();
         formData.append(
             "question",
-            new Blob([JSON.stringify(question)], {type: "application/json"}),
+            new Blob([JSON.stringify(question)], { type: "application/json" }),
         );
         if (imageFile) {
             formData.append("image", imageFile);
@@ -219,24 +153,63 @@ const QuestionForm: React.FC<QuestionFormProps> = ({
         await onSave(formData);
     };
 
-    const isMultipleAnswers =
-        question.questionType === QUESTION_TYPES.MULTIPLE_CHOICE;
+    const isMultipleAnswers = question.questionType === QUESTION_TYPES.MULTIPLE_CHOICE;
 
     return (
-        <div className="container-fluid p-4">
-            <div className="d-flex justify-content-between align-items-center mb-3">
-                <button
-                    className="btn btn-outline-secondary"
-                    onClick={onCancel}
+        <div
+            style={{
+                minHeight: "100vh",
+                background: "var(--background-color)",
+                color: "var(--text-color)",
+                padding: "2rem 1rem",
+            }}
+        >
+            <div style={{ maxWidth: "1200px", margin: "0 auto" }}>
+                {/* Header Actions */}
+                <div
+                    style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        marginBottom: "2rem",
+                        flexWrap: "wrap",
+                        gap: "1rem",
+                    }}
                 >
-                    ← Quay lại
-                </button>
-                <div className="d-flex gap-2 align-items-center">
-                    <div className="dropdown">
+                    <button
+                        onClick={onCancel}
+                        style={{
+                            padding: "0.75rem 1.5rem",
+                            border: "2px solid var(--border-color)",
+                            borderRadius: "10px",
+                            background: "transparent",
+                            color: "var(--text-color)",
+                            fontWeight: 600,
+                            cursor: "pointer",
+                            transition: "all 0.25s ease",
+                        }}
+                        onMouseEnter={(e) => {
+                            e.currentTarget.style.background = "var(--surface-color)";
+                            e.currentTarget.style.borderColor = "var(--primary-color)";
+                        }}
+                        onMouseLeave={(e) => {
+                            e.currentTarget.style.background = "transparent";
+                            e.currentTarget.style.borderColor = "var(--border-color)";
+                        }}
+                    >
+                        ← Quay lại
+                    </button>
+
+                    <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "center" }}>
+                        {/* Question Type */}
                         <select
-                            className="form-select"
                             value={question.questionType}
                             onChange={handleQuestionTypeChange}
+                            className="form-select"
+                            style={{
+                                minWidth: "180px",
+                                color: "var(--text-color)",
+                            }}
                         >
                             {Object.values(QUESTION_TYPES).map((type) => (
                                 <option key={type} value={type}>
@@ -244,65 +217,111 @@ const QuestionForm: React.FC<QuestionFormProps> = ({
                                 </option>
                             ))}
                         </select>
-                    </div>
-                    <div className="d-flex align-items-center">
-                        <span className="me-2">⏱️</span>
-                        <select
-                            className="form-select"
-                            value={question.timeLimit}
-                            onChange={handleTimeLimitChange}
-                        >
-                            {TIME_LIMIT_OPTIONS.map((seconds) => (
-                                <option key={seconds} value={seconds}>
-                                    {seconds} giây
-                                </option>
-                            ))}
-                        </select>
-                    </div>
-                    <div className="d-flex align-items-center">
-                        <span className="me-2">🏆</span>
-                        <select
-                            className="form-select"
-                            value={question.points}
-                            onChange={handlePointsChange}
-                        >
-                            {POINTS_OPTIONS.map((point) => (
-                                <option key={point} value={point}>
-                                    {point} điểm
-                                </option>
-                            ))}
-                        </select>
-                    </div>
-                    <button
-                        className="btn btn-primary"
-                        onClick={handleSaveQuestion}
-                    >
-                        {isCreateMode ? "Tạo câu hỏi" : "Lưu câu hỏi"}
-                    </button>
-                </div>
-            </div>
 
-            <div
-                className="card p-4 bg-dark text-white rounded-4"
-                style={{backgroundColor: "#2D0A40"}}
-            >
-                <div className="card-body">
+                        {/* Time Limit */}
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                            <span style={{ fontSize: "1.25rem" }}>⏱️</span>
+                            <select
+                                value={question.timeLimit}
+                                onChange={handleTimeLimitChange}
+                                className="form-select"
+                                style={{
+                                    minWidth: "120px",
+                                    color: "var(--text-color)",
+                                }}
+                            >
+                                {TIME_LIMIT_OPTIONS.map((seconds) => (
+                                    <option key={seconds} value={seconds}>
+                                        {seconds} giây
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+
+                        {/* Points */}
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                            <span style={{ fontSize: "1.25rem" }}>🏆</span>
+                            <select
+                                value={question.points}
+                                onChange={handlePointsChange}
+                                className="form-select"
+                                style={{
+                                    minWidth: "120px",
+                                    color: "var(--text-color)",
+                                }}
+                            >
+                                {POINTS_OPTIONS.map((point) => (
+                                    <option key={point} value={point}>
+                                        {point} điểm
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+
+                        {/* Save Button */}
+                        <button
+                            onClick={handleSaveQuestion}
+                            style={{
+                                padding: "0.75rem 1.5rem",
+                                border: "none",
+                                borderRadius: "10px",
+                                background: "var(--gradient-primary)",
+                                color: "white",
+                                fontWeight: 600,
+                                cursor: "pointer",
+                                transition: "all 0.25s ease",
+                            }}
+                            onMouseEnter={(e) => {
+                                e.currentTarget.style.boxShadow = "var(--hover-shadow)";
+                                e.currentTarget.style.transform = "translateY(-2px)";
+                            }}
+                            onMouseLeave={(e) => {
+                                e.currentTarget.style.boxShadow = "none";
+                                e.currentTarget.style.transform = "translateY(0)";
+                            }}
+                        >
+                            {isCreateMode ? "Tạo câu hỏi" : "Lưu câu hỏi"}
+                        </button>
+                    </div>
+                </div>
+
+                {/* Question Card */}
+                <div
+                    style={{
+                        background: "linear-gradient(135deg, #2D0A40 0%, #1a0629 100%)",
+                        borderRadius: "var(--border-radius)",
+                        padding: "2.5rem",
+                        boxShadow: "var(--card-shadow)",
+                        color: "white",
+                    }}
+                >
+                    {/* Image Section */}
                     {question.imageUrl && (
-                        <div className="text-center mb-3">
+                        <div style={{ textAlign: "center", marginBottom: "2rem" }}>
                             <img
                                 src={question.imageUrl}
                                 alt="Question image"
-                                className="img-fluid mb-2"
-                                style={{maxHeight: "200px"}}
+                                style={{
+                                    maxHeight: "200px",
+                                    maxWidth: "100%",
+                                    borderRadius: "10px",
+                                    marginBottom: "1rem",
+                                }}
                             />
                             <button
-                                className="btn-sm btn-outline-light"
                                 onClick={() => {
                                     setImageFile(null);
-                                    setQuestion({
-                                        ...question,
-                                        imageUrl: undefined,
-                                    });
+                                    setQuestion({ ...question, imageUrl: undefined });
+                                }}
+                                style={{
+                                    padding: "0.5rem 1rem",
+                                    border: "2px solid rgba(255, 255, 255, 0.5)",
+                                    borderRadius: "8px",
+                                    background: "transparent",
+                                    color: "white",
+                                    fontWeight: 600,
+                                    cursor: "pointer",
+                                    fontSize: "14px",
                                 }}
                             >
                                 Xóa ảnh
@@ -311,126 +330,176 @@ const QuestionForm: React.FC<QuestionFormProps> = ({
                     )}
 
                     {!question.imageUrl && (
-                        <div className="text-center mb-3">
-                            <label className="btn btn-outline-light">
-                                <i className="bx bx-image-add"></i> Thêm ảnh
+                        <div style={{ textAlign: "center", marginBottom: "2rem" }}>
+                            <label
+                                style={{
+                                    padding: "0.75rem 1.5rem",
+                                    border: "2px solid rgba(255, 255, 255, 0.5)",
+                                    borderRadius: "10px",
+                                    background: "transparent",
+                                    color: "white",
+                                    fontWeight: 600,
+                                    cursor: "pointer",
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    gap: "0.5rem",
+                                }}
+                            >
+                                <span style={{ fontSize: "1.25rem" }}>🖼️</span>
+                                Thêm ảnh
                                 <input
                                     type="file"
                                     accept="image/*"
-                                    style={{display: "none"}}
+                                    style={{ display: "none" }}
                                     onChange={handleImageUpload}
                                 />
                             </label>
                         </div>
                     )}
 
-                    <div className="mb-5 text-center">
+                    {/* Question Text */}
+                    <div style={{ marginBottom: "3rem", textAlign: "center" }}>
                         <input
                             type="text"
-                            className="form-control bg-transparent text-white border-light text-center fs-3"
                             value={question.questionText}
                             onChange={handleQuestionTextChange}
                             placeholder="Nhập câu hỏi của bạn ở đây"
                             style={{
+                                width: "100%",
+                                background: "transparent",
                                 border: "none",
-                                borderBottom: "1px solid rgba(255,255,255,0.2)",
+                                borderBottom: "2px solid rgba(255, 255, 255, 0.3)",
+                                color: "white",
+                                fontSize: "2rem",
+                                fontWeight: 600,
+                                textAlign: "center",
+                                padding: "0.75rem",
+                                outline: "none",
+                            }}
+                            onFocus={(e) => {
+                                e.currentTarget.style.borderBottomColor = "rgba(255, 255, 255, 0.6)";
+                            }}
+                            onBlur={(e) => {
+                                e.currentTarget.style.borderBottomColor = "rgba(255, 255, 255, 0.3)";
                             }}
                         />
                     </div>
 
-                    <div className="d-flex flex-wrap gap-3 justify-content-center mt-5">
+                    {/* Options Grid */}
+                    <div
+                        style={{
+                            display: "flex",
+                            flexWrap: "wrap",
+                            gap: "1rem",
+                            justifyContent: "center",
+                            marginTop: "3rem",
+                        }}
+                    >
                         {question.options.map((option, index) => {
-                            const colors = [
-                                "#2E77BB",
-                                "#18A99D",
-                                "#F5A623",
-                                "#E84A5F",
-                            ];
+                            const colors = ["#2E77BB", "#18A99D", "#F5A623", "#E84A5F"];
                             const color = colors[index % colors.length];
 
                             return (
                                 <div
-                                    key={index} // Dùng index làm key tạm thời trong chế độ tạo mới
-                                    className="position-relative"
-                                    style={{width: "220px", height: "180px"}}
+                                    key={index}
+                                    style={{
+                                        position: "relative",
+                                        width: "220px",
+                                        height: "180px",
+                                    }}
                                 >
                                     <div
-                                        className="card p-3 d-flex justify-content-center align-items-center h-100 position-relative"
                                         style={{
-                                            backgroundColor: color,
-                                            borderRadius: "10px",
+                                            background: color,
+                                            borderRadius: "12px",
+                                            padding: "1rem",
+                                            height: "100%",
+                                            display: "flex",
+                                            justifyContent: "center",
+                                            alignItems: "center",
+                                            position: "relative",
+                                            boxShadow: "0 4px 12px rgba(0, 0, 0, 0.2)",
                                         }}
                                     >
+                                        {/* Correct Button */}
                                         <button
-                                            className="btn btn-sm btn-light position-absolute top-0 end-0 m-2 rounded-circle"
                                             onClick={() => {
                                                 if (isMultipleAnswers) {
-                                                    handleOptionChange(
-                                                        index,
-                                                        "correct",
-                                                        !option.correct,
-                                                    );
+                                                    handleOptionChange(index, "correct", !option.correct);
                                                 } else {
-                                                    const newOptions =
-                                                        question.options.map(
-                                                            (opt) => ({
-                                                                ...opt,
-                                                                correct: false,
-                                                            }),
-                                                        );
-                                                    newOptions[index].correct =
-                                                        true;
-                                                    setQuestion({
-                                                        ...question,
-                                                        options: newOptions,
-                                                    });
+                                                    const newOptions = question.options.map((opt) => ({
+                                                        ...opt,
+                                                        correct: false,
+                                                    }));
+                                                    newOptions[index].correct = true;
+                                                    setQuestion({ ...question, options: newOptions });
                                                 }
                                             }}
                                             style={{
-                                                width: "24px",
-                                                height: "24px",
+                                                position: "absolute",
+                                                top: "0.5rem",
+                                                right: "0.5rem",
+                                                width: "28px",
+                                                height: "28px",
+                                                borderRadius: "50%",
+                                                border: "2px solid white",
+                                                background: option.correct ? "white" : "transparent",
+                                                color: option.correct ? color : "white",
                                                 display: "flex",
                                                 alignItems: "center",
                                                 justifyContent: "center",
-                                                padding: 0,
+                                                cursor: "pointer",
+                                                fontSize: "16px",
+                                                fontWeight: "bold",
                                             }}
                                         >
                                             {option.correct ? "✓" : ""}
                                         </button>
+
+                                        {/* Option Text Input */}
                                         <input
                                             type="text"
-                                            className="form-control text-center bg-transparent text-white border-0 fs-5"
                                             value={option.optionText}
                                             onChange={(e) =>
-                                                handleOptionChange(
-                                                    index,
-                                                    "optionText",
-                                                    e.target.value,
-                                                )
+                                                handleOptionChange(index, "optionText", e.target.value)
                                             }
                                             placeholder="Đáp án"
-                                            style={{boxShadow: "none"}}
+                                            style={{
+                                                width: "100%",
+                                                background: "transparent",
+                                                border: "none",
+                                                color: "white",
+                                                fontSize: "1.1rem",
+                                                fontWeight: 600,
+                                                textAlign: "center",
+                                                outline: "none",
+                                            }}
                                         />
+
+                                        {/* Delete Button */}
                                         <button
-                                            className="btn btn-sm btn-outline-light position-absolute bottom-0 end-0 m-2"
                                             onClick={() =>
                                                 setQuestion({
                                                     ...question,
-                                                    options:
-                                                        question.options.filter(
-                                                            (_, i) =>
-                                                                i !== index,
-                                                        ),
+                                                    options: question.options.filter((_, i) => i !== index),
                                                 })
                                             }
                                             style={{
-                                                width: "24px",
-                                                height: "24px",
+                                                position: "absolute",
+                                                bottom: "0.5rem",
+                                                right: "0.5rem",
+                                                width: "28px",
+                                                height: "28px",
+                                                borderRadius: "6px",
+                                                border: "2px solid white",
+                                                background: "transparent",
+                                                color: "white",
                                                 display: "flex",
                                                 alignItems: "center",
                                                 justifyContent: "center",
-                                                padding: 0,
-                                                borderRadius: "4px",
+                                                cursor: "pointer",
+                                                fontSize: "18px",
+                                                fontWeight: "bold",
                                             }}
                                         >
                                             ×
@@ -440,22 +509,26 @@ const QuestionForm: React.FC<QuestionFormProps> = ({
                             );
                         })}
 
+                        {/* Add Option Button */}
                         {question.options.length < 5 &&
-                            question.questionType ===
-                                QUESTION_TYPES.MULTIPLE_CHOICE && (
+                            question.questionType === QUESTION_TYPES.MULTIPLE_CHOICE && (
                                 <div
-                                    className="d-flex justify-content-center align-items-center"
-                                    style={{width: "100px", height: "180px"}}
+                                    style={{
+                                        width: "100px",
+                                        height: "180px",
+                                        display: "flex",
+                                        justifyContent: "center",
+                                        alignItems: "center",
+                                    }}
                                 >
                                     <button
-                                        className="btn btn-outline-light rounded-circle"
                                         onClick={() => {
                                             setQuestion({
                                                 ...question,
                                                 options: [
                                                     ...question.options,
                                                     {
-                                                        optionId: "", // Giữ rỗng vì đây là chế độ tạo mới
+                                                        optionId: "",
                                                         optionText: "",
                                                         correct: false,
                                                         correctAnswer: "",
@@ -464,11 +537,26 @@ const QuestionForm: React.FC<QuestionFormProps> = ({
                                             });
                                         }}
                                         style={{
-                                            width: "40px",
-                                            height: "40px",
+                                            width: "50px",
+                                            height: "50px",
+                                            borderRadius: "50%",
+                                            border: "3px solid rgba(255, 255, 255, 0.5)",
+                                            background: "transparent",
+                                            color: "white",
+                                            fontSize: "28px",
                                             display: "flex",
                                             alignItems: "center",
                                             justifyContent: "center",
+                                            cursor: "pointer",
+                                            transition: "all 0.25s ease",
+                                        }}
+                                        onMouseEnter={(e) => {
+                                            e.currentTarget.style.background = "rgba(255, 255, 255, 0.2)";
+                                            e.currentTarget.style.transform = "scale(1.1)";
+                                        }}
+                                        onMouseLeave={(e) => {
+                                            e.currentTarget.style.background = "transparent";
+                                            e.currentTarget.style.transform = "scale(1)";
                                         }}
                                     >
                                         +
@@ -477,10 +565,18 @@ const QuestionForm: React.FC<QuestionFormProps> = ({
                             )}
                     </div>
 
-                    <div className="d-flex mt-4 justify-content-start">
-                        <div className="px-3 py-1 bg-dark text-white rounded-pill">
-                            {question.questionType ===
-                            QUESTION_TYPES.MULTIPLE_CHOICE
+                    {/* Answer Type Indicator */}
+                    <div style={{ display: "flex", marginTop: "2rem", justifyContent: "flex-start" }}>
+                        <div
+                            style={{
+                                padding: "0.5rem 1.5rem",
+                                background: "rgba(0, 0, 0, 0.3)",
+                                borderRadius: "50px",
+                                fontSize: "14px",
+                                fontWeight: 600,
+                            }}
+                        >
+                            {question.questionType === QUESTION_TYPES.MULTIPLE_CHOICE
                                 ? "Nhiều câu trả lời đúng"
                                 : "Câu trả lời đúng duy nhất"}
                         </div>

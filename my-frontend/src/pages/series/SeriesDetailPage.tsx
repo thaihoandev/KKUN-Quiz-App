@@ -2,13 +2,8 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { getSeriesBySlug, SeriesDto } from "@/services/seriesService";
 import { Spin, Empty } from "antd";
-import {
-  BookOutlined,
-  CalendarOutlined,
-  UserOutlined,
-  PlusOutlined,
-} from "@ant-design/icons";
-import { ArticleDto } from "@/types/article";
+import { BookOutlined, UserOutlined, PlusOutlined } from "@ant-design/icons";
+import SeriesArticleCard from "@/components/layouts/article/SeriesArticleCard";
 
 export default function SeriesDetailPage() {
   const { slug } = useParams<{ slug: string }>();
@@ -18,33 +13,28 @@ export default function SeriesDetailPage() {
 
   useEffect(() => {
     const fetchSeries = async () => {
-        if (!slug) return;
-        setLoading(true);
-        try {
+      if (!slug) return;
+      setLoading(true);
+      try {
         const data = await getSeriesBySlug(slug);
         if (!data) {
-            setSeries(null);
-            return;
+          setSeries(null);
+          return;
         }
-
-        // ✅ Sắp xếp bài viết theo orderIndex
         const sortedArticles = data.articles
-            ? [...data.articles].sort(
-                (a, b) => (a.orderIndex || 0) - (b.orderIndex || 0)
+          ? [...data.articles].sort(
+              (a, b) => (a.orderIndex || 0) - (b.orderIndex || 0)
             )
-            : [];
-
-        // ✅ Ép kiểu rõ ràng, đảm bảo không undefined
+          : [];
         setSeries({ ...(data as SeriesDto), articles: sortedArticles });
-        } catch (err) {
+      } catch (err) {
         console.error("Failed to fetch series:", err);
-        } finally {
+      } finally {
         setLoading(false);
-        }
+      }
     };
     fetchSeries();
-    }, [slug]);
-
+  }, [slug]);
 
   if (loading)
     return (
@@ -62,7 +52,7 @@ export default function SeriesDetailPage() {
 
   return (
     <div className="container py-5">
-      {/* Header Card */}
+      {/* Header */}
       <div className="card card-header mb-5 overflow-hidden">
         <div className="row g-4 p-5">
           <div className="col-md-3">
@@ -76,11 +66,7 @@ export default function SeriesDetailPage() {
             ) : (
               <div
                 className="d-flex align-items-center justify-content-center bg-light rounded"
-                style={{
-                  height: 250,
-                  fontSize: 60,
-                  color: "#ccc",
-                }}
+                style={{ height: 250, fontSize: 60, color: "#ccc" }}
               >
                 <BookOutlined />
               </div>
@@ -97,9 +83,7 @@ export default function SeriesDetailPage() {
               {series.authorName && (
                 <div className="d-flex align-items-center gap-2">
                   <UserOutlined className="text-primary" />
-                  <span className="text-muted">
-                    <strong>{series.authorName}</strong>
-                  </span>
+                  <span className="text-muted fw-bold">{series.authorName}</span>
                 </div>
               )}
               {series.articles && (
@@ -115,23 +99,19 @@ export default function SeriesDetailPage() {
         </div>
       </div>
 
-      {/* Articles List */}
+      {/* Articles */}
       <div>
         <div className="d-flex align-items-center justify-content-between mb-4">
           <h4 className="fw-bold d-flex align-items-center gap-2 mb-0">
             <BookOutlined /> Bài viết trong series
           </h4>
-
           <div className="d-flex gap-2">
-            {/* 🔄 Nút chỉnh sửa series */}
             <button
               className="btn btn-outline-secondary"
               onClick={() => navigate(`/series/edit/${series.slug}`)}
             >
               ✏️ Chỉnh sửa series
             </button>
-
-            {/* ➕ Nút thêm bài viết */}
             <button
               className="btn btn-primary"
               onClick={() => navigate(`/articles/create?seriesId=${series.id}`)}
@@ -141,68 +121,11 @@ export default function SeriesDetailPage() {
           </div>
         </div>
 
-
         {series.articles && series.articles.length > 0 ? (
           <div className="row g-3">
             {series.articles.map((article) => (
               <div key={article.id} className="col-12">
-                <a
-                  href={`/articles/${article.slug}`}
-                  className="text-decoration-none"
-                >
-                  <div
-                    className="card card-body border-0 shadow-sm transition-all h-100"
-                    style={{
-                      cursor: "pointer",
-                      transition: "all 0.3s ease",
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.boxShadow =
-                        "0 8px 24px rgba(96, 165, 250, 0.15)";
-                      e.currentTarget.style.transform = "translateY(-2px)";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.boxShadow =
-                        "0 2px 12px rgba(0, 0, 0, 0.08)";
-                      e.currentTarget.style.transform = "translateY(0)";
-                    }}
-                  >
-                    <div className="d-flex align-items-start gap-3">
-                      {/* ✅ Hiển thị orderIndex */}
-                      <div
-                        className="badge bg-primary-soft fw-bold d-flex align-items-center justify-content-center"
-                        style={{
-                          minWidth: 40,
-                          height: 40,
-                          fontSize: 14,
-                        }}
-                      >
-                        {article.orderIndex ?? "?"}
-                      </div>
-
-                      <div className="flex-grow-1">
-                        <h6 className="mb-2 fw-bold">
-                          {article.title}
-                        </h6>
-                        <p className="text-muted small mb-2">
-                          {article.description || "Không có mô tả"}
-                        </p>
-                        <div className="d-flex align-items-center gap-2">
-                          <UserOutlined className="text-muted" />
-                          <small className="text-muted">
-                            {article.authorName || "Anonymous"}
-                          </small>
-                        </div>
-                      </div>
-
-                      <div className="text-end d-flex flex-column gap-2 align-items-end">
-                        <span className="badge bg-light text-dark border">
-                          Đọc →
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </a>
+                <SeriesArticleCard article={article} />
               </div>
             ))}
           </div>

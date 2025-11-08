@@ -8,8 +8,8 @@ interface PostComposerProps {
   userId: string;
   avatarUrl?: string;
   onCreated?: (post: PostDTO) => void;
-  maxImages?: number;      // default 5
-  defaultPrivacy?: Privacy; // default PUBLIC
+  maxImages?: number;
+  defaultPrivacy?: Privacy;
 }
 
 const PostComposer: React.FC<PostComposerProps> = ({
@@ -25,8 +25,42 @@ const PostComposer: React.FC<PostComposerProps> = ({
   const [privacy, setPrivacy] = useState<Privacy>(defaultPrivacy);
   const [isPosting, setIsPosting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isDark, setIsDark] = useState(false);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
-  // preview URLs
+  // Detect dark mode
+  useEffect(() => {
+    const checkDarkMode = () => {
+      setIsDark(document.body.classList.contains("dark-mode"));
+    };
+
+    checkDarkMode();
+
+    const observer = new MutationObserver(checkDarkMode);
+    observer.observe(document.body, { attributes: true, attributeFilter: ["class"] });
+
+    return () => observer.disconnect();
+  }, []);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest(".privacy-dropdown")) {
+        setIsDropdownOpen(false);
+      }
+    };
+
+    if (isDropdownOpen) {
+      document.addEventListener("click", handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener("click", handleClickOutside);
+    };
+  }, [isDropdownOpen]);
+
+  // Preview URLs
   useEffect(() => {
     const urls = images.map((f) => URL.createObjectURL(f));
     setPreviews(urls);
@@ -104,10 +138,11 @@ const PostComposer: React.FC<PostComposerProps> = ({
       const created: PostDTO = await createPost(userId, formData);
       onCreated?.(created);
 
-      // reset
+      // Reset
       setContent("");
       setImages([]);
       setPrivacy(defaultPrivacy);
+      setError(null);
     } catch (err) {
       console.error("Error creating post:", err);
       setError("Failed to create post. Please try again.");
@@ -117,25 +152,75 @@ const PostComposer: React.FC<PostComposerProps> = ({
   };
 
   return (
-    <div className="card shadow-sm mb-4 border-0 rounded-4">
-      <div className="card-body">
-        {/* lỗi (nếu có) */}
+    <div
+      className="card shadow-sm mb-4 border-0 rounded-4"
+      style={{
+        background: "var(--surface-color)",
+        border: "2px solid var(--border-color)",
+        borderRadius: "14px",
+        transition: "all 0.25s ease",
+      }}
+    >
+      <div className="card-body p-4">
+        {/* Error Alert */}
         {error && (
-          <div className="alert alert-danger alert-dismissible fade show mb-3" role="alert">
-            {error}
-            <button type="button" className="btn btn-close" onClick={() => setError(null)} />
+          <div
+            className="alert alert-dismissible mb-3"
+            role="alert"
+            style={{
+              background: "var(--surface-alt)",
+              borderLeft: "4px solid var(--danger-color)",
+              color: "var(--danger-color)",
+              borderRadius: "12px",
+              display: "flex",
+              alignItems: "center",
+              gap: "0.75rem",
+              padding: "1rem",
+              animation: "slideInUp 0.3s ease forwards",
+            }}
+          >
+            <i
+              className="bx bx-error-circle"
+              style={{
+                fontSize: "1.1rem",
+                flexShrink: 0,
+              }}
+            ></i>
+            <span style={{ flex: 1 }}>{error}</span>
+            <button
+              className="btn p-0"
+              onClick={() => setError(null)}
+              style={{
+                background: "transparent",
+                color: "var(--danger-color)",
+                border: "none",
+                cursor: "pointer",
+                fontSize: "1.1rem",
+              }}
+            >
+              <i className="bx bx-x"></i>
+            </button>
           </div>
         )}
 
-        {/* top row: avatar + input pill (giống HomePostPage) */}
-        <div className="d-flex align-items-center gap-3 mb-3">
+        {/* Top Row: Avatar + Input */}
+        <div
+          className="d-flex align-items-center gap-3 mb-3"
+          style={{
+            transition: "all 0.25s ease",
+          }}
+        >
           <img
             src={avatarUrl || unknownAvatar}
             alt="me"
             className="rounded-circle"
             width={44}
             height={44}
-            style={{ objectFit: "cover" }}
+            style={{
+              objectFit: "cover",
+              border: "2px solid var(--border-color)",
+              transition: "all 0.25s ease",
+            }}
           />
           <input
             className="form-control form-control-lg rounded-pill"
@@ -143,39 +228,139 @@ const PostComposer: React.FC<PostComposerProps> = ({
             value={content}
             onChange={(e) => setContent(e.target.value)}
             disabled={isPosting}
+            style={{
+              background: "var(--surface-alt)",
+              color: "var(--text-color)",
+              border: "2px solid var(--border-color)",
+              transition: "all 0.25s ease",
+            }}
+            onFocus={(e) => {
+              e.currentTarget.style.borderColor = "var(--primary-color)";
+              e.currentTarget.style.boxShadow = "0 0 0 3px rgba(96, 165, 250, 0.2)";
+            }}
+            onBlur={(e) => {
+              e.currentTarget.style.borderColor = "var(--border-color)";
+              e.currentTarget.style.boxShadow = "none";
+            }}
           />
         </div>
 
-        {/* previews (nếu có) */}
+        {/* Image Previews */}
         {!!previews.length && (
-          <div className="d-flex flex-wrap gap-2 mb-3">
+          <div
+            className="d-flex flex-wrap gap-2 mb-3"
+            style={{
+              padding: "1rem",
+              background: "var(--surface-alt)",
+              borderRadius: "12px",
+              animation: "slideInUp 0.3s ease forwards",
+            }}
+          >
             {previews.map((src, idx) => (
-              <div key={idx} className="position-relative">
+              <div
+                key={idx}
+                className="position-relative"
+                style={{
+                  transition: "all 0.25s ease",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.opacity = "0.8";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.opacity = "1";
+                }}
+              >
                 <img
                   src={src}
                   alt="preview"
-                  style={{ width: 96, height: 96, objectFit: "cover", borderRadius: 10 }}
+                  style={{
+                    width: "96px",
+                    height: "96px",
+                    objectFit: "cover",
+                    borderRadius: "12px",
+                    border: "2px solid var(--border-color)",
+                  }}
                 />
                 <button
-                  className="btn btn-danger btn-sm position-absolute top-0 end-0 p-0"
-                  style={{ width: 20, height: 20, lineHeight: "20px", transform: "translate(50%, -50%)" }}
+                  className="btn btn-sm position-absolute top-0 end-0 p-0"
+                  style={{
+                    width: "24px",
+                    height: "24px",
+                    lineHeight: "24px",
+                    transform: "translate(50%, -50%)",
+                    background: "var(--danger-color)",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "50%",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    cursor: isPosting ? "not-allowed" : "pointer",
+                    opacity: isPosting ? 0.6 : 1,
+                    transition: "all 0.25s ease",
+                  }}
                   onClick={() => removeImage(idx)}
                   disabled={isPosting}
                   aria-label="Remove image"
+                  onMouseEnter={(e) => {
+                    if (!isPosting) {
+                      e.currentTarget.style.background = "var(--danger-dark)";
+                      e.currentTarget.style.transform = "translate(50%, -50%) scale(1.1)";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isPosting) {
+                      e.currentTarget.style.background = "var(--danger-color)";
+                      e.currentTarget.style.transform = "translate(50%, -50%) scale(1)";
+                    }
+                  }}
                 >
-                  <i className="bx bx-x m-0" />
+                  <i className="bx bx-x" style={{ fontSize: "1rem", margin: 0 }}></i>
                 </button>
               </div>
             ))}
           </div>
         )}
 
-        {/* bottom row: action pills giống HomePostPage */}
-        <div className="d-flex gap-2 flex-wrap align-items-center">
-          {/* Photo/Video → mở input file */}
-          <label className="btn btn-light border rounded-pill px-3 mb-0">
-            <i className="bx bx-image-alt me-1" />
-            Photo/Video
+        {/* Bottom Row: Action Buttons */}
+        <div
+          className="d-flex gap-2 flex-wrap align-items-center"
+          style={{
+            transition: "all 0.25s ease",
+          }}
+        >
+          {/* Photo/Video Button */}
+          <label
+            className="btn btn-sm rounded-pill px-3 mb-0"
+            style={{
+              background: "var(--surface-alt)",
+              color: "var(--text-light)",
+              border: "2px solid var(--border-color)",
+              fontWeight: 600,
+              cursor: isPosting || images.length >= maxImages ? "not-allowed" : "pointer",
+              opacity: isPosting || images.length >= maxImages ? 0.6 : 1,
+              transition: "all 0.25s ease",
+              display: "flex",
+              alignItems: "center",
+              gap: "0.5rem",
+            }}
+            onMouseEnter={(e) => {
+              if (!(isPosting || images.length >= maxImages)) {
+                e.currentTarget.style.background = "var(--primary-color)";
+                e.currentTarget.style.color = "white";
+                e.currentTarget.style.borderColor = "transparent";
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (!(isPosting || images.length >= maxImages)) {
+                e.currentTarget.style.background = "var(--surface-alt)";
+                e.currentTarget.style.color = "var(--text-light)";
+                e.currentTarget.style.borderColor = "var(--border-color)";
+              }
+            }}
+          >
+            <i className="bx bx-image-alt"></i>
+            <span>Photo/Video</span>
             <input
               type="file"
               accept="image/*"
@@ -186,87 +371,236 @@ const PostComposer: React.FC<PostComposerProps> = ({
             />
           </label>
 
-          {/* Poll (demo UI) */}
+          {/* Poll Button (Disabled) */}
           <button
-            className="btn btn-light border rounded-pill px-3"
+            className="btn btn-sm rounded-pill px-3"
             type="button"
             disabled
             title="Coming soon"
+            style={{
+              background: "var(--surface-alt)",
+              color: "var(--text-muted)",
+              border: "2px solid var(--border-color)",
+              fontWeight: 600,
+              cursor: "not-allowed",
+              opacity: 0.5,
+              display: "flex",
+              alignItems: "center",
+              gap: "0.5rem",
+            }}
           >
-            <i className="bx bx-poll me-1" />
-            Poll
+            <i className="bx bx-poll"></i>
+            <span>Poll</span>
           </button>
 
-          {/* Feeling/Activity (demo UI) */}
+          {/* Feeling/Activity Button (Disabled) */}
           <button
-            className="btn btn-light border rounded-pill px-3"
+            className="btn btn-sm rounded-pill px-3"
             type="button"
             disabled
             title="Coming soon"
+            style={{
+              background: "var(--surface-alt)",
+              color: "var(--text-muted)",
+              border: "2px solid var(--border-color)",
+              fontWeight: 600,
+              cursor: "not-allowed",
+              opacity: 0.5,
+              display: "flex",
+              alignItems: "center",
+              gap: "0.5rem",
+            }}
           >
-            <i className="bx bx-smile me-1" />
-            Feeling/Activity
+            <i className="bx bx-smile"></i>
+            <span>Feeling/Activity</span>
           </button>
 
-          {/* Privacy dropdown – hiển thị như pill để hợp UI, vẫn giữ chức năng */}
-          <div className="dropdown">
+          {/* Privacy Dropdown */}
+          <div
+            className="privacy-dropdown"
+            style={{
+              position: "relative",
+            }}
+          >
             <button
-              className="btn btn-light border rounded-pill px-3 dropdown-toggle"
+              className="btn btn-sm rounded-pill px-3"
               type="button"
-              data-bs-toggle="dropdown"
-              aria-expanded="false"
+              onClick={() => setIsDropdownOpen(!isDropdownOpen)}
               disabled={isPosting}
+              style={{
+                background: "var(--surface-alt)",
+                color: "var(--text-light)",
+                border: "2px solid var(--border-color)",
+                fontWeight: 600,
+                cursor: isPosting ? "not-allowed" : "pointer",
+                opacity: isPosting ? 0.6 : 1,
+                transition: "all 0.25s ease",
+                display: "flex",
+                alignItems: "center",
+                gap: "0.5rem",
+              }}
+              onMouseEnter={(e) => {
+                if (!isPosting) {
+                  e.currentTarget.style.background = "var(--primary-color)";
+                  e.currentTarget.style.color = "white";
+                  e.currentTarget.style.borderColor = "transparent";
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!isPosting) {
+                  e.currentTarget.style.background = "var(--surface-alt)";
+                  e.currentTarget.style.color = "var(--text-light)";
+                  e.currentTarget.style.borderColor = "var(--border-color)";
+                }
+              }}
             >
               <i
-                className={`me-1 ${
+                className={`bx ${
                   privacy === "PUBLIC"
-                    ? "bx bx-globe"
+                    ? "bx-globe"
                     : privacy === "FRIENDS"
-                    ? "bx bx-group"
-                    : "bx bx-lock"
+                    ? "bx-group"
+                    : "bx-lock"
                 }`}
-              />
-              {privacy === "PUBLIC" ? "Public" : privacy === "FRIENDS" ? "Friends" : "Private"}
+              ></i>
+              <span>
+                {privacy === "PUBLIC" ? "Public" : privacy === "FRIENDS" ? "Friends" : "Private"}
+              </span>
             </button>
-            <ul className="dropdown-menu">
-              <li>
-                <button className="dropdown-item" onClick={() => setPrivacy("PUBLIC")}>
-                  <i className="bx bx-globe me-2" />
-                  Public
-                </button>
-              </li>
-              <li>
-                <button className="dropdown-item" onClick={() => setPrivacy("FRIENDS")}>
-                  <i className="bx bx-group me-2" />
-                  Friends
-                </button>
-              </li>
-              <li>
-                <button className="dropdown-item" onClick={() => setPrivacy("PRIVATE")}>
-                  <i className="bx bx-lock me-2" />
-                  Private
-                </button>
-              </li>
-            </ul>
+
+            {isDropdownOpen && (
+              <div
+                style={{
+                  position: "absolute",
+                  top: "calc(100% + 0.5rem)",
+                  left: 0,
+                  background: "var(--surface-color)",
+                  border: "2px solid var(--border-color)",
+                  borderRadius: "12px",
+                  boxShadow: "var(--hover-shadow)",
+                  minWidth: "160px",
+                  zIndex: 1000,
+                  overflow: "hidden",
+                  animation: "slideInUp 0.3s ease forwards",
+                }}
+              >
+                {[
+                  { value: "PUBLIC" as Privacy, icon: "bx-globe", label: "Public" },
+                  { value: "FRIENDS" as Privacy, icon: "bx-group", label: "Friends" },
+                  { value: "PRIVATE" as Privacy, icon: "bx-lock", label: "Private" },
+                ].map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => {
+                      setPrivacy(option.value);
+                      setIsDropdownOpen(false);
+                    }}
+                    style={{
+                      width: "100%",
+                      padding: "0.75rem 1rem",
+                      border: "none",
+                      background: privacy === option.value ? "var(--gradient-primary)" : "transparent",
+                      color: privacy === option.value ? "white" : "var(--text-color)",
+                      textAlign: "left",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "0.5rem",
+                      fontWeight: privacy === option.value ? 600 : 500,
+                      transition: "all 0.25s ease",
+                      cursor: "pointer",
+                    }}
+                    onMouseEnter={(e) => {
+                      if (privacy !== option.value) {
+                        e.currentTarget.style.background = "var(--surface-alt)";
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (privacy !== option.value) {
+                        e.currentTarget.style.background = "transparent";
+                      }
+                    }}
+                  >
+                    <i className={`bx ${option.icon}`}></i>
+                    <span>{option.label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
-          {/* Post button ở mép phải */}
+          {/* Post Button */}
           <button
-            className="btn btn-primary ms-auto rounded-pill px-4"
+            className="btn btn-sm rounded-pill px-4 ms-auto"
             onClick={handlePost}
             disabled={isPosting || (!content.trim() && images.length === 0)}
+            style={{
+              background: "var(--gradient-primary)",
+              color: "white",
+              border: "none",
+              fontWeight: 600,
+              cursor: isPosting || (!content.trim() && images.length === 0) ? "not-allowed" : "pointer",
+              opacity: isPosting || (!content.trim() && images.length === 0) ? 0.6 : 1,
+              transition: "all 0.25s ease",
+              display: "flex",
+              alignItems: "center",
+              gap: "0.5rem",
+            }}
+            onMouseEnter={(e) => {
+              if (!(isPosting || (!content.trim() && images.length === 0))) {
+                e.currentTarget.style.boxShadow = "var(--hover-shadow)";
+                e.currentTarget.style.transform = "translateY(-2px)";
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (!(isPosting || (!content.trim() && images.length === 0))) {
+                e.currentTarget.style.boxShadow = "none";
+                e.currentTarget.style.transform = "translateY(0)";
+              }
+            }}
           >
             {isPosting ? (
               <>
-                <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true" />
-                Posting…
+                <i
+                  className="bx bx-loader-alt bx-spin"
+                  style={{
+                    fontSize: "0.9rem",
+                    animation: "spin 1s linear infinite",
+                  }}
+                ></i>
+                <span>Posting…</span>
               </>
             ) : (
-              "Post"
+              <>
+                <i className="bx bx-send" style={{ fontSize: "0.9rem" }}></i>
+                <span>Post</span>
+              </>
             )}
           </button>
         </div>
       </div>
+
+      <style>{`
+        @keyframes slideInUp {
+          from {
+            opacity: 0;
+            transform: translateY(10px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
+        @keyframes spin {
+          from {
+            transform: rotate(0deg);
+          }
+          to {
+            transform: rotate(360deg);
+          }
+        }
+      `}</style>
     </div>
   );
 };

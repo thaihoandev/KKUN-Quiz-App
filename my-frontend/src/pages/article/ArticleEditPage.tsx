@@ -1,10 +1,8 @@
+// src/pages/articles/ArticleEditPage.tsx
 import React, { useEffect, useState } from "react";
 import MDEditor from "@uiw/react-md-editor";
 import { useParams, useNavigate } from "react-router-dom";
-import {
-  getArticleBySlug,
-  updateArticle,
-} from "@/services/articleService";
+import { getArticleBySlug, updateArticle } from "@/services/articleService";
 import { getTags, createTag } from "@/services/tagService";
 import { getSeriesList } from "@/services/seriesService";
 import { ArticleCategoryDto } from "@/types/article";
@@ -26,7 +24,6 @@ import {
   FileTextOutlined,
   FolderOpenOutlined,
   BarChartOutlined,
-  PictureOutlined,
   UploadOutlined,
   TagsOutlined,
   ReadOutlined,
@@ -34,7 +31,25 @@ import {
 import { useAuthStore } from "@/store/authStore";
 import { getCategories } from "@/services/categoryArticleService";
 
-const { Title, Text } = Typography;
+const { Title } = Typography;
+
+/** Helper: đọc mode từ localStorage với các key phổ biến */
+function resolveModeFromLocalStorage(): "light" | "dark" {
+  try {
+    const keys = ["theme", "color-theme", "app-theme", "mode"];
+    for (const k of keys) {
+      const raw = localStorage.getItem(k);
+      if (!raw) continue;
+      const v = String(raw).toLowerCase().trim();
+      if (v.includes("dark")) return "dark";
+      if (v.includes("light")) return "light";
+      if (v === "1" || v === "true" || v === "darkmode" || v === "enabled") return "dark";
+      if (v === "0" || v === "false" || v === "disabled") return "light";
+    }
+  } catch {}
+  if (document.documentElement.classList.contains("dark-mode")) return "dark";
+  return "light";
+}
 
 const ArticleEditPage: React.FC = () => {
   const { slug } = useParams<{ slug: string }>();
@@ -49,6 +64,37 @@ const ArticleEditPage: React.FC = () => {
   const [thumbnail, setThumbnail] = useState<File | null>(null);
   const [thumbnailPreview, setThumbnailPreview] = useState<string>("");
   const [contentMarkdown, setContentMarkdown] = useState<string>("");
+
+  /** Lấy mode NGAY từ localStorage cho lần render đầu tiên */
+  const [mdColorMode, setMdColorMode] = useState<"light" | "dark">(
+    () => resolveModeFromLocalStorage()
+  );
+
+  // Đồng bộ khi có thay đổi (tab khác hoặc custom event trong cùng tab)
+  useEffect(() => {
+    const apply = () => setMdColorMode(resolveModeFromLocalStorage());
+
+    const onStorage = (e: StorageEvent) => {
+      if (!e.key) return;
+      if (["theme", "color-theme", "app-theme", "mode"].includes(e.key)) apply();
+    };
+    window.addEventListener("storage", onStorage);
+
+    const onThemeChange = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.mode === "dark" || detail?.mode === "light") {
+        setMdColorMode(detail.mode);
+      } else {
+        apply();
+      }
+    };
+    window.addEventListener("theme-change", onThemeChange as EventListener);
+
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("theme-change", onThemeChange as EventListener);
+    };
+  }, []);
 
   // 🧩 Load dữ liệu bài viết + các list cơ bản
   useEffect(() => {
@@ -69,7 +115,6 @@ const ArticleEditPage: React.FC = () => {
           return;
         }
 
-        // ⚠️ Kiểm tra quyền (frontend-level)
         if (user && user.userId !== article.authorId) {
           notification.error({
             message: "Không có quyền chỉnh sửa",
@@ -83,7 +128,6 @@ const ArticleEditPage: React.FC = () => {
         setTags(tagRes.content);
         setSeries(seriesRes.content);
 
-        // ✅ Gán dữ liệu vào form
         form.setFieldsValue({
           title: article.title,
           categoryId: article.category?.id,
@@ -94,7 +138,7 @@ const ArticleEditPage: React.FC = () => {
 
         setContentMarkdown(article.contentMarkdown || "");
         setThumbnailPreview(article.thumbnailUrl || "");
-      } catch (err) {
+      } catch {
         notification.error({
           message: "Lỗi tải dữ liệu",
           description: "Không thể tải thông tin bài viết hoặc danh mục!",
@@ -107,7 +151,6 @@ const ArticleEditPage: React.FC = () => {
     fetchData();
   }, [slug, form, navigate, user]);
 
-  // ✅ Upload ảnh
   const handleThumbnailChange = (info: any) => {
     const file = info.file.originFileObj || info.file;
     setThumbnail(file);
@@ -118,7 +161,6 @@ const ArticleEditPage: React.FC = () => {
     }
   };
 
-  // ✅ Tạo tag mới
   const handleTagCreate = async (newTagName: string) => {
     const existing = tags.find(
       (t) => t.name.toLowerCase() === newTagName.toLowerCase()
@@ -139,7 +181,6 @@ const ArticleEditPage: React.FC = () => {
     }
   };
 
-  // ✅ Submit cập nhật
   const handleSubmit = async (values: any) => {
     if (!user?.userId || !slug) {
       notification.error({
@@ -194,7 +235,6 @@ const ArticleEditPage: React.FC = () => {
 
       <Card className="shadow-lg border-0" style={{ borderRadius: 16 }}>
         <Form form={form} layout="vertical" onFinish={handleSubmit}>
-          {/* Tiêu đề */}
           <Form.Item
             name="title"
             label={
@@ -208,7 +248,6 @@ const ArticleEditPage: React.FC = () => {
             <Input size="large" placeholder="Nhập tiêu đề..." />
           </Form.Item>
 
-          {/* Category + Difficulty + Series */}
           <Row gutter={16}>
             <Col xs={24} md={8}>
               <Form.Item
@@ -270,7 +309,6 @@ const ArticleEditPage: React.FC = () => {
             </Col>
           </Row>
 
-          {/* Tags */}
           <Form.Item
             name="tags"
             label={
@@ -292,18 +330,23 @@ const ArticleEditPage: React.FC = () => {
             />
           </Form.Item>
 
-          {/* Markdown */}
           <Form.Item label="Nội dung bài viết">
-            <MDEditor
-              value={contentMarkdown}
-              onChange={(v) => setContentMarkdown(v || "")}
-              height={500}
-              preview="live"
-              data-color-mode="light"
-            />
+            {/*
+              ĐẶT attribute NGAY TRONG JSX + key để remount.
+              Như vậy MDEditor sẽ đọc đúng data-color-mode ngay từ lúc mount.
+            */}
+            <div data-color-mode={mdColorMode} key={`mde-wrap-${mdColorMode}`}>
+              <MDEditor
+                key={`mde-${mdColorMode}`}   // remount khi mode đổi
+                value={contentMarkdown}
+                onChange={(v) => setContentMarkdown(v || "")}
+                height={500}
+                preview="live"
+                previewOptions={{ className: "article-content" }}
+              />
+            </div>
           </Form.Item>
 
-          {/* Thumbnail */}
           <Form.Item label="Ảnh thumbnail">
             <Row gutter={16}>
               <Col xs={24} md={thumbnailPreview ? 16 : 24}>

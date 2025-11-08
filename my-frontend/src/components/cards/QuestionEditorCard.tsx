@@ -125,13 +125,13 @@ const QuestionEditorCard: React.FC<QuestionEditorCardProps> = ({
           {/* ✅ Dropdown menu chức năng */}
           <div className="dropdown">
             <button
-              className="btn btn-outline-secondary btn-sm"
+              className="btn btn-outline-secondary btn-icon"
               type="button"
               id={`actionMenu${index}`}
               data-bs-toggle="dropdown"
               aria-expanded="false"
             >
-              <i className="bx bx-dots-vertical-rounded fs-5"></i>
+              <i className="bx bx-dots-vertical-rounded fs-6"></i>
             </button>
             <ul
               className="dropdown-menu dropdown-menu-end"

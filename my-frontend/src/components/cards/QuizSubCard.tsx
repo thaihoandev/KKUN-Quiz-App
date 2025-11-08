@@ -67,7 +67,7 @@ const QuizSubCard: React.FC<QuizCardProps> = ({quiz}) => {
 
     return (
         <div className="card h-100 border-0 shadow-sm hover:shadow-md transition-shadow duration-300 rounded-lg overflow-hidden">
-            <div className="card-header bg-white d-flex justify-content-between align-items-center py-3 px-4 border-bottom border-light">
+            <div className="card-header bg-white d-flex justify-content-between align-items-center py-3 px-4">
                 <div className="d-flex align-items-center">
                     <div className={`badge bg-${getStatusBadgeColor()} me-2`}>
                         {quiz.status}

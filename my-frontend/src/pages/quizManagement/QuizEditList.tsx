@@ -1,7 +1,7 @@
 import React from "react";
-import { Pagination, Alert } from "antd";
 import QuestionEditorCard from "@/components/cards/QuestionEditorCard";
 import { Question } from "@/interfaces";
+import CustomPagination from "@/components/paginations/CustomPagination";
 
 type QuestionWithClientKey = Question & { clientKey: string };
 
@@ -10,8 +10,8 @@ type Props = {
   questions: QuestionWithClientKey[];
   loading: boolean;
 
-  page: number; 
-  size: number; 
+  page: number; // 0-based index
+  size: number;
   total: number;
   onPageChange: (page0Based: number, size: number) => void;
 
@@ -41,34 +41,22 @@ const QuizEditList: React.FC<Props> = ({
   const end = Math.min(total, page * size + questions.length);
   const totalPoints = questions.reduce((sum, q) => sum + (q.points || 0), 0);
 
-  const handleChange = (uiPage: number, pageSize?: number) => {
-    const newSize = pageSize ?? size;
-    if (newSize !== size) {
-      onPageChange(0, newSize);
-    } else {
-      onPageChange(uiPage - 1, newSize);
-    }
+  const handleChange = (newPage: number) => {
+    onPageChange(newPage - 1, size); // ✅ chuyển 1-based → 0-based
   };
 
   return (
-    <div className="col-8">
+    <div className="row">
       {/* Header tools */}
       <div className="d-flex justify-content-between align-items-center mb-4">
         <div className="d-flex align-items-baseline gap-2">
           <div className="fw-bold fs-5">
             {start}-{end}
           </div>
-          <div className="fw-bold fs-6">
-            of {total} questions
-          </div>
-          <div className="text-muted small">
-            ({totalPoints} points on this page)
-          </div>
+          <div className="fw-bold fs-6">of {total} questions</div>
+          <div className="text-muted small">({totalPoints} points on this page)</div>
         </div>
-        <button 
-          className="btn btn-outline-secondary btn-sm me-2" 
-          onClick={onAddQuestion}
-        >
+        <button className="btn btn-outline-secondary btn-sm me-2" onClick={onAddQuestion}>
           <i className="bx bx-plus-circle"></i>
           <span className="ms-1">Thêm câu hỏi</span>
         </button>
@@ -85,10 +73,8 @@ const QuizEditList: React.FC<Props> = ({
       ) : questions.length > 0 ? (
         <div>
           {questions.map((q, idx) => {
-            // ✅ Đảm bảo key ổn định
             const key = q.clientKey || q.questionId || `q-${idx}`;
             const globalIndex = page * size + idx;
-            
             return (
               <QuestionEditorCard
                 key={key}
@@ -142,18 +128,17 @@ const QuizEditList: React.FC<Props> = ({
         </div>
       </div>
 
-      {/* Pagination */}
-      <div className="d-flex justify-content-end align-items-center mt-4">
-        <Pagination
-          current={page + 1}
-          pageSize={size}
-          total={total}
-          onChange={handleChange}
-          showSizeChanger
-          pageSizeOptions={[5, 10, 20, 50]}
-          showTotal={(t, range) => `${range[0]}-${range[1]} of ${t} items`}
-        />
-      </div>
+      {/* ✅ Custom Pagination */}
+      {total > 0 && (
+        <div className="d-flex justify-content-end align-items-center mt-4">
+          <CustomPagination
+            current={page + 1}
+            total={total}
+            pageSize={size}
+            onChange={handleChange}
+          />
+        </div>
+      )}
     </div>
   );
 };

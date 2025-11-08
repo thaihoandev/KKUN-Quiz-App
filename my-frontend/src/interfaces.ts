@@ -28,43 +28,6 @@ export interface PageSort {
   unsorted: boolean;
 }
 
-
-export interface User {
-    id: string;
-    username: string;
-    email: string;
-    accessToken: string;
-    refreshToken: string;
-    avatar?: string;
-    name: string;
-}
-
-export interface UserResponseDTO {
-  userId: string;
-  username: string;
-  email: string;
-  school: string;
-  name: string;
-  avatar: string;
-  roles: string[];
-  createdAt: string;
-  isActive: boolean;
-}
-
-export interface UserRequestDTO {
-  username: string;
-  email: string;
-  password?: string;
-  school?: string;
-  name: string;
-  avatar?: string;
-  role?: string;
-}
-
-export interface UserProfile {
-  userId: string;
-  email?: string;
-}
 export interface Option {
     optionId: string;
     optionText: string;

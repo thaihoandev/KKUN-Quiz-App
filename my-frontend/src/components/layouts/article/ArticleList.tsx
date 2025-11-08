@@ -2,10 +2,10 @@ import React, { useEffect, useState } from "react";
 import { getArticles, getArticlesByCategory, PageResponse } from "@/services/articleService";
 import { ArticleDto } from "@/types/article";
 import { FolderOutlined } from "@ant-design/icons";
-import { Row, Col, Empty, Spin, Space, Typography, Pagination, message } from "antd";
+import { Row, Col, Empty, Spin, Space, Typography, message } from "antd";
 import "bootstrap/dist/css/bootstrap.min.css";
-import ArticleCard from "./ArticleCard";
 import ArticleCardHorizontal from "./ArticleCardHorizontal";
+import CustomPagination from "@/components/paginations/CustomPagination";
 
 const { Text } = Typography;
 
@@ -18,7 +18,7 @@ const ArticleList: React.FC<ArticleListProps> = ({ categoryId, searchQuery }) =>
   const [articlesPage, setArticlesPage] = useState<PageResponse<ArticleDto> | null>(null);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(8);
+  const pageSize = 8;
 
   useEffect(() => {
     const fetchArticles = async () => {
@@ -49,11 +49,20 @@ const ArticleList: React.FC<ArticleListProps> = ({ categoryId, searchQuery }) =>
       }
     };
     fetchArticles();
-  }, [page, pageSize, categoryId, searchQuery]);
+  }, [page, categoryId, searchQuery]);
 
   if (loading) {
     return (
-      <div className="d-flex justify-content-center align-items-center min-vh-100 bg-light">
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          minHeight: "100vh",
+          background: "var(--background-color)",
+          color: "var(--text-color)",
+        }}
+      >
         <Spin size="large" tip="Đang tải bài viết..." />
       </div>
     );
@@ -61,12 +70,24 @@ const ArticleList: React.FC<ArticleListProps> = ({ categoryId, searchQuery }) =>
 
   if (!articlesPage || articlesPage.content.length === 0) {
     return (
-      <div className="py-5 bg-light">
+      <div
+        style={{
+          padding: "2rem 1rem",
+          background: "var(--background-color)",
+          color: "var(--text-color)",
+          borderRadius: "var(--border-radius)",
+        }}
+      >
         <Empty
           description={
             <Space direction="vertical" align="center">
-              <FolderOutlined style={{ fontSize: "56px", color: "#8c8c8c" }} />
-              <Text type="secondary">Chưa có bài viết nào</Text>
+              <FolderOutlined
+                style={{
+                  fontSize: "56px",
+                  color: "var(--text-color)",
+                }}
+              />
+              <Text style={{ color: "var(--text-light)" }}>Chưa có bài viết nào</Text>
             </Space>
           }
         />
@@ -75,31 +96,49 @@ const ArticleList: React.FC<ArticleListProps> = ({ categoryId, searchQuery }) =>
   }
 
   return (
-    <div className="py-4 bg-light">
+    <div
+      style={{
+        padding: "2rem 0",
+        background: "var(--background-color)",
+        color: "var(--text-color)",
+      }}
+    >
       <Row gutter={[0, 20]}>
-        {articlesPage.content.map((article) => (
-          <Col span={24} key={article.id}>
+        {articlesPage.content.map((article, index) => (
+          <Col span={24} key={article.id} style={{ animation: `slideInUp 0.5s ease forwards`, animationDelay: `${index * 0.05}s` }}>
             <ArticleCardHorizontal article={article} />
           </Col>
         ))}
       </Row>
 
-
-      <div className="d-flex justify-content-center mt-5">
-        <Pagination
+      {/* ✅ Custom pagination */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "center",
+          marginTop: "3rem",
+        }}
+      >
+        <CustomPagination
           current={page}
-          pageSize={pageSize}
           total={articlesPage.totalElements}
-          onChange={(p, size) => {
-            setPage(p);
-            setPageSize(size);
-          }}
-          showSizeChanger
-          pageSizeOptions={[6, 8, 12, 16]}
-          showTotal={(total) => `Tổng cộng ${total} bài viết`}
-          className="bg-white p-3 rounded-3 shadow-sm"
+          pageSize={pageSize}
+          onChange={(p) => setPage(p)}
         />
       </div>
+
+      <style>{`
+        @keyframes slideInUp {
+          from {
+            opacity: 0;
+            transform: translateY(20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+      `}</style>
     </div>
   );
 };

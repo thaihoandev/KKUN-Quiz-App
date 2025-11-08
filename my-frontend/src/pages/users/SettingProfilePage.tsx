@@ -3,11 +3,10 @@ import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "@/store/authStore";
 import {
-  getCurrentUser,
-  updateUser,
   deleteSoftUser,
-  requestEmailOtp,     // 👈 NEW
-  verifyEmailOtp,      // 👈 NEW
+  requestEmailOtp,
+  verifyEmailOtp,
+  updateMyProfile,
 } from "@/services/userService";
 import EditAvatarModal from "@/components/modals/EditAvatarModal";
 
@@ -23,7 +22,11 @@ type Notice = { type: "success" | "error"; message: string };
 
 const SettingProfilePage = () => {
   const navigate = useNavigate();
-  const { user, logout } = useAuthStore();
+  const user = useAuthStore((s) => s.user);
+  const logout = useAuthStore((s) => s.logout);
+  const ensureMe = useAuthStore((s) => s.ensureMe);
+  const refreshStoreMe = useAuthStore((s) => s.refreshMe);
+
   const [me, setMe] = useState<any | null>(null);
 
   const [selectedAvatar, setSelectedAvatar] = useState(1);
@@ -47,10 +50,11 @@ const SettingProfilePage = () => {
     setTimeout(() => setNotice(null), 4000);
   };
 
+  // ✅ Lấy user lúc mount bằng ensureMe (tôn trọng cache/ETag)
   useEffect(() => {
     (async () => {
       try {
-        const current = await getCurrentUser();
+        const current = await ensureMe();
         if (current) setMe(current);
         else showMessage({ type: "error", message: "Không thể tải thông tin người dùng." });
       } catch (err: any) {
@@ -61,15 +65,19 @@ const SettingProfilePage = () => {
         showMessage({ type: "error", message });
       }
     })();
-  }, []);
+  }, [ensureMe]);
 
-  const safeUserId = me?.userId || user?.userId;
+  const safeUserId = user?.userId || me?.userId;
 
+  // ✅ Đồng bộ lại me sau các hành động cần dữ liệu mới từ server
   const refreshMe = async () => {
     try {
-      const curr = await getCurrentUser(true);
-      if (curr) setMe(curr);
-    } catch {}
+      await refreshStoreMe();              // làm mới store (304-friendly)
+      const newest = useAuthStore.getState().user;
+      if (newest) setMe(newest);
+    } catch {
+      // bỏ qua
+    }
   };
 
   const handleFieldChange = async (fieldName: string, newValue: string) => {
@@ -104,9 +112,11 @@ const SettingProfilePage = () => {
     setSaving(true);
     try {
       const payload: PartialUser = { [fieldName]: newValue } as PartialUser;
-      const updated = await updateUser(String(safeUserId), payload as any);
-      setMe(updated);
+      const updated = await updateMyProfile(payload as any);
+      setMe(updated); // cập nhật tức thời UI
       showMessage({ type: "success", message: "Cập nhật thông tin thành công." });
+      // Đồng bộ store (nếu cần dùng global user đồng nhất)
+      refreshMe();
     } catch (err: any) {
       const message =
         err?.response?.data?.message ||
@@ -126,7 +136,7 @@ const SettingProfilePage = () => {
     try {
       await deleteSoftUser(String(safeUserId), String(password));
       showMessage({ type: "success", message: "Tài khoản đã được vô hiệu hóa." });
-      if (logout) logout();
+      if (logout) await logout();
       navigate("/");
     } catch (err: any) {
       const message =
@@ -161,7 +171,7 @@ const SettingProfilePage = () => {
     setVerifyingOtp(true);
     try {
       await verifyEmailOtp(otp);
-      await refreshMe();
+      await refreshMe(); // ✅ đồng bộ lại user từ server
       setShowEmailOtp(false);
       showMessage({ type: "success", message: "Xác minh thành công. Email đã được cập nhật." });
     } catch (e: any) {
@@ -369,6 +379,7 @@ const SettingProfilePage = () => {
             setMe(updated);
             setShowEditAvatar(false);
             showMessage({ type: "success", message: "Cập nhật ảnh đại diện thành công." });
+            refreshMe(); // đồng bộ store sau khi cập nhật avatar
           }}
         />
       )}

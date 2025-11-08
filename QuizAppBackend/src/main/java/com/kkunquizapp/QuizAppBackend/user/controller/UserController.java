@@ -142,7 +142,7 @@ public class UserController {
             @AuthenticationPrincipal UserPrincipal currentUser,
             @RequestPart("file") MultipartFile file
     ) {
-        UserResponseDTO updatedUser = userService.updateUserAvatar(currentUser.getUserId(), file, null);
+        UserResponseDTO updatedUser = userService.updateUserAvatar(currentUser.getUserId(), file);
         return ResponseEntity.ok(updatedUser);
     }
 
@@ -152,7 +152,7 @@ public class UserController {
             @PathVariable UUID id,
             @RequestPart("file") MultipartFile file
     ) {
-        UserResponseDTO updatedUser = userService.updateUserAvatar(id, file, null);
+        UserResponseDTO updatedUser = userService.updateUserAvatar(id, file);
         return ResponseEntity.ok(updatedUser);
     }
 

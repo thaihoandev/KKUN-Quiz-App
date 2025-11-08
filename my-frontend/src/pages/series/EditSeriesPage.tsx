@@ -8,11 +8,13 @@ import {
   Typography,
   List,
   notification,
+  Popconfirm,
 } from "antd";
 import {
   getSeriesBySlug,
   updateSeries,
   updateArticleOrder,
+  removeArticleFromSeries,
 } from "@/services/seriesService";
 import { useNavigate, useParams } from "react-router-dom";
 import {
@@ -21,6 +23,7 @@ import {
   SaveOutlined,
   MenuOutlined,
   CheckOutlined,
+  DeleteOutlined,
 } from "@ant-design/icons";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 import { ArticleDto } from "@/types/article";
@@ -83,7 +86,7 @@ export default function EditSeriesPage() {
       }
     };
     fetchSeries();
-  }, [slug]);
+  }, [slug, navigate]);
 
   // ✅ Lưu thông tin series
   const handleSaveInfo = async () => {
@@ -157,6 +160,26 @@ export default function EditSeriesPage() {
     }
   };
 
+  // ✅ Xóa bài viết khỏi series
+  const handleRemoveArticle = async (articleId: string) => {
+    if (!form.id) return;
+    try {
+      const ok = await removeArticleFromSeries(form.id, articleId);
+      if (ok) {
+        setArticles((prev) => prev.filter((a) => a.id !== articleId));
+        notification.success({
+          message: "Đã xóa khỏi series",
+          description: "Bài viết đã được gỡ khỏi series này.",
+        });
+      }
+    } catch {
+      notification.error({
+        message: "Xóa thất bại",
+        description: "Không thể gỡ bài viết khỏi series. Vui lòng thử lại.",
+      });
+    }
+  };
+
   if (loading)
     return (
       <div className="d-flex align-items-center justify-content-center py-5">
@@ -226,7 +249,7 @@ export default function EditSeriesPage() {
         title={
           <span className="fw-semibold">
             <MenuOutlined className="me-2" />
-            Sắp xếp thứ tự bài viết
+            Sắp xếp và quản lý bài viết
           </span>
         }
         className="shadow-sm border-0"
@@ -242,11 +265,7 @@ export default function EditSeriesPage() {
                     <List
                       dataSource={articles}
                       renderItem={(a, index) => (
-                        <Draggable
-                          draggableId={a.id}
-                          index={index}
-                          key={a.id}
-                        >
+                        <Draggable draggableId={a.id} index={index} key={a.id}>
                           {(drag) => (
                             <div
                               ref={drag.innerRef}
@@ -254,16 +273,36 @@ export default function EditSeriesPage() {
                               {...drag.dragHandleProps}
                               className="border rounded p-2 mb-2 bg-light d-flex align-items-center justify-content-between"
                             >
-                              <div>
-                                <Text strong>
-                                  {index + 1}. {a.title}
-                                </Text>
-                                <br />
-                                <Text type="secondary" style={{ fontSize: 12 }}>
-                                  {a.description || "Không có mô tả"}
-                                </Text>
+                              {/* 👉 Nhóm kéo-thả + nội dung */}
+                              <div className="d-flex align-items-center gap-3">
+                                {/* 3 gạch nằm trước để kéo */}
+                                <MenuOutlined className="text-muted fs-5" />
+
+                                <div>
+                                  <Text strong>
+                                    {index + 1}. {a.title}
+                                  </Text>
+                                  <br />
+                                  <Text type="secondary" style={{ fontSize: 12 }}>
+                                    {a.description || "Không có mô tả"}
+                                  </Text>
+                                </div>
                               </div>
-                              <MenuOutlined className="text-muted" />
+
+                              {/* Nút xóa ở cuối */}
+                              <Popconfirm
+                                title="Gỡ bài viết khỏi series?"
+                                okText="Xóa"
+                                cancelText="Hủy"
+                                onConfirm={() => handleRemoveArticle(a.id)}
+                              >
+                                <Button
+                                  type="text"
+                                  size="small"
+                                  danger
+                                  icon={<DeleteOutlined />}
+                                />
+                              </Popconfirm>
                             </div>
                           )}
                         </Draggable>
@@ -271,6 +310,7 @@ export default function EditSeriesPage() {
                     >
                       {provided.placeholder}
                     </List>
+
                   </div>
                 )}
               </Droppable>

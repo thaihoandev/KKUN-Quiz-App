@@ -77,9 +77,9 @@ axiosInstance.interceptors.response.use(
 
     // ✅ Trường hợp 2: không có refreshToken (đăng xuất)
     if (is401 && !isRefreshCall && !hasRefreshCookie) {
-      console.log("[axiosInstance] No refresh cookie left, force logout");
+      console.warn("[axiosInstance] 401 without refresh cookie — skipping auto redirect");
       useAuthStore.getState().logout();
-      redirectToLogin();
+      // ❌ Không redirect tự động ở đây nữa
       return Promise.reject(error);
     }
 

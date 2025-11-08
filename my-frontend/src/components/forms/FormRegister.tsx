@@ -1,12 +1,19 @@
+import React, { useState } from "react";
 import { useForm, SubmitHandler } from "react-hook-form";
 import { yupResolver } from "@hookform/resolvers/yup";
 import { registerSchema } from "@/schemas/authSchema";
-import TextInput from "@/components/formFields/InputField";
-import PasswordInput from "@/components/formFields/PasswordField";
-import { Link, useNavigate } from "react-router-dom";
-import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useGoogleLogin } from "@react-oauth/google";
+import { notification } from "antd";
+import {
+  EyeOutlined,
+  EyeInvisibleOutlined,
+  GoogleOutlined,
+  LockOutlined,
+  UserOutlined,
+  MailOutlined,
+} from "@ant-design/icons";
 
 interface RegisterFormData {
   name: string;
@@ -19,7 +26,7 @@ interface RegisterFormData {
 const FormRegister: React.FC = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
 
   const { register: registerUser, loginWithGoogle } = useAuth();
 
@@ -33,14 +40,21 @@ const FormRegister: React.FC = () => {
 
   const onSubmit: SubmitHandler<RegisterFormData> = async (data) => {
     setLoading(true);
-    setErrorMessage("");
     try {
       await registerUser(data.name, data.username, data.email, data.password);
-      navigate("/");
+      notification.success({
+        message: "Success",
+        description: "Account created successfully! Redirecting...",
+        duration: 2,
+      });
+      setTimeout(() => navigate("/"), 2000);
     } catch (error: unknown) {
-      setErrorMessage(
-        error instanceof Error ? error.message : "An error occurred during registration."
-      );
+      const errorMsg = error instanceof Error ? error.message : "Registration failed. Please try again.";
+      notification.error({
+        message: "Registration Failed",
+        description: errorMsg,
+        duration: 4,
+      });
     } finally {
       setLoading(false);
     }
@@ -59,108 +73,362 @@ const FormRegister: React.FC = () => {
   });
 
   return (
-    <div className="card shadow-lg w-100 mx-auto p-4 border-0" style={{ maxWidth: "420px" }}>
-      <h4 className="mb-2 text-center fw-bold">Adventure starts here 🚀</h4>
-      <p className="mb-4 text-center text-muted">
-        Make your app management easy and fun!
-      </p>
-
-      {errorMessage && (
-        <div className="alert alert-danger" role="alert">
-          {errorMessage}
-        </div>
-      )}
-
-      <form id="formAuthentication" className="mb-4" onSubmit={handleSubmit(onSubmit)}>
-        <TextInput
-          label="Full name"
-          id="name"
-          name="name"
-          placeholder="Enter your full name"
-          register={register}
-          error={errors.name?.message}
-        />
-
-        <TextInput
-          label="Username"
-          id="username"
-          name="username"
-          placeholder="Enter your username"
-          register={register}
-          error={errors.username?.message}
-        />
-
-        <TextInput
-          label="Email"
-          id="email"
-          name="email"
-          type="email"
-          placeholder="Enter your email"
-          register={register}
-          error={errors.email?.message}
-        />
-
-        <PasswordInput
-          label="Password"
-          id="password"
-          name="password"
-          placeholder="••••••••"
-          register={register}
-          error={errors.password?.message}
-        />
-
-        <div className="mb-4">
-          <div className="form-check">
-            <input
-              className="form-check-input"
-              type="checkbox"
-              id="terms-conditions"
-              {...register("terms")}
-            />
-            <label className="form-check-label" htmlFor="terms-conditions">
-              I agree to{" "}
-              <Link to="#" className="text-primary">
-                privacy policy & terms
-              </Link>
-            </label>
-          </div>
-          {errors.terms?.message && (
-            <div className="invalid-feedback d-block">{errors.terms.message}</div>
-          )}
-        </div>
-
-        <button
-          type="submit"
-          className="btn btn-primary btn-lg w-100 mb-3"
-          disabled={loading}
+    <div style={{ width: "100%", maxWidth: "380px", maxHeight: "90vh", overflowY: "auto" }}>
+      {/* Form Header */}
+      <div style={{ marginBottom: "1.5rem", textAlign: "center" }}>
+        <h2
+          style={{
+            color: "var(--primary-color)",
+            fontWeight: 900,
+            fontSize: "1.6rem",
+            marginBottom: "0.3rem",
+          }}
         >
-          {loading ? (
-            <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-          ) : (
-            "Sign up"
-          )}
-        </button>
-      </form>
-
-      <p className="text-center mb-4">
-        <span className="text-muted">Already have an account? </span>
-        <Link to="/login" className="text-primary">
-          Sign in instead
-        </Link>
-      </p>
-
-      <div className="d-flex align-items-center mb-4">
-        <hr className="flex-grow-1" />
-        <span className="mx-2 text-muted">or</span>
-        <hr className="flex-grow-1" />
+          Create Account 🚀
+        </h2>
+        <p style={{ color: "var(--text-light)", fontSize: "0.85rem" }}>
+          Join millions of players
+        </p>
       </div>
 
-      <div className="d-flex justify-content-center">
+      {/* Form */}
+      <div>
+        {/* Full Name Field */}
+        <div style={{ marginBottom: "1rem" }}>
+          <label
+            style={{
+              display: "block",
+              color: "var(--text-color)",
+              fontWeight: 600,
+              fontSize: "0.85rem",
+              marginBottom: "0.3rem",
+            }}
+          >
+            <UserOutlined style={{ marginRight: "0.4rem" }} />
+            Full Name
+          </label>
+          <input
+            type="text"
+            placeholder="Enter your full name"
+            {...register("name")}
+            style={{
+              width: "100%",
+              padding: "0.65rem 0.9rem",
+              borderRadius: "8px",
+              border: errors.name ? "2px solid var(--danger-color)" : "2px solid var(--border-color)",
+              background: "var(--surface-color)",
+              color: "var(--text-color)",
+              fontSize: "0.85rem",
+              transition: "var(--transition)",
+              fontFamily: "var(--font-family)",
+              boxSizing: "border-box",
+            }}
+            onFocus={(e) => {
+              if (!errors.name) e.currentTarget.style.borderColor = "var(--primary-color)";
+            }}
+            onBlur={(e) => {
+              e.currentTarget.style.borderColor = errors.name ? "var(--danger-color)" : "var(--border-color)";
+            }}
+          />
+          {errors.name && (
+            <p style={{ color: "var(--danger-color)", fontSize: "0.7rem", marginTop: "0.2rem" }}>
+              {errors.name.message}
+            </p>
+          )}
+        </div>
+
+        {/* Username Field */}
+        <div style={{ marginBottom: "1rem" }}>
+          <label
+            style={{
+              display: "block",
+              color: "var(--text-color)",
+              fontWeight: 600,
+              fontSize: "0.85rem",
+              marginBottom: "0.3rem",
+            }}
+          >
+            <UserOutlined style={{ marginRight: "0.4rem" }} />
+            Username
+          </label>
+          <input
+            type="text"
+            placeholder="Enter username"
+            {...register("username")}
+            style={{
+              width: "100%",
+              padding: "0.65rem 0.9rem",
+              borderRadius: "8px",
+              border: errors.username ? "2px solid var(--danger-color)" : "2px solid var(--border-color)",
+              background: "var(--surface-color)",
+              color: "var(--text-color)",
+              fontSize: "0.85rem",
+              transition: "var(--transition)",
+              fontFamily: "var(--font-family)",
+              boxSizing: "border-box",
+            }}
+            onFocus={(e) => {
+              if (!errors.username) e.currentTarget.style.borderColor = "var(--primary-color)";
+            }}
+            onBlur={(e) => {
+              e.currentTarget.style.borderColor = errors.username ? "var(--danger-color)" : "var(--border-color)";
+            }}
+          />
+          {errors.username && (
+            <p style={{ color: "var(--danger-color)", fontSize: "0.7rem", marginTop: "0.2rem" }}>
+              {errors.username.message}
+            </p>
+          )}
+        </div>
+
+        {/* Email Field */}
+        <div style={{ marginBottom: "1rem" }}>
+          <label
+            style={{
+              display: "block",
+              color: "var(--text-color)",
+              fontWeight: 600,
+              fontSize: "0.85rem",
+              marginBottom: "0.3rem",
+            }}
+          >
+            <MailOutlined style={{ marginRight: "0.4rem" }} />
+            Email
+          </label>
+          <input
+            type="email"
+            placeholder="Enter email"
+            {...register("email")}
+            style={{
+              width: "100%",
+              padding: "0.65rem 0.9rem",
+              borderRadius: "8px",
+              border: errors.email ? "2px solid var(--danger-color)" : "2px solid var(--border-color)",
+              background: "var(--surface-color)",
+              color: "var(--text-color)",
+              fontSize: "0.85rem",
+              transition: "var(--transition)",
+              fontFamily: "var(--font-family)",
+              boxSizing: "border-box",
+            }}
+            onFocus={(e) => {
+              if (!errors.email) e.currentTarget.style.borderColor = "var(--primary-color)";
+            }}
+            onBlur={(e) => {
+              e.currentTarget.style.borderColor = errors.email ? "var(--danger-color)" : "var(--border-color)";
+            }}
+          />
+          {errors.email && (
+            <p style={{ color: "var(--danger-color)", fontSize: "0.7rem", marginTop: "0.2rem" }}>
+              {errors.email.message}
+            </p>
+          )}
+        </div>
+
+        {/* Password Field */}
+        <div style={{ marginBottom: "1rem" }}>
+          <label
+            style={{
+              display: "block",
+              color: "var(--text-color)",
+              fontWeight: 600,
+              fontSize: "0.85rem",
+              marginBottom: "0.3rem",
+            }}
+          >
+            <LockOutlined style={{ marginRight: "0.4rem" }} />
+            Password
+          </label>
+          <div style={{ position: "relative" }}>
+            <input
+              type={showPassword ? "text" : "password"}
+              placeholder="••••••••"
+              {...register("password")}
+              style={{
+                width: "100%",
+                padding: "0.65rem 0.9rem",
+                paddingRight: "2.3rem",
+                borderRadius: "8px",
+                border: errors.password ? "2px solid var(--danger-color)" : "2px solid var(--border-color)",
+                background: "var(--surface-color)",
+                color: "var(--text-color)",
+                fontSize: "0.85rem",
+                transition: "var(--transition)",
+                fontFamily: "var(--font-family)",
+                boxSizing: "border-box",
+              }}
+              onFocus={(e) => {
+                if (!errors.password) e.currentTarget.style.borderColor = "var(--primary-color)";
+              }}
+              onBlur={(e) => {
+                e.currentTarget.style.borderColor = errors.password ? "var(--danger-color)" : "var(--border-color)";
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              style={{
+                position: "absolute",
+                right: "0.8rem",
+                top: "50%",
+                transform: "translateY(-50%)",
+                background: "none",
+                border: "none",
+                color: "var(--text-light)",
+                cursor: "pointer",
+                fontSize: "0.95rem",
+                transition: "color 0.25s ease",
+                padding: 0,
+              }}
+              onMouseEnter={(e) => {
+                (e.currentTarget as HTMLElement).style.color = "var(--primary-color)";
+              }}
+              onMouseLeave={(e) => {
+                (e.currentTarget as HTMLElement).style.color = "var(--text-light)";
+              }}
+            >
+              {showPassword ? <EyeInvisibleOutlined /> : <EyeOutlined />}
+            </button>
+          </div>
+          {errors.password && (
+            <p style={{ color: "var(--danger-color)", fontSize: "0.7rem", marginTop: "0.2rem" }}>
+              {errors.password.message}
+            </p>
+          )}
+        </div>
+
+        {/* Terms Checkbox */}
+        <div style={{ marginBottom: "1rem" }}>
+          <label
+            style={{
+              display: "flex",
+              alignItems: "flex-start",
+              gap: "0.5rem",
+              cursor: "pointer",
+              color: "var(--text-light)",
+              fontSize: "0.8rem",
+            }}
+          >
+            <input
+              type="checkbox"
+              {...register("terms")}
+              style={{ cursor: "pointer", marginTop: "0.2rem" }}
+            />
+            <span>
+              I agree to{" "}
+              <a
+                href="/terms"
+                style={{
+                  color: "var(--primary-color)",
+                  textDecoration: "none",
+                  fontWeight: 600,
+                }}
+              >
+                privacy policy & terms
+              </a>
+            </span>
+          </label>
+          {errors.terms && (
+            <p style={{ color: "var(--danger-color)", fontSize: "0.7rem", margin: "0.3rem 0 0" }}>
+              {errors.terms.message}
+            </p>
+          )}
+        </div>
+
+        {/* Sign Up Button */}
         <button
-          onClick={() => googleLogin()}
-          className="btn btn-outline-primary btn-lg d-flex align-items-center"
+          type="button"
+          onClick={handleSubmit(onSubmit)}
+          disabled={loading}
+          style={{
+            width: "100%",
+            padding: "0.75rem",
+            background: loading ? "var(--primary-dark)" : "var(--gradient-primary)",
+            color: "white",
+            border: "none",
+            borderRadius: "8px",
+            fontWeight: 700,
+            fontSize: "0.9rem",
+            cursor: loading ? "not-allowed" : "pointer",
+            transition: "all 0.3s ease",
+            opacity: loading ? 0.8 : 1,
+          }}
+          onMouseEnter={(e) => {
+            if (!loading) {
+              (e.currentTarget as HTMLElement).style.transform = "translateY(-2px)";
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (!loading) {
+              (e.currentTarget as HTMLElement).style.transform = "translateY(0)";
+            }
+          }}
         >
-          <i className="bx bxl-google"></i>
+          {loading ? "Creating account..." : "Sign up"}
+        </button>
+
+        {/* Sign In Link */}
+        <p style={{ textAlign: "center", color: "var(--text-light)", fontSize: "0.8rem", marginTop: "1rem", marginBottom: "1.2rem" }}>
+          Already have an account?{" "}
+          <a
+            href="/login"
+            style={{
+              color: "var(--primary-color)",
+              textDecoration: "none",
+              fontWeight: 700,
+              transition: "opacity 0.25s ease",
+            }}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLElement).style.opacity = "0.7";
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLElement).style.opacity = "1";
+            }}
+          >
+            Sign in
+          </a>
+        </p>
+
+        {/* Divider */}
+        <div style={{ display: "flex", alignItems: "center", gap: "0.8rem", marginBottom: "1rem" }}>
+          <div style={{ flex: 1, height: "1px", background: "var(--border-color)" }} />
+          <span style={{ color: "var(--text-muted)", fontSize: "0.75rem" }}>or</span>
+          <div style={{ flex: 1, height: "1px", background: "var(--border-color)" }} />
+        </div>
+
+        {/* Google Login */}
+        <button
+          type="button"
+          onClick={() => googleLogin()}
+          style={{
+            width: "100%",
+            padding: "0.75rem",
+            background: "var(--surface-alt)",
+            color: "var(--text-color)",
+            border: "2px solid var(--border-color)",
+            borderRadius: "8px",
+            fontWeight: 600,
+            fontSize: "0.85rem",
+            cursor: "pointer",
+            transition: "all 0.3s ease",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "0.5rem",
+          }}
+          onMouseEnter={(e) => {
+            (e.currentTarget as HTMLElement).style.background = "var(--gradient-primary)";
+            (e.currentTarget as HTMLElement).style.color = "white";
+            (e.currentTarget as HTMLElement).style.borderColor = "var(--primary-color)";
+          }}
+          onMouseLeave={(e) => {
+            (e.currentTarget as HTMLElement).style.background = "var(--surface-alt)";
+            (e.currentTarget as HTMLElement).style.color = "var(--text-color)";
+            (e.currentTarget as HTMLElement).style.borderColor = "var(--border-color)";
+          }}
+        >
+          <GoogleOutlined style={{ fontSize: "0.95rem" }} />
+          Google
         </button>
       </div>
     </div>

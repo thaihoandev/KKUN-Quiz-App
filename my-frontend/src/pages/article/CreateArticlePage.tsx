@@ -4,7 +4,7 @@ import { FileTextOutlined } from "@ant-design/icons";
 
 export default function CreateArticlePage() {
   return (
-    <div style={{ backgroundColor: '#f5f7fa', minHeight: '100vh' }}>
+    <div style={{minHeight: '100vh' }}>
       {/* Form Content */}
       <ArticleForm />
     </div>

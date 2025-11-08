@@ -1,6 +1,10 @@
 import React, { Suspense } from "react";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { Routes, Route, Outlet } from "react-router-dom";
 import ScrollToTop from "@/components/ScrollToTop";
+
+// ✅ Routes bảo vệ
+import ProtectedRoute from "@/routes/ProtectedRoute";
+import PublicRoute from "@/routes/PublicRoute";
 
 // Layouts
 import MainLayout from "@/layouts/MainLayout";
@@ -32,14 +36,14 @@ import ChatPage from "@/pages/ChatPage";
 import ArticlesPage from "@/pages/article/ArticlesPage";
 import ArticleDetailPage from "@/pages/article/ArticleDetailPage";
 import CreateArticlePage from "@/pages/article/CreateArticlePage";
+import ArticleEditPage from "@/pages/article/ArticleEditPage";
 
-// ✅ Series Pages
+// Series
 import SeriesPage from "@/pages/series/SeriesPage";
 import SeriesDetailPage from "@/pages/series/SeriesDetailPage";
 import AuthorSeriesPage from "@/pages/series/AuthorSeriesPage";
 import CreateSeriesPage from "@/pages/series/CreateSeriesPage";
 import EditSeriesPage from "@/pages/series/EditSeriesPage";
-import ArticleEditPage from "@/pages/article/ArticleEditPage";
 
 const AppRoutes: React.FC = () => (
   <>
@@ -47,62 +51,77 @@ const AppRoutes: React.FC = () => (
     <Suspense fallback={<div>Loading...</div>}>
       <Routes>
 
-        {/* === AUTHENTICATION === */}
-        <Route element={<AuthLayout />}>
+        {/* === 🔓 AUTHENTICATION === */}
+        <Route
+          element={
+            <PublicRoute>
+              <AuthLayout />
+            </PublicRoute>
+          }
+        >
           <Route path="login" element={<Login />} />
           <Route path="register" element={<Register />} />
         </Route>
 
-        {/* === MAIN APPLICATION === */}
-        <Route path="/" element={<MainLayout />}>
-          {/* HOME */}
-          <Route index element={<HomePage />} />
-          <Route path="posts" element={<HomePostPage />} />
-
-          {/* USERS */}
-          <Route path="profile/:userId" element={<UserProfilePage />} />
-          <Route path="achievements" element={<AchievementPage />} />
-          <Route path="settings" element={<SettingProfilePage />} />
-          <Route path="change-password" element={<ChangePasswordPage />} />
-          <Route path="friends" element={<FriendConnectionsPage />} />
-
-          {/* QUIZZES */}
-          <Route path="quizzes/:quizId" element={<QuizManagementPage />} />
-
-          {/* ✅ SERIES (NEW) */}
-          <Route path="series/create" element={<CreateSeriesPage />} />
-          <Route path="me/series" element={<SeriesPage />} />
-          <Route path="series/edit/:slug" element={<EditSeriesPage />} />
-          <Route path="series/:slug" element={<SeriesDetailPage />} />
-          <Route path="author/:authorId/series" element={<AuthorSeriesPage />} />
-
-          
-        </Route>
-
-        {/* === SINGLE LAYOUT (NO SIDEBAR) === */}
+        {/* === 🌍 PUBLIC PAGES === */}
         <Route path="/" element={<SingleLayout />}>
-          {/* GAME SESSIONS */}
+          <Route index element={<HomePage />} />
+
+          {/* Game session pages */}
           <Route path="join-game" element={<JoinGamePage />} />
           <Route path="join-game/:pinCode" element={<JoinGamePage />} />
           <Route path="game-session/:gameId" element={<WaitingRoomSessionPage />} />
           <Route path="game-play/:gameId" element={<GamePlayPage />} />
 
-          {/* QUIZ EDITOR */}
+          <Route path="chat" element={<ChatPage />} />
+
+          {/* Public articles */}
+          <Route path="articles" element={<ArticlesPage />} />
+          <Route path="articles/:slug" element={<ArticleDetailPage />} />
+                    {/* Articles (create/edit) */}
+          <Route path="articles/create" element={<CreateArticlePage />} />
+          <Route path="articles/edit/:slug" element={<ArticleEditPage />} />
+          
+          {/* Public series */}
+          <Route path="series/:slug" element={<SeriesDetailPage />} />
+          <Route path="author/:authorId/series" element={<AuthorSeriesPage />} />
+        </Route>
+
+        {/* === 🔐 PROTECTED AREA === */}
+        <Route
+          path="/"
+          element={
+            <ProtectedRoute>
+              <MainLayout />
+            </ProtectedRoute>
+          }
+        >
+          {/* User & Social */}
+          <Route path="profile/:userId" element={<UserProfilePage />} />
+          <Route path="achievements" element={<AchievementPage />} />
+          <Route path="settings" element={<SettingProfilePage />} />
+          <Route path="change-password" element={<ChangePasswordPage />} />
+          <Route path="friends" element={<FriendConnectionsPage />} />
+          <Route path="dashboard" element={<UserDashboardPage />} />
+
+          {/* Posts & Home Feed */}
+          <Route path="posts" element={<HomePostPage />} />
+
+          {/* Quizzes (owned) */}
+          <Route path="quizzes/:quizId" element={<QuizManagementPage />} />
           <Route path="quizzes/:quizId/edit" element={<QuizEditorPage />} />
           <Route path="quizzes/:quizId/questions/create" element={<QuestionCreatePage />} />
           <Route path="quizzes/:quizId/questions/:questionId/edit" element={<QuestionEditorPage />} />
 
-          {/* ARTICLES */}
-          <Route path="articles" element={<ArticlesPage />} />
-          <Route path="articles/create" element={<CreateArticlePage />} />
-          <Route path="articles/edit/:slug" element={<ArticleEditPage />} />
-          <Route path="articles/:slug" element={<ArticleDetailPage />} />
-          
-          {/* CHAT */}
-          <Route path="chat" element={<ChatPage />} />
+
+
+          {/* Series (manage by author) */}
+          <Route path="me/series" element={<SeriesPage />} />
+          <Route path="series/create" element={<CreateSeriesPage />} />
+          <Route path="series/edit/:slug" element={<EditSeriesPage />} />
         </Route>
 
-        {/* === 404 CATCH-ALL === */}
+        {/* === 404 === */}
         <Route path="*" element={<NotFound />} />
       </Routes>
     </Suspense>

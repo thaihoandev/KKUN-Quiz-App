@@ -28,7 +28,7 @@ public interface UserService {
     void restoreUser(UUID id);
 
     // ===== Avatar =====
-    UserResponseDTO updateUserAvatar(UUID id, MultipartFile file, String token);
+    UserResponseDTO updateUserAvatar(UUID id, MultipartFile file);
 
     // ===== Password =====
     void changePassword(UUID userId, String currentPassword, String newPassword);

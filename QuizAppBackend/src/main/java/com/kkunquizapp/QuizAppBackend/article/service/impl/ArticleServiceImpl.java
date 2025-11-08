@@ -136,9 +136,9 @@ public class ArticleServiceImpl implements ArticleService {
         MultipartFile thumbnail = req.getThumbnail();
         if (thumbnail != null && !thumbnail.isEmpty()) {
             try {
-                String publicId = "articles/thumbnails/" + UUID.randomUUID();
-                Map uploadResult = cloudinaryService.upload(thumbnail, publicId);
-                String imageUrl = (String) uploadResult.get("secure_url");
+                Map result = cloudinaryService.upload(thumbnail, "articles/thumbnails");
+                String imageUrl = (String) result.get("secure_url");
+                article.setThumbnailUrl(imageUrl);
                 article.setThumbnailUrl(imageUrl);
             } catch (IOException e) {
                 throw new RuntimeException("Failed to upload thumbnail to Cloudinary", e);
@@ -220,9 +220,8 @@ public class ArticleServiceImpl implements ArticleService {
         MultipartFile thumbnail = req.getThumbnail();
         if (thumbnail != null && !thumbnail.isEmpty()) {
             try {
-                String publicId = "articles/thumbnails/" + UUID.randomUUID();
-                Map uploadResult = cloudinaryService.upload(thumbnail, publicId);
-                String imageUrl = (String) uploadResult.get("secure_url");
+                Map result = cloudinaryService.upload(thumbnail, "articles/thumbnails");
+                String imageUrl = (String) result.get("secure_url");
                 article.setThumbnailUrl(imageUrl);
             } catch (IOException e) {
                 throw new RuntimeException("Failed to upload new thumbnail", e);

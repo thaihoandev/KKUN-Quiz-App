@@ -19,7 +19,6 @@ import TopicGenerateModal from "@/components/modals/TopicGenerateModal";
 import { Question, Quiz } from "@/interfaces";
 import QuizEditList from "./QuizEditList";
 
-// ✅ FIX 1: Sử dụng counter để đảm bảo unique key
 let clientKeyCounter = 0;
 
 function genIdFallback() {
@@ -31,24 +30,20 @@ function genIdFallback() {
 
 type WithClientKey<T> = T & { clientKey: string };
 
-// ✅ FIX 2: Không mutate object gốc - tạo shallow copy
 function withClientKey<T extends { questionId?: string; clientKey?: string }>(
   arr: T[]
 ): WithClientKey<T>[] {
   if (!Array.isArray(arr)) return [];
-  
+
   return arr.map((q) => {
-    // Nếu đã có clientKey hợp lệ, giữ nguyên
-    if (q.clientKey && typeof q.clientKey === 'string') {
+    if (q.clientKey && typeof q.clientKey === "string") {
       return { ...q } as WithClientKey<T>;
     }
-    
-    // Nếu có questionId, dùng làm clientKey
+
     if (q.questionId) {
       return { ...q, clientKey: String(q.questionId) } as WithClientKey<T>;
     }
-    
-    // Tạo mới clientKey
+
     return { ...q, clientKey: genIdFallback() } as WithClientKey<T>;
   });
 }
@@ -63,18 +58,15 @@ const QuizEditorPage: React.FC = () => {
   const [showModal, setShowModal] = useState(false);
   const [publishing, setPublishing] = useState(false);
 
-  // pagination
   const [page, setPage] = useState<number>(0);
   const [size, setSize] = useState<number>(10);
   const [total, setTotal] = useState<number>(0);
 
-  // AI form + preview
   const [topicModalOpen, setTopicModalOpen] = useState(false);
   const [aiModalVisible, setAiModalVisible] = useState(false);
   const [aiQuestions, setAiQuestions] = useState<Question[]>([]);
   const [aiLoading, setAiLoading] = useState(false);
 
-  // bulk saving
   const [savingAi, setSavingAi] = useState(false);
 
   const fetchQuiz = useCallback(async () => {
@@ -92,31 +84,31 @@ const QuizEditorPage: React.FC = () => {
     setLoading(true);
     try {
       const data = await getPagedQuestionsByQuizId(quizId, page, size);
-      
+
       const content = Array.isArray(data?.content) ? data.content : [];
       const processed = withClientKey(content as Question[]);
-      
+
       setQuestions(processed);
       setTotal(data?.totalElements ?? 0);
     } catch (err) {
       console.error("Error fetching questions:", err);
-      notification.error({ 
-        message: "Error", 
-        description: "Unable to load the question list." 
+      notification.error({
+        message: "Error",
+        description: "Unable to load the question list.",
       });
-      setQuestions([]); // Reset về empty array
+      setQuestions([]);
       setTotal(0);
     } finally {
       setLoading(false);
     }
   }, [quizId, page, size]);
 
-  useEffect(() => { 
-    fetchQuiz(); 
+  useEffect(() => {
+    fetchQuiz();
   }, [fetchQuiz]);
-  
-  useEffect(() => { 
-    fetchQuestions(); 
+
+  useEffect(() => {
+    fetchQuestions();
   }, [fetchQuestions]);
 
   const handlePublish = async () => {
@@ -124,14 +116,14 @@ const QuizEditorPage: React.FC = () => {
     setPublishing(true);
     try {
       await publishedQuiz(quizId);
-      notification.success({ 
-        message: "Success", 
-        description: "The quiz has been published successfully!" 
+      notification.success({
+        message: "Success",
+        description: "The quiz has been published successfully!",
       });
     } catch (err) {
-      notification.error({ 
-        message: "Error", 
-        description: "Failed to publish the quiz!" 
+      notification.error({
+        message: "Error",
+        description: "Failed to publish the quiz!",
       });
     } finally {
       setPublishing(false);
@@ -139,20 +131,18 @@ const QuizEditorPage: React.FC = () => {
   };
 
   const onPageChange = (nextPage0: number, nextSize: number) => {
-    if (nextSize !== size) { 
-      setSize(nextSize); 
-      setPage(0); 
-    } else { 
-      setPage(nextPage0); 
+    if (nextSize !== size) {
+      setSize(nextSize);
+      setPage(0);
+    } else {
+      setPage(nextPage0);
     }
   };
 
-  // ✅ FIX: Reset AI state hoàn toàn khi đóng modal
   const handleCloseAiModal = useCallback(() => {
-    if (savingAi) return; // Không cho đóng khi đang save
-    
+    if (savingAi) return;
+
     setAiModalVisible(false);
-    // ✅ Delay để tránh flash UI
     setTimeout(() => {
       setAiQuestions([]);
       setTopicModalOpen(false);
@@ -160,13 +150,11 @@ const QuizEditorPage: React.FC = () => {
   }, [savingAi]);
 
   const handleAddSimilar = () => {
-    // ✅ Reset state trước khi mở modal mới
     setAiQuestions([]);
     setAiModalVisible(false);
     setTopicModalOpen(true);
   };
 
-  // ✅ FIX 4: Validate AI response trước khi set
   const handleSubmitTopic = async (payload: TopicGenerateRequest) => {
     setAiLoading(true);
     try {
@@ -175,27 +163,25 @@ const QuizEditorPage: React.FC = () => {
         ...(quizId ? { quizId } : {}),
         dedupe: true,
       } as TopicGenerateRequest;
-      
+
       const generated = await generateQuestionsByTopic(req);
-      
-      // Validate response
+
       if (!Array.isArray(generated)) {
         throw new Error("Invalid AI response format");
       }
-      
-      // Filter out invalid questions
+
       const validQuestions = generated.filter((q, idx) => {
-        const isValid = q && typeof q === 'object' && q.questionText;
+        const isValid = q && typeof q === "object" && q.questionText;
         if (!isValid) {
           console.warn(`⚠️ Question #${idx} is invalid:`, q);
         }
         return isValid;
       });
-      
+
       if (validQuestions.length === 0) {
         throw { __isEmptyAI: true, message: "No valid questions generated" };
       }
-      
+
       setAiQuestions(validQuestions);
       setAiModalVisible(true);
       setTopicModalOpen(false);
@@ -203,28 +189,28 @@ const QuizEditorPage: React.FC = () => {
       const status = e?.__status;
       const isEmpty = e?.__isEmptyAI;
       let description = "Không thể sinh câu hỏi từ AI!";
-      
+
       if (status === 503 || status === 429) {
-        description = "Hệ thống AI đang bận (503/429). Vui lòng thử lại sau vài giây.";
+        description =
+          "Hệ thống AI đang bận (503/429). Vui lòng thử lại sau vài giây.";
       } else if (isEmpty) {
-        description = "AI trả về rỗng hoặc sai định dạng. Hãy cụ thể hơn chủ đề hoặc giảm số câu.";
+        description =
+          "AI trả về rỗng hoặc sai định dạng. Hãy cụ thể hơn chủ đề hoặc giảm số câu.";
       } else if (e?.message) {
         description = e.message;
       }
-      
+
       notification.error({ message: "Error", description });
     } finally {
       setAiLoading(false);
     }
   };
 
-  // ✅ FIX 5: Sử dụng functional update và reset state
   const handleAcceptAiQuestions = async (selected: Question[]) => {
     if (!quizId) return;
-    
+
     if (!Array.isArray(selected) || selected.length === 0) {
       setAiModalVisible(false);
-      // ✅ Clear ngay khi không có gì để thêm
       setTimeout(() => setAiQuestions([]), 300);
       return;
     }
@@ -232,21 +218,19 @@ const QuizEditorPage: React.FC = () => {
     setSavingAi(true);
     try {
       const saved = await addAiQuestionsToQuiz(quizId, selected);
-      
-      // Validate saved data
+
       if (!Array.isArray(saved)) {
         throw new Error("Invalid response from addAiQuestionsToQuiz");
       }
-      
+
       const prepared = withClientKey(saved as Question[]);
-      
-      // ✅ Sử dụng functional update để tránh race condition
-      setQuestions(prev => {
+
+      setQuestions((prev) => {
         const updated = [...prepared, ...prev];
         return updated;
       });
-      
-      setTotal(prev => {
+
+      setTotal((prev) => {
         const newTotal = prev + prepared.length;
         return newTotal;
       });
@@ -255,61 +239,64 @@ const QuizEditorPage: React.FC = () => {
         message: "Đã thêm",
         description: `Đã lưu ${prepared.length} câu hỏi vào quiz`,
       });
-      
-      
-      // ✅ Reset state hoàn toàn
+
       setAiModalVisible(false);
       setSavingAi(false);
-      
-      // ✅ Delay clear để tránh flash
+
       setTimeout(() => {
         setAiQuestions([]);
         setAiLoading(false);
       }, 300);
-      
     } catch (e: any) {
-      console.error('❌ Error in handleAcceptAiQuestions:', e);
+      console.error("❌ Error in handleAcceptAiQuestions:", e);
       setSavingAi(false);
-      
+
       const status = e?.__status || e?.response?.status;
       let description = e?.message || "Lỗi khi thêm câu hỏi (bulk).";
-      
+
       if (status === 400) {
         description = "Dữ liệu không hợp lệ. Kiểm tra lại dạng câu hỏi/đáp án.";
       }
       if (status === 404) {
         description = "Quiz không tồn tại.";
       }
-      
+
       notification.error({ message: "Error", description });
       console.error("[AI] addAiQuestionsToQuiz error:", e);
     }
   };
 
-  // ✅ FIX 6: Sử dụng immutable update cho time/points
-  const handleTimeChange = useCallback((_qz: any, qidOrKey: string, t: number) => {
-    setQuestions(prev => prev.map(q => {
-      const key = q.questionId ?? q.clientKey;
-      if (key !== qidOrKey) return q;
-      
-      // Tạo object mới thay vì mutate
-      return { ...q, timeLimit: t };
-    }));
-  }, []);
+  const handleTimeChange = useCallback(
+    (_qz: any, qidOrKey: string, t: number) => {
+      setQuestions((prev) =>
+        prev.map((q) => {
+          const key = q.questionId ?? q.clientKey;
+          if (key !== qidOrKey) return q;
 
-  const handlePointsChange = useCallback((_qz: any, qidOrKey: string, p: number) => {
-    setQuestions(prev => prev.map(q => {
-      const key = q.questionId ?? q.clientKey;
-      if (key !== qidOrKey) return q;
-      
-      // Tạo object mới thay vì mutate
-      return { ...q, points: p };
-    }));
-  }, []);
+          return { ...q, timeLimit: t };
+        })
+      );
+    },
+    []
+  );
+
+  const handlePointsChange = useCallback(
+    (_qz: any, qidOrKey: string, p: number) => {
+      setQuestions((prev) =>
+        prev.map((q) => {
+          const key = q.questionId ?? q.clientKey;
+          if (key !== qidOrKey) return q;
+
+          return { ...q, points: p };
+        })
+      );
+    },
+    []
+  );
 
   const fallbackSeedFromQuestions = questions
     .slice(-3)
-    .map(q => q.questionText)
+    .map((q) => q.questionText)
     .filter(Boolean)
     .join("; ");
 
@@ -320,15 +307,36 @@ const QuizEditorPage: React.FC = () => {
     "";
 
   return (
-    <div className="container-fluid bg-light" style={{ minHeight: "100vh" }}>
+    <div
+      style={{
+        background: "var(--background-color)",
+        color: "var(--text-color)",
+        minHeight: "100vh",
+        transition: "background-color 0.4s ease, color 0.4s ease",
+      }}
+    >
       <QuestionEditorHeader
         onBack={() => navigate(`/quizzes/${quizId}`)}
         onPublish={handlePublish}
         publishing={publishing}
       />
 
-      <div className="container py-4">
-        <div className="row">
+      <div
+        style={{
+          maxWidth: "1400px",
+          margin: "0 auto",
+          padding: "2rem 1rem",
+        }}
+      >
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 3fr",
+            gap: "2rem",
+            alignItems: "start",
+            justifyItems: "center",
+          }}
+        >
           <QuestionEditorSidebar />
           <QuizEditList
             quizId={quizId ?? ""}

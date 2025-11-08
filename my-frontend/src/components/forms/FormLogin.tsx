@@ -1,12 +1,18 @@
+import React, { useState } from "react";
 import { useForm, SubmitHandler } from "react-hook-form";
 import { yupResolver } from "@hookform/resolvers/yup";
 import { loginSchema } from "@/schemas/authSchema";
-import InputField from "@/components/formFields/InputField";
-import PasswordField from "@/components/formFields/PasswordField";
-import { Link, useNavigate } from "react-router-dom";
-import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useGoogleLogin } from "@react-oauth/google";
+import { notification } from "antd";
+import {
+  EyeOutlined,
+  EyeInvisibleOutlined,
+  GoogleOutlined,
+  LockOutlined,
+  UserOutlined,
+} from "@ant-design/icons";
 
 interface LoginFormData {
   username: string;
@@ -17,7 +23,7 @@ interface LoginFormData {
 const FormLogin: React.FC = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
 
   const { login, loginWithGoogle } = useAuth();
 
@@ -31,14 +37,21 @@ const FormLogin: React.FC = () => {
 
   const onSubmit: SubmitHandler<LoginFormData> = async (data) => {
     setLoading(true);
-    setErrorMessage("");
     try {
       await login(data.username, data.password);
-      navigate("/");
+      notification.success({
+        message: "Success",
+        description: "Login successful! Redirecting...",
+        duration: 2,
+      });
+      setTimeout(() => navigate("/"), 2000);
     } catch (error: unknown) {
-      setErrorMessage(
-        error instanceof Error ? error.message : "Login failed. Please try again."
-      );
+      const errorMsg = error instanceof Error ? error.message : "Login failed. Please try again.";
+      notification.error({
+        message: "Login Failed",
+        description: errorMsg,
+        duration: 4,
+      });
     } finally {
       setLoading(false);
     }
@@ -48,104 +61,308 @@ const FormLogin: React.FC = () => {
     onSuccess: async (tokenResponse) => {
       try {
         await loginWithGoogle(tokenResponse);
-        navigate("/");
+        notification.success({
+          message: "Success",
+          description: "Google login successful! Redirecting...",
+          duration: 2,
+        });
+        setTimeout(() => navigate("/"), 2000);
       } catch (error) {
-        console.error("Google Login Failed:", error);
+        notification.error({
+          message: "Google Login Failed",
+          description: "Failed to login with Google. Please try again.",
+          duration: 4,
+        });
       }
     },
-    onError: () => console.log("Google Login Failed"),
+    onError: () => {
+      notification.error({
+        message: "Google Login Error",
+        description: "Google login failed. Please try again.",
+        duration: 4,
+      });
+    },
   });
 
   return (
-    <div className="card shadow-lg p-4 border-0">
-      <div className="card-body">
-        <h3 className="text-center mb-3 fw-bold">Welcome to KKUN QUIZ! 👋</h3>
-        <p className="text-center text-muted mb-4">
-          Please sign in to start your adventure
+    <div style={{ width: "100%", maxWidth: "380px", maxHeight: "90vh", overflowY: "auto" }}>
+      {/* Form Header */}
+      <div style={{ marginBottom: "1.8rem", textAlign: "center" }}>
+        <h2
+          style={{
+            color: "var(--primary-color)",
+            fontWeight: 900,
+            fontSize: "1.8rem",
+            marginBottom: "0.4rem",
+          }}
+        >
+          Welcome Back
+        </h2>
+        <p style={{ color: "var(--text-light)", fontSize: "0.9rem" }}>
+          Sign in to continue
         </p>
+      </div>
 
-        {errorMessage && (
-          <div className="alert alert-danger" role="alert">
-            {errorMessage}
-          </div>
+      {/* Username Field */}
+      <div style={{ marginBottom: "1.2rem" }}>
+        <label
+          style={{
+            display: "block",
+            color: "var(--text-color)",
+            fontWeight: 600,
+            fontSize: "0.85rem",
+            marginBottom: "0.4rem",
+          }}
+        >
+          <UserOutlined style={{ marginRight: "0.4rem" }} />
+          Email or Username
+        </label>
+        <input
+          type="text"
+          placeholder="Enter email or username"
+          {...register("username")}
+          style={{
+            width: "100%",
+            padding: "0.7rem 0.9rem",
+            borderRadius: "8px",
+            border: errors.username ? "2px solid var(--danger-color)" : "2px solid var(--border-color)",
+            background: "var(--surface-color)",
+            color: "var(--text-color)",
+            fontSize: "0.9rem",
+            transition: "var(--transition)",
+            fontFamily: "var(--font-family)",
+            boxSizing: "border-box",
+          }}
+          onFocus={(e) => {
+            if (!errors.username) {
+              e.currentTarget.style.borderColor = "var(--primary-color)";
+            }
+          }}
+          onBlur={(e) => {
+            e.currentTarget.style.borderColor = errors.username ? "var(--danger-color)" : "var(--border-color)";
+          }}
+        />
+        {errors.username && (
+          <p style={{ color: "var(--danger-color)", fontSize: "0.75rem", marginTop: "0.2rem" }}>
+            {errors.username.message}
+          </p>
         )}
+      </div>
 
-        <form id="formAuthentication" className="mb-4" onSubmit={handleSubmit(onSubmit)}>
-          <InputField
-            label="Email or Username"
-            id="username"
-            placeholder="Enter your email or username"
-            name="username"
-            register={register}
-            error={errors.username?.message}
-          />
-
-          <PasswordField
-            label="Password"
-            id="password"
-            name="password"
+      {/* Password Field */}
+      <div style={{ marginBottom: "1.2rem" }}>
+        <label
+          style={{
+            display: "block",
+            color: "var(--text-color)",
+            fontWeight: 600,
+            fontSize: "0.85rem",
+            marginBottom: "0.4rem",
+          }}
+        >
+          <LockOutlined style={{ marginRight: "0.4rem" }} />
+          Password
+        </label>
+        <div style={{ position: "relative" }}>
+          <input
+            type={showPassword ? "text" : "password"}
             placeholder="••••••••"
-            register={register}
-            error={errors.password?.message}
+            {...register("password")}
+            style={{
+              width: "100%",
+              padding: "0.7rem 0.9rem",
+              paddingRight: "2.3rem",
+              borderRadius: "8px",
+              border: errors.password ? "2px solid var(--danger-color)" : "2px solid var(--border-color)",
+              background: "var(--surface-color)",
+              color: "var(--text-color)",
+              fontSize: "0.9rem",
+              transition: "var(--transition)",
+              fontFamily: "var(--font-family)",
+              boxSizing: "border-box",
+            }}
+            onFocus={(e) => {
+              if (!errors.password) {
+                e.currentTarget.style.borderColor = "var(--primary-color)";
+              }
+            }}
+            onBlur={(e) => {
+              e.currentTarget.style.borderColor = errors.password ? "var(--danger-color)" : "var(--border-color)";
+            }}
           />
-
-          <div className="d-flex justify-content-between align-items-center mb-4">
-            <div className="form-check">
-              <input
-                className="form-check-input"
-                type="checkbox"
-                id="remember-me"
-                {...register("rememberMe")}
-              />
-              <label className="form-check-label" htmlFor="remember-me">
-                Remember Me
-              </label>
-            </div>
-            <Link to="/forgot-password" className="text-primary">
-              Forgot Password?
-            </Link>
-          </div>
-
-          <button
-            type="submit"
-            className="btn btn-primary btn-lg w-100 mb-3"
-            disabled={loading}
-          >
-            {loading ? (
-              <span
-                className="spinner-border spinner-border-sm me-2"
-                role="status"
-                aria-hidden="true"
-              ></span>
-            ) : (
-              "Sign in"
-            )}
-          </button>
-        </form>
-
-        <p className="text-center mb-4">
-          <span className="text-muted">New on our platform? </span>
-          <Link to="/register" className="text-primary">
-            Create an account
-          </Link>
-        </p>
-
-        <div className="d-flex align-items-center mb-4">
-          <hr className="flex-grow-1" />
-          <span className="mx-2 text-muted">or</span>
-          <hr className="flex-grow-1" />
-        </div>
-
-        <div className="d-flex justify-content-center">
           <button
             type="button"
-            onClick={() => googleLogin()}
-            className="btn btn-outline-primary btn-lg d-flex align-items-center"
+            onClick={() => setShowPassword(!showPassword)}
+            style={{
+              position: "absolute",
+              right: "0.8rem",
+              top: "50%",
+              transform: "translateY(-50%)",
+              background: "none",
+              border: "none",
+              color: "var(--text-light)",
+              cursor: "pointer",
+              fontSize: "1rem",
+              transition: "color 0.25s ease",
+              padding: 0,
+            }}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLElement).style.color = "var(--primary-color)";
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLElement).style.color = "var(--text-light)";
+            }}
           >
-            <i className="bx bxl-google"></i>
+            {showPassword ? <EyeInvisibleOutlined /> : <EyeOutlined />}
           </button>
         </div>
+        {errors.password && (
+          <p style={{ color: "var(--danger-color)", fontSize: "0.75rem", marginTop: "0.2rem" }}>
+            {errors.password.message}
+          </p>
+        )}
       </div>
+
+      {/* Remember & Forgot */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: "1.2rem",
+          fontSize: "0.8rem",
+        }}
+      >
+        <label
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "0.4rem",
+            cursor: "pointer",
+            color: "var(--text-light)",
+          }}
+        >
+          <input
+            type="checkbox"
+            {...register("rememberMe")}
+            style={{ cursor: "pointer" }}
+          />
+          Remember me
+        </label>
+        <a
+          href="/forgot-password"
+          style={{
+            color: "var(--primary-color)",
+            textDecoration: "none",
+            fontWeight: 600,
+            transition: "opacity 0.25s ease",
+          }}
+          onMouseEnter={(e) => {
+            (e.currentTarget as HTMLElement).style.opacity = "0.7";
+          }}
+          onMouseLeave={(e) => {
+            (e.currentTarget as HTMLElement).style.opacity = "1";
+          }}
+        >
+          Forgot?
+        </a>
+      </div>
+
+      {/* Sign In Button */}
+      <button
+        type="button"
+        onClick={handleSubmit(onSubmit)}
+        disabled={loading}
+        style={{
+          width: "100%",
+          padding: "0.8rem",
+          background: loading ? "var(--primary-dark)" : "var(--gradient-primary)",
+          color: "white",
+          border: "none",
+          borderRadius: "8px",
+          fontWeight: 700,
+          fontSize: "0.95rem",
+          cursor: loading ? "not-allowed" : "pointer",
+          transition: "all 0.3s ease",
+          opacity: loading ? 0.8 : 1,
+        }}
+        onMouseEnter={(e) => {
+          if (!loading) {
+            (e.currentTarget as HTMLElement).style.transform = "translateY(-2px)";
+          }
+        }}
+        onMouseLeave={(e) => {
+          if (!loading) {
+            (e.currentTarget as HTMLElement).style.transform = "translateY(0)";
+          }
+        }}
+      >
+        {loading ? "Signing in..." : "Sign in"}
+      </button>
+
+      {/* Sign Up Link */}
+      <p style={{ textAlign: "center", color: "var(--text-light)", fontSize: "0.8rem", marginTop: "1.2rem", marginBottom: "1.5rem" }}>
+        No account?{" "}
+        <a
+          href="/register"
+          style={{
+            color: "var(--primary-color)",
+            textDecoration: "none",
+            fontWeight: 700,
+            transition: "opacity 0.25s ease",
+          }}
+          onMouseEnter={(e) => {
+            (e.currentTarget as HTMLElement).style.opacity = "0.7";
+          }}
+          onMouseLeave={(e) => {
+            (e.currentTarget as HTMLElement).style.opacity = "1";
+          }}
+        >
+          Sign up
+        </a>
+      </p>
+
+      {/* Divider */}
+      <div style={{ display: "flex", alignItems: "center", gap: "0.8rem", marginBottom: "1.2rem" }}>
+        <div style={{ flex: 1, height: "1px", background: "var(--border-color)" }} />
+        <span style={{ color: "var(--text-muted)", fontSize: "0.75rem" }}>or</span>
+        <div style={{ flex: 1, height: "1px", background: "var(--border-color)" }} />
+      </div>
+
+      {/* Google Login */}
+      <button
+        type="button"
+        onClick={() => googleLogin()}
+        style={{
+          width: "100%",
+          padding: "0.8rem",
+          background: "var(--surface-alt)",
+          color: "var(--text-color)",
+          border: "2px solid var(--border-color)",
+          borderRadius: "8px",
+          fontWeight: 600,
+          fontSize: "0.9rem",
+          cursor: "pointer",
+          transition: "all 0.3s ease",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: "0.6rem",
+        }}
+        onMouseEnter={(e) => {
+          (e.currentTarget as HTMLElement).style.background = "var(--gradient-primary)";
+          (e.currentTarget as HTMLElement).style.color = "white";
+          (e.currentTarget as HTMLElement).style.borderColor = "var(--primary-color)";
+        }}
+        onMouseLeave={(e) => {
+          (e.currentTarget as HTMLElement).style.background = "var(--surface-alt)";
+          (e.currentTarget as HTMLElement).style.color = "var(--text-color)";
+          (e.currentTarget as HTMLElement).style.borderColor = "var(--border-color)";
+        }}
+      >
+        <GoogleOutlined style={{ fontSize: "1rem" }} />
+        Google
+      </button>
     </div>
   );
 };

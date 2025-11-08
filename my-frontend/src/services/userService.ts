@@ -1,12 +1,13 @@
 // src/services/userService.ts
 import axiosInstance from "./axiosInstance";
-import { UserResponseDTO, UserRequestDTO, PageResponse } from "@/interfaces";
+import { PageResponse } from "@/interfaces";
 import { useAuthStore } from "@/store/authStore";
+import { UserRequestDTO, User } from "@/types/users";
 
 // ========================== Cache (ETag) ==========================
 const etagCache = new Map<string, string>();
-const dataCache = new Map<string, UserResponseDTO>();
-const saveCache = (key: string, data: UserResponseDTO, etag?: string) => {
+const dataCache = new Map<string, User>();
+const saveCache = (key: string, data: User, etag?: string) => {
   dataCache.set(key, data);
   if (etag) etagCache.set(key, etag);
 };
@@ -44,13 +45,13 @@ export const getAllUsers = async (params?: {
   page?: number;
   size?: number;
   sort?: string;
-}): Promise<PageResponse<UserResponseDTO>> => {
-  const res = await axiosInstance.get<PageResponse<UserResponseDTO>>(`/users/`, { params });
+}): Promise<PageResponse<User>> => {
+  const res = await axiosInstance.get<PageResponse<User>>(`/users/`, { params });
   return res.data;
 };
 
 // ========================== Current user ==========================
-export const getCurrentUser = async (force = false): Promise<UserResponseDTO | null> => {
+export const getCurrentUser = async (force = false): Promise<User | null> => {
   const persistedUser = useAuthStore.getState().user;
   if (!persistedUser) return null;
 
@@ -59,7 +60,7 @@ export const getCurrentUser = async (force = false): Promise<UserResponseDTO | n
   if (!force && etagCache.has(key)) headers["If-None-Match"] = etagCache.get(key)!;
 
   // ✅ Backend endpoint: /api/users/me
-  const res = await axiosInstance.get<UserResponseDTO>(`/users/me`, {
+  const res = await axiosInstance.get<User>(`/users/me`, {
     headers,
     validateStatus: (s) => (s >= 200 && s < 300) || s === 304,
   });
@@ -72,12 +73,12 @@ export const getCurrentUser = async (force = false): Promise<UserResponseDTO | n
 };
 
 // ========================== Get user by ID ==========================
-export const getUserById = async (userId: string, force = false): Promise<UserResponseDTO> => {
+export const getUserById = async (userId: string, force = false): Promise<User> => {
   const key = userId;
   const headers: Record<string, string> = {};
   if (!force && etagCache.has(key)) headers["If-None-Match"] = etagCache.get(key)!;
 
-  const res = await axiosInstance.get<UserResponseDTO>(`/users/${userId}`, {
+  const res = await axiosInstance.get<User>(`/users/${userId}`, {
     headers,
     validateStatus: (s) => (s >= 200 && s < 300) || s === 304,
   });
@@ -85,7 +86,7 @@ export const getUserById = async (userId: string, force = false): Promise<UserRe
   if (res.status === 304) {
     const cached = dataCache.get(key);
     if (cached) return cached;
-    const retry = await axiosInstance.get<UserResponseDTO>(`/users/${userId}`);
+    const retry = await axiosInstance.get<User>(`/users/${userId}`);
     const etag = (retry.headers?.etag || retry.headers?.ETag) as string | undefined;
     saveCache(key, retry.data, etag);
     return retry.data;
@@ -98,7 +99,7 @@ export const getUserById = async (userId: string, force = false): Promise<UserRe
 
 // ========================== Update user ==========================
 export const updateUser = async (userId: string, patch: Partial<UserRequestDTO>) => {
-  const res = await axiosInstance.put<UserResponseDTO>(`/users/${userId}`, patch);
+  const res = await axiosInstance.put<User>(`/users/${userId}`, patch);
   const meId = useAuthStore.getState().user?.userId;
   if (meId && meId === userId) {
     try {
@@ -107,12 +108,45 @@ export const updateUser = async (userId: string, patch: Partial<UserRequestDTO>)
   }
   return res.data;
 };
+// ========================== Update my profile ==========================
+export const updateMyProfile = async (patch: Partial<UserRequestDTO>) => {
+  // ✅ Gọi API backend
+  const res = await axiosInstance.put<User>(`/users/me`, patch);
+
+  // ✅ Xóa cache ETag để lần refresh sau luôn lấy dữ liệu mới
+  useAuthStore.setState({ etag: null });
+
+  // ✅ Cập nhật trực tiếp user trong Zustand để UI phản ánh ngay
+  useAuthStore.getState().updateUserPartial(res.data);
+
+  return res.data;
+};
+
+// ========================== Update my avatar ==========================
+export const updateMyAvatar = async (file: File) => {
+  const fd = new FormData();
+  fd.append("file", file);
+
+  // ✅ Backend: /api/users/me/avatar
+  const res = await axiosInstance.post<User>(`/users/me/avatar`, fd, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+
+  // ✅ Xóa ETag để refresh lại bản mới
+  useAuthStore.setState({ etag: null });
+
+  // ✅ Cập nhật store ngay lập tức
+  useAuthStore.getState().updateUserPartial(res.data);
+
+  return res.data;
+};
+
 
 // ========================== Update avatar ==========================
 export const updateUserAvatar = async (userId: string, file: File) => {
   const fd = new FormData();
   fd.append("file", file);
-  const res = await axiosInstance.post<UserResponseDTO>(`/users/${userId}/avatar`, fd, {
+  const res = await axiosInstance.post<User>(`/users/${userId}/avatar`, fd, {
     headers: { "Content-Type": "multipart/form-data" },
   });
 
@@ -204,9 +238,9 @@ export const getMyFriends = async (params?: {
   page?: number;
   size?: number;
   sort?: string;
-}): Promise<PageResponse<UserResponseDTO>> => {
+}): Promise<PageResponse<User>> => {
   // ✅ Backend: /api/users/me/friends
-  const res = await axiosInstance.get<PageResponse<UserResponseDTO>>(`/users/me/friends`, {
+  const res = await axiosInstance.get<PageResponse<User>>(`/users/me/friends`, {
     params,
   });
   return res.data;

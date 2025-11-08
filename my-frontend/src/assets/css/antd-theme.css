@@ -1,4 +1,5 @@
 /* ===== ANT DESIGN QUIZ THEME – FULL LIGHT & DARK MODE ===== */
+/* Đã cập nhật để đồng bộ với theme CSS chung */
 
 /* ==== Root Variables (Light Mode) ==== */
 :root {
@@ -38,8 +39,20 @@
     /* Layout */
     --quiz-radius: 14px;
     --quiz-radius-sm: 6px;
+    --quiz-radius-md: 10px;
     --quiz-radius-lg: 18px;
     --quiz-font: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+
+    /* Gradients */
+    --quiz-gradient-primary: linear-gradient(135deg, var(--quiz-primary), var(--quiz-secondary));
+    --quiz-gradient-success: linear-gradient(135deg, var(--quiz-success), #34d399);
+    --quiz-gradient-danger: linear-gradient(135deg, var(--quiz-danger), #ef4444);
+    --quiz-gradient-info: linear-gradient(135deg, var(--quiz-info), #0ea5e9);
+
+    /* Transitions */
+    --quiz-transition: color 0.25s ease, background 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+    --quiz-transition-fast: all 0.15s ease-in-out;
+    --quiz-transition-slow: all 0.4s ease;
 }
 
 /* ==== Dark Mode ==== */
@@ -66,7 +79,7 @@ body {
     background: linear-gradient(135deg, #ecfdf5 0%, #f0f9ff 100%);
     color: var(--quiz-text);
     font-family: var(--quiz-font);
-    transition: background 0.4s ease, color 0.4s ease;
+    transition: var(--quiz-transition-slow);
 }
 
 .dark-mode body,
@@ -89,7 +102,7 @@ body[data-theme="dark"] {
     gap: 0.5rem;
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    transition: all 0.25s ease !important;
+    transition: var(--quiz-transition-fast) !important;
 }
 
 .ant-btn:hover,
@@ -99,13 +112,17 @@ body[data-theme="dark"] {
 }
 
 .ant-btn-primary {
-    background: linear-gradient(135deg, var(--quiz-primary), var(--quiz-secondary)) !important;
+    background: var(--quiz-gradient-primary) !important;
     border: none !important;
     color: white !important;
 }
 
 .ant-btn-primary:hover {
     background: linear-gradient(135deg, var(--quiz-primary-dark), var(--quiz-secondary-dark)) !important;
+}
+
+.ant-btn-primary:disabled {
+    opacity: 0.6 !important;
 }
 
 .ant-btn-default {
@@ -141,6 +158,7 @@ textarea.ant-input {
     color: var(--quiz-text) !important;
     font-size: 1rem !important;
     padding: 0.75rem 1rem !important;
+    transition: var(--quiz-transition) !important;
 }
 
 .ant-input::placeholder,
@@ -171,7 +189,7 @@ textarea.ant-input {
 
 .ant-select-item-option-selected,
 .ant-select-item-option-active {
-    background: linear-gradient(135deg, var(--quiz-primary), var(--quiz-secondary)) !important;
+    background: var(--quiz-gradient-primary) !important;
     color: white !important;
 }
 
@@ -181,14 +199,20 @@ textarea.ant-input {
     background: var(--quiz-surface) !important;
     box-shadow: var(--quiz-shadow) !important;
     border: none !important;
+    transition: var(--quiz-transition-fast) !important;
+}
+
+.ant-card:hover {
+    box-shadow: var(--quiz-shadow-hover) !important;
 }
 
 .ant-card-head {
-    background: linear-gradient(135deg, var(--quiz-primary), var(--quiz-secondary)) !important;
+    background: var(--quiz-gradient-primary) !important;
     color: white !important;
     border-radius: var(--quiz-radius) var(--quiz-radius) 0 0 !important;
     padding: 1rem !important;
     font-weight: 600 !important;
+    border-bottom: none !important;
 }
 
 .ant-card-body {
@@ -202,7 +226,7 @@ textarea.ant-input {
 }
 
 .ant-table-thead>tr>th {
-    background: linear-gradient(135deg, var(--quiz-primary), var(--quiz-secondary)) !important;
+    background: var(--quiz-gradient-primary) !important;
     color: white !important;
     border: none !important;
     font-weight: 600 !important;
@@ -214,6 +238,7 @@ textarea.ant-input {
     background: var(--quiz-surface) !important;
     border: none !important;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    color: var(--quiz-text) !important;
 }
 
 .ant-table-tbody>tr:hover>td {
@@ -229,9 +254,15 @@ textarea.ant-input {
 }
 
 .ant-modal-header {
-    background: linear-gradient(135deg, var(--quiz-primary), var(--quiz-secondary)) !important;
+    background: var(--quiz-gradient-primary) !important;
     color: white !important;
     border-radius: var(--quiz-radius) var(--quiz-radius) 0 0 !important;
+    border: none !important;
+}
+
+.ant-modal-title {
+    color: white !important;
+    font-weight: 600 !important;
 }
 
 .ant-modal-close {
@@ -240,6 +271,12 @@ textarea.ant-input {
 
 .ant-modal-close:hover {
     background: rgba(255, 255, 255, 0.2) !important;
+    color: white !important;
+}
+
+.ant-modal-footer {
+    border-top: 2px solid var(--quiz-border) !important;
+    background: var(--quiz-surface) !important;
 }
 
 /* Alert */
@@ -247,6 +284,8 @@ textarea.ant-input {
     border-radius: var(--quiz-radius) !important;
     border-left: 4px solid !important;
     background: var(--quiz-surface-alt) !important;
+    color: var(--quiz-text) !important;
+    transition: var(--quiz-transition-fast) !important;
 }
 
 .ant-alert-success {
@@ -265,6 +304,15 @@ textarea.ant-input {
     border-left-color: var(--quiz-warning) !important;
 }
 
+.ant-alert-message {
+    color: var(--quiz-text) !important;
+    font-weight: 600 !important;
+}
+
+.ant-alert-description {
+    color: var(--quiz-text-light) !important;
+}
+
 /* Tag / Badge */
 .ant-tag {
     border-radius: 50px !important;
@@ -273,12 +321,14 @@ textarea.ant-input {
     text-transform: uppercase;
     letter-spacing: 0.5px;
     padding: 0.5rem 1rem !important;
+    border: none !important;
+    background: var(--quiz-surface-alt) !important;
+    color: var(--quiz-text) !important;
 }
 
 .ant-tag-checkable-checked {
-    background: linear-gradient(135deg, var(--quiz-primary), var(--quiz-secondary)) !important;
+    background: var(--quiz-gradient-primary) !important;
     color: white !important;
-    border: none !important;
 }
 
 /* Progress */
@@ -288,14 +338,19 @@ textarea.ant-input {
 }
 
 .ant-progress-bg {
-    background: linear-gradient(135deg, var(--quiz-primary), var(--quiz-secondary)) !important;
+    background: var(--quiz-gradient-primary) !important;
     border-radius: 10px !important;
+}
+
+.ant-progress-text {
+    color: var(--quiz-text) !important;
 }
 
 /* Pagination */
 .ant-pagination-item {
     border: 2px solid var(--quiz-border) !important;
     border-radius: 8px !important;
+    background: var(--quiz-surface) !important;
 }
 
 .ant-pagination-item a {
@@ -304,7 +359,7 @@ textarea.ant-input {
 }
 
 .ant-pagination-item-active {
-    background: linear-gradient(135deg, var(--quiz-primary), var(--quiz-secondary)) !important;
+    background: var(--quiz-gradient-primary) !important;
     border-color: transparent !important;
 }
 
@@ -326,10 +381,11 @@ textarea.ant-input {
     color: var(--quiz-text) !important;
     font-weight: 500 !important;
     margin-bottom: 0.25rem !important;
+    transition: var(--quiz-transition-fast) !important;
 }
 
 .ant-dropdown-menu-item:hover {
-    background: linear-gradient(135deg, var(--quiz-primary), var(--quiz-secondary)) !important;
+    background: var(--quiz-gradient-primary) !important;
     color: white !important;
     transform: translateX(4px);
 }
@@ -338,6 +394,7 @@ textarea.ant-input {
 .ant-tabs-nav .ant-tabs-tab {
     border-radius: 12px !important;
     font-weight: 600 !important;
+    color: var(--quiz-text) !important;
 }
 
 .ant-tabs-nav .ant-tabs-tab-active {
@@ -348,10 +405,19 @@ textarea.ant-input {
     background: var(--quiz-primary) !important;
 }
 
+.ant-tabs-tab-btn:focus {
+    color: var(--quiz-primary) !important;
+}
+
 /* Checkbox */
+.ant-checkbox-wrapper {
+    color: var(--quiz-text) !important;
+}
+
 .ant-checkbox-wrapper .ant-checkbox-inner {
     border-radius: 6px !important;
     border: 2px solid var(--quiz-border) !important;
+    background: var(--quiz-surface) !important;
 }
 
 .ant-checkbox-checked .ant-checkbox-inner {
@@ -366,7 +432,7 @@ textarea.ant-input {
 
 /* Tooltip */
 .ant-tooltip-inner {
-    background: linear-gradient(135deg, var(--quiz-primary), var(--quiz-secondary)) !important;
+    background: var(--quiz-gradient-primary) !important;
     border-radius: 8px !important;
     padding: 0.75rem 1rem !important;
     font-weight: 500 !important;
@@ -385,6 +451,16 @@ textarea.ant-input {
 
 .ant-breadcrumb-separator {
     color: var(--quiz-border) !important;
+}
+
+/* Empty State */
+.ant-empty-description {
+    color: var(--quiz-text-muted) !important;
+}
+
+/* Spin / Loader */
+.ant-spin-dot-item {
+    background: var(--quiz-primary) !important;
 }
 
 /* Animation Classes */
@@ -422,7 +498,22 @@ textarea.ant-input {
 
 /* Gradient Utility */
 .gradient-primary {
-    background: linear-gradient(135deg, var(--quiz-primary), var(--quiz-secondary)) !important;
+    background: var(--quiz-gradient-primary) !important;
+    color: white !important;
+}
+
+.gradient-success {
+    background: var(--quiz-gradient-success) !important;
+    color: white !important;
+}
+
+.gradient-danger {
+    background: var(--quiz-gradient-danger) !important;
+    color: white !important;
+}
+
+.gradient-info {
+    background: var(--quiz-gradient-info) !important;
     color: white !important;
 }
 
@@ -430,6 +521,515 @@ textarea.ant-input {
     border-radius: var(--quiz-radius) !important;
 }
 
+.rounded-md {
+    border-radius: var(--quiz-radius-md) !important;
+}
+
+.rounded-sm {
+    border-radius: var(--quiz-radius-sm) !important;
+}
+
 .shadow-quiz {
     box-shadow: var(--quiz-shadow) !important;
+}
+
+.shadow-quiz-hover {
+    box-shadow: var(--quiz-shadow-hover) !important;
+}
+
+/* ---------- Typography & Text Levels ---------- */
+.ant-typography,
+.ant-typography p,
+.ant-typography span,
+.ant-typography div {
+    color: var(--text-color) !important;
+}
+
+.ant-typography a {
+    color: var(--primary-color) !important;
+    font-weight: 600;
+    transition: var(--transition-fast);
+}
+
+.ant-typography a:hover {
+    color: var(--secondary-color) !important;
+    text-decoration: underline;
+}
+
+/* text levels */
+.ant-typography-secondary,
+.ant-typography .ant-typography-secondary {
+    color: var(--text-light) !important;
+}
+
+.ant-typography-tertiary,
+.ant-typography .ant-typography-tertiary,
+.ant-typography .ant-typography-description {
+    color: var(--text-muted) !important;
+}
+
+/* quaternary (nhạt hơn) */
+.ant-typography-quaternary,
+.ant-typography .ant-typography-quaternary {
+    color: color-mix(in srgb, var(--text-color) 45%, transparent) !important;
+}
+
+/* disabled */
+.ant-typography-disabled,
+.ant-typography .ant-typography-disabled {
+    color: var(--text-muted) !important;
+    opacity: 0.7;
+}
+
+/* code/mark/kbd */
+.ant-typography code,
+.ant-typography kbd {
+    background: var(--surface-alt) !important;
+    color: var(--text-color) !important;
+    border: 1px solid var(--border-color) !important;
+    border-radius: 6px;
+    padding: 0.15rem 0.35rem;
+}
+
+.ant-typography mark {
+    background: rgba(255, 251, 150, 0.6) !important;
+    color: var(--text-color) !important;
+    border-radius: 4px;
+    padding: 0 0.15rem;
+}
+
+/* ---------- Form Labels / Help / Placeholder ---------- */
+.ant-form-item .ant-form-item-label>label {
+    color: var(--text-color) !important;
+    font-weight: 600;
+}
+
+.ant-form-item .ant-form-item-extra,
+.ant-form-item .ant-form-item-explain,
+.ant-form-item .ant-form-item-explain div,
+.ant-form-item .ant-form-item-explain span {
+    color: var(--text-light) !important;
+    /* secondary */
+}
+
+.ant-input::placeholder,
+textarea.ant-input::placeholder,
+.ant-select-single .ant-select-selector .ant-select-selection-placeholder {
+    color: var(--text-muted) !important;
+}
+
+/* disabled surface/text */
+.ant-input[disabled],
+.ant-select-disabled .ant-select-selector,
+.ant-picker-disabled,
+.ant-btn[disabled] {
+    color: var(--text-muted) !important;
+    opacity: 0.7;
+}
+
+/* ---------- Buttons ---------- */
+.ant-btn {
+    border-radius: 12px !important;
+    font-weight: 600 !important;
+    font-size: 0.9rem !important;
+    padding: 0.75rem 1.5rem !important;
+    height: auto !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 0.5rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    transition: var(--transition-fast) !important;
+}
+
+.ant-btn:hover,
+.ant-btn:focus {
+    transform: translateY(-2px);
+    box-shadow: var(--hover-shadow) !important;
+}
+
+.ant-btn-primary {
+    background: var(--gradient-primary) !important;
+    border: none !important;
+    color: #fff !important;
+}
+
+.ant-btn-primary:hover {
+    background: linear-gradient(135deg, var(--primary-dark), var(--secondary-dark)) !important;
+}
+
+.ant-btn-default {
+    background: var(--surface-color) !important;
+    border: 2px solid var(--border-color) !important;
+    color: var(--text-color) !important;
+}
+
+.ant-btn-default:hover {
+    border-color: var(--primary-color) !important;
+    color: var(--primary-color) !important;
+}
+
+.ant-btn-link {
+    color: var(--primary-color) !important;
+    font-weight: 600 !important;
+}
+
+.ant-btn-link:hover {
+    color: var(--secondary-color) !important;
+    text-decoration: underline;
+}
+
+/* ---------- Inputs / Select / Picker ---------- */
+.ant-input,
+.ant-input-affix-wrapper,
+.ant-select-selector,
+.ant-picker,
+textarea.ant-input {
+    border-radius: 12px !important;
+    border: 2px solid var(--border-color) !important;
+    background: var(--surface-color) !important;
+    color: var(--text-color) !important;
+    font-size: 1rem !important;
+    padding: 0.75rem 1rem !important;
+    transition: var(--transition) !important;
+}
+
+.ant-input:focus,
+.ant-input-affix-wrapper-focused,
+.ant-select-focused .ant-select-selector,
+.ant-picker-focused {
+    border-color: var(--primary-color) !important;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-color) 20%, transparent) !important;
+    outline: none !important;
+}
+
+.ant-select-dropdown {
+    background: var(--surface-color) !important;
+    border-radius: 12px !important;
+    box-shadow: var(--hover-shadow) !important;
+}
+
+.ant-select-item {
+    color: var(--text-color) !important;
+    border-radius: 8px !important;
+    margin: 4px 8px !important;
+}
+
+.ant-select-item-option-selected,
+.ant-select-item-option-active {
+    background: var(--gradient-primary) !important;
+    color: #fff !important;
+}
+
+/* ---------- Card ---------- */
+.ant-card {
+    border-radius: var(--border-radius) !important;
+    background: var(--surface-color) !important;
+    box-shadow: var(--card-shadow) !important;
+    border: none !important;
+    transition: var(--transition-fast) !important;
+}
+
+.ant-card:hover {
+    box-shadow: var(--hover-shadow) !important;
+}
+
+.ant-card-head {
+    background: var(--gradient-primary) !important;
+    color: #fff !important;
+    border-radius: var(--border-radius) var(--border-radius) 0 0 !important;
+    padding: 1rem !important;
+    font-weight: 600 !important;
+    border-bottom: none !important;
+}
+
+.ant-card-body {
+    color: var(--text-color) !important;
+    padding: 1.25rem !important;
+}
+
+/* ---------- Table ---------- */
+.ant-table {
+    background: transparent !important;
+}
+
+.ant-table-thead>tr>th {
+    background: var(--gradient-primary) !important;
+    color: #fff !important;
+    border: none !important;
+    font-weight: 600 !important;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.ant-table-tbody>tr>td {
+    background: var(--surface-color) !important;
+    border: none !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    color: var(--text-color) !important;
+}
+
+.ant-table-tbody>tr:hover>td {
+    background: var(--surface-alt) !important;
+    box-shadow: 0 4px 12px rgba(96, 165, 250, 0.15) !important;
+}
+
+/* ---------- Modal ---------- */
+.ant-modal-content {
+    border-radius: var(--border-radius) !important;
+    background: var(--surface-color) !important;
+    box-shadow: var(--card-shadow) !important;
+}
+
+.ant-modal-header {
+    background: var(--gradient-primary) !important;
+    color: #fff !important;
+    border-radius: var(--border-radius) var(--border-radius) 0 0 !important;
+    border: none !important;
+}
+
+.ant-modal-title {
+    color: #fff !important;
+    font-weight: 600 !important;
+}
+
+.ant-modal-close {
+    color: #fff !important;
+}
+
+.ant-modal-close:hover {
+    background: rgba(255, 255, 255, 0.2) !important;
+    color: #fff !important;
+}
+
+.ant-modal-footer {
+    border-top: 2px solid var(--border-color) !important;
+    background: var(--surface-color) !important;
+}
+
+/* ---------- Alert ---------- */
+.ant-alert {
+    border-radius: var(--border-radius) !important;
+    border-left: 4px solid !important;
+    background: var(--surface-alt) !important;
+    color: var(--text-color) !important;
+    transition: var(--transition-fast) !important;
+}
+
+.ant-alert-success {
+    border-left-color: var(--success-color) !important;
+}
+
+.ant-alert-error {
+    border-left-color: var(--danger-color) !important;
+}
+
+.ant-alert-info {
+    border-left-color: var(--info-color) !important;
+}
+
+.ant-alert-warning {
+    border-left-color: var(--warning-color) !important;
+}
+
+.ant-alert-message {
+    color: var(--text-color) !important;
+    font-weight: 600 !important;
+}
+
+.ant-alert-description {
+    color: var(--text-light) !important;
+}
+
+/* ---------- Tag / Badge ---------- */
+.ant-tag {
+    border-radius: 50px !important;
+    font-weight: 600 !important;
+    font-size: 0.85rem !important;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 0.5rem 1rem !important;
+    border: none !important;
+    background: var(--surface-alt) !important;
+    color: var(--text-color) !important;
+}
+
+.ant-tag-checkable-checked {
+    background: var(--gradient-primary) !important;
+    color: #fff !important;
+}
+
+/* ---------- Progress ---------- */
+.ant-progress-inner {
+    background: var(--border-color) !important;
+    border-radius: 10px !important;
+}
+
+.ant-progress-bg {
+    background: var(--gradient-primary) !important;
+    border-radius: 10px !important;
+}
+
+.ant-progress-text {
+    color: var(--text-color) !important;
+}
+
+/* ---------- Pagination ---------- */
+.ant-pagination-item {
+    border: 2px solid var(--border-color) !important;
+    border-radius: 8px !important;
+    background: var(--surface-color) !important;
+}
+
+.ant-pagination-item a {
+    color: var(--primary-color) !important;
+    font-weight: 600 !important;
+}
+
+.ant-pagination-item-active {
+    background: var(--gradient-primary) !important;
+    border-color: transparent !important;
+}
+
+.ant-pagination-item-active a {
+    color: #fff !important;
+}
+
+/* ---------- Dropdown ---------- */
+.ant-dropdown-menu {
+    background: var(--surface-color) !important;
+    border-radius: 12px !important;
+    box-shadow: var(--hover-shadow) !important;
+    padding: 0.5rem !important;
+    backdrop-filter: var(--blur-bg);
+}
+
+.ant-dropdown-menu-item {
+    border-radius: 8px !important;
+    color: var(--text-color) !important;
+    font-weight: 500 !important;
+    margin-bottom: 0.25rem !important;
+    transition: var(--transition-fast) !important;
+}
+
+.ant-dropdown-menu-item:hover {
+    background: var(--gradient-primary) !important;
+    color: #fff !important;
+    transform: translateX(4px);
+}
+
+/* ---------- Tabs ---------- */
+.ant-tabs-nav .ant-tabs-tab {
+    border-radius: 12px !important;
+    font-weight: 600 !important;
+    color: var(--text-color) !important;
+}
+
+.ant-tabs-ink-bar {
+    background: var(--primary-color) !important;
+}
+
+.ant-tabs-tab-btn:focus {
+    color: var(--primary-color) !important;
+}
+
+/* ---------- Checkbox ---------- */
+.ant-checkbox-wrapper {
+    color: var(--text-color) !important;
+}
+
+.ant-checkbox-wrapper .ant-checkbox-inner {
+    border-radius: 6px !important;
+    border: 2px solid var(--border-color) !important;
+    background: var(--surface-color) !important;
+}
+
+.ant-checkbox-checked .ant-checkbox-inner {
+    background: var(--primary-color) !important;
+    border-color: var(--primary-color) !important;
+}
+
+.ant-checkbox-wrapper:hover .ant-checkbox-inner,
+.ant-checkbox:focus .ant-checkbox-inner {
+    border-color: var(--primary-color) !important;
+}
+
+/* ---------- Tooltip ---------- */
+.ant-tooltip-inner {
+    background: var(--gradient-primary) !important;
+    border-radius: 8px !important;
+    padding: 0.75rem 1rem !important;
+    font-weight: 500 !important;
+}
+
+/* ---------- Breadcrumb ---------- */
+.ant-breadcrumb a {
+    color: var(--primary-color) !important;
+    font-weight: 500 !important;
+}
+
+.ant-breadcrumb .ant-breadcrumb-link:last-child {
+    color: var(--primary-color) !important;
+    font-weight: 600 !important;
+}
+
+.ant-breadcrumb-separator {
+    color: var(--border-color) !important;
+}
+
+/* ---------- Empty / Spin ---------- */
+.ant-empty-description {
+    color: var(--text-muted) !important;
+}
+
+.ant-spin-dot-item {
+    background: var(--primary-color) !important;
+}
+
+/* ---------- Utility ---------- */
+.text-muted {
+    color: var(--text-muted) !important;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--quiz-surface-alt);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--quiz-primary);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--quiz-primary-dark);
+}
+
+* {
+    scrollbar-color: var(--quiz-primary) var(--quiz-surface-alt);
+    scrollbar-width: thin;
+}
+
+/* Dark Mode Scrollbar */
+.dark-mode ::-webkit-scrollbar-track,
+body[data-theme="dark"] ::-webkit-scrollbar-track {
+    background: var(--quiz-surface-alt);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .ant-btn {
+        padding: 0.6rem 1.2rem !important;
+        font-size: 0.85rem !important;
+    }
+
+    .ant-modal-content {
+        border-radius: var(--quiz-radius-lg) !important;
+    }
 }

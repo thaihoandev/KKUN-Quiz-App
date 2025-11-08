@@ -9,6 +9,7 @@ import {
   PlusOutlined,
   EyeOutlined as ViewOutlined,
   CalendarOutlined,
+  MoreOutlined,
 } from "@ant-design/icons";
 import { Link, useNavigate } from "react-router-dom";
 import { ArticleDto } from "@/types/article";
@@ -141,7 +142,6 @@ const ArticleCardHandleSmall: React.FC<ArticleCardHandleSmallProps> = ({
             <h4
               style={{
                 flex: 1,
-                color: "var(--text-invert) !important",
                 display: "-webkit-box",
                 WebkitBoxOrient: "vertical",
                 WebkitLineClamp: 2,
@@ -157,19 +157,9 @@ const ArticleCardHandleSmall: React.FC<ArticleCardHandleSmallProps> = ({
             </h4>
 
             <Dropdown menu={{ items: menuItems }} trigger={["click"]}>
-              <Button
-                type="text"
-                icon={<EllipsisOutlined />}
-                style={{
-                  padding: 0,
-                  minWidth: 26,
-                  height: 26,
-                  backgroundColor: "rgba(255,255,255,0.25)",
-                  borderRadius: 6,
-                  backdropFilter: "blur(2px)",
-                }}
-                onClick={(e) => e.stopPropagation()}
-              />
+              <button className="btn btn-sm btn-outline-secondary border-0 py-1 px-2 rounded-3" onClick={(e) => e.stopPropagation()}>
+                <MoreOutlined style={{ fontSize: 16 }} />
+                </button>
             </Dropdown>
           </div>
         </div>
