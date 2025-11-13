@@ -71,7 +71,8 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        // ==================== PUBLIC ====================
+
+                        // ============ PUBLIC ENDPOINTS ============
                         .requestMatchers(
                                 "/ws/**",
                                 "/api/auth/**",
@@ -88,75 +89,85 @@ public class SecurityConfig {
                                 "/api/users/me/confirm-email-change"
                         ).permitAll()
 
-                        // ==================== AI / Chatbot ====================
-                        // => chỉ USER hoặc ADMIN được phép sinh câu hỏi tự động
+                        // ============ PUBLIC USER PROFILE ============
+                        // ai cũng xem được → service tự ẩn field nhạy cảm
+                        .requestMatchers(
+                                "/api/users/{id}",
+                                "/api/users/{id}/**"
+                        ).permitAll()
+
+                        // ============ PRIVATE USER ENDPOINTS ============
+                        // chỉ user đăng nhập mới xem/me
+                        .requestMatchers(
+                                "/api/users/me/**",
+                                "/api/users/me/friends/**",
+                                "/api/users/me/friend-requests/**"
+                        ).hasAnyAuthority(UserRole.USER.name(), UserRole.ADMIN.name())
+
+                        // ============ AI ============
                         .requestMatchers("/api/ai/**")
                         .hasAnyAuthority(UserRole.USER.name(), UserRole.ADMIN.name())
 
-                        // ==================== QUIZ & QUESTION ====================
-                        // => Xem công khai, sửa thì cần quyền
+                        // ============ QUIZ & QUESTIONS ============
                         .requestMatchers(
                                 "/api/quizzes/**",
                                 "/api/questions/**"
                         ).hasAnyAuthority(UserRole.USER.name(), UserRole.ADMIN.name())
 
-                        // ==================== POST & COMMENT (SOCIAL) ====================
+                        // ============ PUBLIC POSTS ============
                         .requestMatchers(
                                 "/api/posts/public",
                                 "/api/posts/{postId}",
                                 "/api/comments/post/**"
                         ).permitAll()
+
+                        // ============ PRIVATE POSTS ============
                         .requestMatchers(
                                 "/api/posts/**",
                                 "/api/comments/**"
                         ).hasAnyAuthority(UserRole.USER.name(), UserRole.ADMIN.name())
 
-                        // ==================== SERIES & ARTICLE ====================
+                        // ============ SERIES / FILE upload ============
                         .requestMatchers(
                                 "/api/series/**",
                                 "/api/articles/**",
                                 "/api/files/upload/**"
                         ).hasAnyAuthority(UserRole.USER.name(), UserRole.ADMIN.name())
 
-                        // ==================== CHAT SYSTEM ====================
+                        // ============ CHAT ============
                         .requestMatchers("/api/chat/**")
                         .hasAnyAuthority(UserRole.USER.name(), UserRole.ADMIN.name())
 
-                        // ==================== GAME ====================
+                        // ============ GAME =============
                         .requestMatchers(
                                 "/api/games/create",
                                 "/api/games/{gameId}/start",
                                 "/api/games/{gameId}/end"
                         ).hasAnyAuthority(UserRole.USER.name(), UserRole.ADMIN.name())
+
                         .requestMatchers(
                                 "/api/games/{gameId}/players",
                                 "/api/games/{gameId}/details",
                                 "/api/games/{gameId}/leaderboard"
                         ).permitAll()
 
-                        // ==================== NOTIFICATIONS ====================
+                        // ============ NOTIFICATIONS ============
                         .requestMatchers("/api/notifications/**")
                         .hasAnyAuthority(UserRole.USER.name(), UserRole.ADMIN.name())
 
-                        // ==================== PLAYER ====================
+                        // ============ PLAYERS ============
                         .requestMatchers("/api/players/**")
                         .hasAnyAuthority(UserRole.USER.name(), UserRole.ADMIN.name())
 
-                        // ==================== USER PROFILE ====================
-                        .requestMatchers(
-                                "/api/users/me/**",
-                                "/api/users/me/friends/**",
-                                "/api/users/me/friend-requests/**"
-                        ).hasAnyAuthority(UserRole.USER.name(), UserRole.ADMIN.name())
-                        // Admin quản lý user
-                        .requestMatchers(
-                                "/api/users/**",
-                                "/api/admin/**"
-                        ).hasAuthority(UserRole.ADMIN.name())
+                        // ============ ADMIN ONLY ============
+                        .requestMatchers("/api/admin/**")
+                        .hasAuthority(UserRole.ADMIN.name())
 
-                        // ==================== MẶC ĐỊNH ====================
+                        // ============ DEFAULT ============
                         .anyRequest().permitAll()
                 )
+
+                // Xử lý lỗi 401 / 403
                 .exceptionHandling(ex -> ex
                         .defaultAuthenticationEntryPointFor(
                                 new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED),
@@ -167,10 +178,14 @@ public class SecurityConfig {
                                 new AntPathRequestMatcher("/api/**")
                         )
                 )
+
+                // OAuth2 login (Google)
                 .oauth2Login(oauth2 -> oauth2
                         .loginPage("/oauth2/authorization/google")
                         .defaultSuccessUrl("/api/auth/login-success", true)
                 )
+
+                // JWT Auth
                 .oauth2ResourceServer(rs -> rs
                         .bearerTokenResolver(new CookieJwtAuthConverter())
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtToUserPrincipalConverter))
@@ -178,7 +193,6 @@ public class SecurityConfig {
 
         return http.build();
     }
-
 
     // ===================== JWT DECODER =====================
     @Bean
@@ -200,7 +214,7 @@ public class SecurityConfig {
         return new BCryptPasswordEncoder();
     }
 
-    // ===================== AUTHENTICATION PROVIDER =====================
+    // ===================== AUTH PROVIDER =====================
     @Bean
     public AuthenticationProvider authenticationProvider() {
         DaoAuthenticationProvider provider = new DaoAuthenticationProvider();
@@ -209,13 +223,13 @@ public class SecurityConfig {
         return provider;
     }
 
-    // ===================== AUTHENTICATION MANAGER =====================
+    // ===================== AUTH MANAGER =====================
     @Bean
     public AuthenticationManager authenticationManager(AuthenticationConfiguration cfg) throws Exception {
         return cfg.getAuthenticationManager();
     }
 
-    // ===================== RSA PUBLIC KEY =====================
+    // ===================== RSA KEYS =====================
     @Bean
     public RSAPublicKey publicKey() throws Exception {
         if (publicKeyBase64 != null && !publicKeyBase64.isBlank()) {
@@ -241,7 +255,6 @@ public class SecurityConfig {
         throw new IllegalStateException("No public key configured!");
     }
 
-    // ===================== RSA PRIVATE KEY =====================
     @Bean
     public RSAPrivateKey privateKey() throws Exception {
         if (privateKeyBase64 != null && !privateKeyBase64.isBlank()) {
@@ -267,7 +280,7 @@ public class SecurityConfig {
         throw new IllegalStateException("No private key configured!");
     }
 
-    // ===================== CORS CONFIGURATION =====================
+    // ===================== CORS =====================
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration cfg = new CorsConfiguration();
