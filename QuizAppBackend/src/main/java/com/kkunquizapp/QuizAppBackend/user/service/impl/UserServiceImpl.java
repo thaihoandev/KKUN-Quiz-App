@@ -25,6 +25,7 @@ import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.security.oauth2.jwt.Jwt;
 
 import java.io.IOException;
 import java.time.LocalDateTime;
@@ -119,11 +120,41 @@ public class UserServiceImpl implements UserService {
 
     // ===================== GET USER BY ID =====================
     @Override
-    @Transactional
+    @Transactional(readOnly = true)
     public UserResponseDTO getUserById(String userId) {
-        User user = getUserOrThrow(UUID.fromString(userId));
-        return modelMapper.map(user, UserResponseDTO.class);
+        // ==== Lấy authentication từ SecurityContext ====
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        String userIdFromToken = null;
+        boolean isAdmin = false;
+
+        if (authentication != null && authentication.getPrincipal() instanceof Jwt jwt) {
+            userIdFromToken = jwt.getClaim("userId");
+            List<String> roles = jwt.getClaim("roles");
+            isAdmin = roles.contains(UserRole.ADMIN.name());
+        }
+
+        // ==== Lấy user trong DB ====
+        User user = userRepo.findById(UUID.fromString(userId))
+                .orElseThrow(() -> new UserNotFoundException("User not found with ID: " + userId));
+
+        // ==== Map sang DTO đầy đủ ====
+        UserResponseDTO dto = modelMapper.map(user, UserResponseDTO.class);
+
+        // ==== Kiểm tra owner ====
+        boolean isOwner = userIdFromToken != null && userIdFromToken.equals(userId);
+
+        // ==== Nếu không phải admin và không phải owner → trả profile public ====
+        if (!isAdmin && !isOwner) {
+            dto.setEmail(null);
+            dto.setRoles(null);
+            dto.setUsername(null);
+            dto.setIsActive(null);
+            // bất cứ gì bạn muốn ẩn thêm thì thêm ở đây
+        }
+
+        return dto;
     }
+
 
     // ===================== UPDATE USER =====================
     @Override
