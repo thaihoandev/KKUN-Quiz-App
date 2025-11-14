@@ -6,8 +6,8 @@ import { useAuthStore } from "@/store/authStore";
 import {
   getFriendSuggestions,
   sendFriendRequest,
-  FriendSuggestion,
 } from "@/services/userService";
+import { FriendSuggestion } from "@/types/friends";
 
 type Props = {
   page?: number;

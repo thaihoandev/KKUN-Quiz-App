@@ -8,10 +8,10 @@ import {
   cancelFriendRequest,
   getIncomingFriendRequestsPaged,
   getOutgoingFriendRequestsPaged,
-  FriendRequestItem,
 } from "@/services/userService";
 import SuggestionsWidget from "@/components/widgets/SuggestionsWidget";
 import { hydrateRequests } from "@/utils/userHydrator";
+import { FriendRequestItem } from "@/types/friends";
 
 /**
  * Trang quản lý kết nối: Incoming & Sent
