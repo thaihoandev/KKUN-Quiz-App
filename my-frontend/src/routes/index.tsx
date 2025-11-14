@@ -1,8 +1,8 @@
 import React, { Suspense } from "react";
-import { Routes, Route, Outlet } from "react-router-dom";
+import { Routes, Route } from "react-router-dom";
 import ScrollToTop from "@/components/ScrollToTop";
 
-// ✅ Routes bảo vệ
+// Routes
 import ProtectedRoute from "@/routes/ProtectedRoute";
 import PublicRoute from "@/routes/PublicRoute";
 
@@ -26,7 +26,6 @@ import ChangePasswordPage from "@/pages/ChangePasswordPage";
 import JoinGamePage from "@/pages/gameSession/JoinGamePage";
 import WaitingRoomSessionPage from "@/pages/gameSession/WaitingRoomSessionPage";
 import GamePlayPage from "@/pages/game/GamePlayPage";
-import UserDashboardPage from "@/pages/users/UserDashboardPage";
 import UserProfilePage from "@/pages/users/UserProfilePage";
 import HomePostPage from "@/pages/HomePostPage";
 import FriendConnectionsPage from "@/pages/FriendConnectionsPage";
@@ -49,9 +48,12 @@ const AppRoutes: React.FC = () => (
   <>
     <ScrollToTop />
     <Suspense fallback={<div>Loading...</div>}>
+
       <Routes>
 
-        {/* === 🔓 AUTHENTICATION === */}
+        {/* ======================================
+              🔓 AUTH ROUTES (LOGIN & REGISTER)
+        ======================================= */}
         <Route
           element={
             <PublicRoute>
@@ -59,15 +61,17 @@ const AppRoutes: React.FC = () => (
             </PublicRoute>
           }
         >
-          <Route path="login" element={<Login />} />
-          <Route path="register" element={<Register />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
         </Route>
 
-        {/* === 🌍 PUBLIC PAGES === */}
+        {/* ======================================
+               🌍 PUBLIC ROUTES (SingleLayout)
+        ======================================= */}
         <Route path="/" element={<SingleLayout />}>
           <Route index element={<HomePage />} />
 
-          {/* Game session pages */}
+          {/* Game */}
           <Route path="join-game" element={<JoinGamePage />} />
           <Route path="join-game/:pinCode" element={<JoinGamePage />} />
           <Route path="game-session/:gameId" element={<WaitingRoomSessionPage />} />
@@ -75,54 +79,55 @@ const AppRoutes: React.FC = () => (
 
           <Route path="chat" element={<ChatPage />} />
 
-          {/* Public articles */}
+          {/* Articles (public) */}
           <Route path="articles" element={<ArticlesPage />} />
           <Route path="articles/:slug" element={<ArticleDetailPage />} />
-                    {/* Articles (create/edit) */}
-          <Route path="articles/create" element={<CreateArticlePage />} />
-          <Route path="articles/edit/:slug" element={<ArticleEditPage />} />
-          
-          {/* Public series */}
+
+          {/* Series (public) */}
           <Route path="series/:slug" element={<SeriesDetailPage />} />
           <Route path="author/:authorId/series" element={<AuthorSeriesPage />} />
         </Route>
 
-        {/* === 🔐 PROTECTED AREA === */}
+        {/* ======================================
+               🔐 PROTECTED ROUTES (LOGIN REQUIRED)
+               → GIỮ dạng /profile/:userId
+        ======================================= */}
         <Route
-          path="/"
           element={
             <ProtectedRoute>
               <MainLayout />
             </ProtectedRoute>
           }
         >
-          {/* User & Social */}
-          <Route path="profile/:userId" element={<UserProfilePage />} />
-          <Route path="achievements" element={<AchievementPage />} />
-          <Route path="settings" element={<SettingProfilePage />} />
-          <Route path="change-password" element={<ChangePasswordPage />} />
-          <Route path="friends" element={<FriendConnectionsPage />} />
-          <Route path="dashboard" element={<UserDashboardPage />} />
+          {/* User */}
+          <Route path="/profile/:userId" element={<UserProfilePage />} />
+          <Route path="/settings" element={<SettingProfilePage />} />
+          <Route path="/change-password" element={<ChangePasswordPage />} />
+          <Route path="/achievements" element={<AchievementPage />} />
+          <Route path="/friends" element={<FriendConnectionsPage />} />
+          <Route path="/posts" element={<HomePostPage />} />
 
-          {/* Posts & Home Feed */}
-          <Route path="posts" element={<HomePostPage />} />
+          {/* Quizzes */}
+          <Route path="/quizzes/:quizId" element={<QuizManagementPage />} />
+          <Route path="/quizzes/:quizId/edit" element={<QuizEditorPage />} />
+          <Route path="/quizzes/:quizId/questions/create" element={<QuestionCreatePage />} />
+          <Route path="/quizzes/:quizId/questions/:questionId/edit" element={<QuestionEditorPage />} />
 
-          {/* Quizzes (owned) */}
-          <Route path="quizzes/:quizId" element={<QuizManagementPage />} />
-          <Route path="quizzes/:quizId/edit" element={<QuizEditorPage />} />
-          <Route path="quizzes/:quizId/questions/create" element={<QuestionCreatePage />} />
-          <Route path="quizzes/:quizId/questions/:questionId/edit" element={<QuestionEditorPage />} />
+          {/* Series management */}
+          <Route path="/me/series" element={<SeriesPage />} />
+          <Route path="/series/create" element={<CreateSeriesPage />} />
+          <Route path="/series/edit/:slug" element={<EditSeriesPage />} />
 
-
-
-          {/* Series (manage by author) */}
-          <Route path="me/series" element={<SeriesPage />} />
-          <Route path="series/create" element={<CreateSeriesPage />} />
-          <Route path="series/edit/:slug" element={<EditSeriesPage />} />
+          {/* Article management */}
+          <Route path="/articles/create" element={<CreateArticlePage />} />
+          <Route path="/articles/edit/:slug" element={<ArticleEditPage />} />
         </Route>
 
-        {/* === 404 === */}
+        {/* ======================================
+                     🔴 404 NOT FOUND
+        ======================================= */}
         <Route path="*" element={<NotFound />} />
+
       </Routes>
     </Suspense>
   </>

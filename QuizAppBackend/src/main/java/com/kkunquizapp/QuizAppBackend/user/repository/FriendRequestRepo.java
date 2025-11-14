@@ -6,6 +6,7 @@ import com.kkunquizapp.QuizAppBackend.user.model.User;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
 
 import java.util.List;
 import java.util.Optional;
@@ -30,4 +31,23 @@ public interface FriendRequestRepo extends JpaRepository<FriendRequest, UUID> {
     Page<FriendRequest> findAllByRequesterAndStatus(User requester,
                                                     FriendRequest.Status status,
                                                     Pageable pageable);
+
+    // Tìm lời mời PENDING giữa 2 người theo đúng hướng
+    @Query(value = """
+    SELECT fr
+    FROM FriendRequest fr
+    WHERE fr.requester = :requester
+      AND fr.receiver = :receiver
+      AND fr.status = 'PENDING'
+    """)
+        Optional<FriendRequest> findPending(User requester, User receiver);
+
+        @Query(value = """
+    SELECT fr
+    FROM FriendRequest fr
+    WHERE (fr.requester = :u1 AND fr.receiver = :u2)
+       OR (fr.requester = :u2 AND fr.receiver = :u1)
+    """)
+        Optional<FriendRequest> findAnyBetween(User u1, User u2);
+
 }

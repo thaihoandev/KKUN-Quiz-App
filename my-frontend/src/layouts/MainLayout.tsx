@@ -7,10 +7,9 @@ import { useAuthStore } from "@/store/authStore";
 import "bootstrap/dist/css/bootstrap.min.css";
 
 const MainLayout: React.FC = () => {
-  const [profile, setProfile] = useState<any>(null);
-  const [isDark, setIsDark] = useState(false);
-  const ensureMe = useAuthStore((s) => s.ensureMe);
   const user = useAuthStore((s) => s.user);
+  const [isDark, setIsDark] = useState(false);
+  const [profile, setProfile] = useState<any>(null);
 
   // Detect dark mode
   useEffect(() => {
@@ -25,19 +24,6 @@ const MainLayout: React.FC = () => {
 
     return () => observer.disconnect();
   }, []);
-
-  // Load user
-  useEffect(() => {
-    const loadUser = async () => {
-      try {
-        const me = await ensureMe();
-        if (me) setProfile(me);
-      } catch (err) {
-        console.warn("Không thể tải thông tin người dùng:", err);
-      }
-    };
-    loadUser();
-  }, [ensureMe]);
 
   return (
     <div
