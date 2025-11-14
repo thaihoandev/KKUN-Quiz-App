@@ -1,4 +1,5 @@
-import { FriendRequestItem, getUserById } from "@/services/userService";
+import { getUserById } from "@/services/userService";
+import { FriendRequestItem } from "@/types/friends";
 
 const userDetailsCache = new Map<string, any>();
 // ---------- Fetchers ----------
