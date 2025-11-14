@@ -1,14 +1,16 @@
+import "@/assets/vendor/css/pages/page-profile.css";
 import EditableField from "@/components/formFields/EditableField";
+import HeaderProfile from "@/components/headers/HeaderProfile";
+import EditAvatarModal from "@/components/modals/EditAvatarModal";
 import React, { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "@/store/authStore";
 import {
   deleteSoftUser,
+  updateMyProfile,
   requestEmailOtp,
   verifyEmailOtp,
-  updateMyProfile,
 } from "@/services/userService";
-import EditAvatarModal from "@/components/modals/EditAvatarModal";
+import { useNavigate } from "react-router-dom";
 
 type PartialUser = {
   username?: string;
@@ -22,21 +24,19 @@ type Notice = { type: "success" | "error"; message: string };
 
 const SettingProfilePage = () => {
   const navigate = useNavigate();
-  const user = useAuthStore((s) => s.user);
+
+  const storeUser = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
-  const ensureMe = useAuthStore((s) => s.ensureMe);
   const refreshStoreMe = useAuthStore((s) => s.refreshMe);
 
-  const [me, setMe] = useState<any | null>(null);
-
-  const [selectedAvatar, setSelectedAvatar] = useState(1);
-  const [password, setPassword] = useState("");
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [me, setMe] = useState(storeUser);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [password, setPassword] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [showEditAvatar, setShowEditAvatar] = useState(false);
 
-  // 👉 Email OTP modal state
+  // OTP
   const [showEmailOtp, setShowEmailOtp] = useState(false);
   const [pendingEmail, setPendingEmail] = useState("");
   const [otp, setOtp] = useState("");
@@ -45,47 +45,28 @@ const SettingProfilePage = () => {
 
   const [notice, setNotice] = useState<Notice | null>(null);
 
+  const safeUserId = storeUser?.userId ?? me?.userId;
+
+  // Sync local `me` when store user updates (after refresh, edit,...)
+  useEffect(() => {
+    if (storeUser) setMe(storeUser);
+  }, [storeUser]);
+
   const showMessage = (msg: Notice) => {
     setNotice(msg);
     setTimeout(() => setNotice(null), 4000);
   };
 
-  // ✅ Lấy user lúc mount bằng ensureMe (tôn trọng cache/ETag)
-  useEffect(() => {
-    (async () => {
-      try {
-        const current = await ensureMe();
-        if (current) setMe(current);
-        else showMessage({ type: "error", message: "Không thể tải thông tin người dùng." });
-      } catch (err: any) {
-        const message =
-          err?.response?.data?.message ||
-          err?.response?.data?.error ||
-          "Không thể tải thông tin người dùng.";
-        showMessage({ type: "error", message });
-      }
-    })();
-  }, [ensureMe]);
-
-  const safeUserId = user?.userId || me?.userId;
-
-  // ✅ Đồng bộ lại me sau các hành động cần dữ liệu mới từ server
-  const refreshMe = async () => {
-    try {
-      await refreshStoreMe();              // làm mới store (304-friendly)
-      const newest = useAuthStore.getState().user;
-      if (newest) setMe(newest);
-    } catch {
-      // bỏ qua
-    }
-  };
-
+  // ---------------------------
+  // UPDATE PROFILE FIELDS
+  // ---------------------------
   const handleFieldChange = async (fieldName: string, newValue: string) => {
     if (!safeUserId) return;
 
-    // ⚠️ Email: dùng OTP, không update trực tiếp
+    // Email → use OTP
     if (fieldName === "email") {
       if (!newValue || newValue === me?.email) return;
+
       setRequestingOtp(true);
       try {
         await requestEmailOtp(newValue);
@@ -94,73 +75,78 @@ const SettingProfilePage = () => {
         setShowEmailOtp(true);
         showMessage({
           type: "success",
-          message: `Đã gửi mã xác thực đến ${newValue}. Vui lòng kiểm tra hộp thư.`,
+          message: `Đã gửi mã xác minh đến ${newValue}.`,
         });
       } catch (err: any) {
-        const m =
-          err?.response?.data?.message ||
-          err?.response?.data ||
-          "Không thể gửi mã xác thực. Vui lòng thử lại.";
-        showMessage({ type: "error", message: m });
+        const msg =
+          err?.response?.data?.message ??
+          err?.response?.data ??
+          "Không thể gửi OTP.";
+        showMessage({ type: "error", message: msg });
       } finally {
         setRequestingOtp(false);
       }
       return;
     }
 
-    // Các field còn lại cập nhật như cũ
+    // Other fields
     setSaving(true);
     try {
-      const payload: PartialUser = { [fieldName]: newValue } as PartialUser;
-      const updated = await updateMyProfile(payload as any);
-      setMe(updated); // cập nhật tức thời UI
-      showMessage({ type: "success", message: "Cập nhật thông tin thành công." });
-      // Đồng bộ store (nếu cần dùng global user đồng nhất)
-      refreshMe();
+      const payload: PartialUser = { [fieldName]: newValue };
+      const updated = await updateMyProfile(payload);
+
+      setMe(updated);
+      showMessage({ type: "success", message: "Cập nhật thành công." });
+
+      // sync store (global user)
+      await refreshStoreMe();
     } catch (err: any) {
-      const message =
-        err?.response?.data?.message ||
-        err?.response?.data?.error ||
-        "Cập nhật thất bại. Vui lòng thử lại.";
-      showMessage({ type: "error", message });
+      const msg =
+        err?.response?.data?.message ??
+        err?.response?.data?.error ??
+        "Cập nhật thất bại.";
+      showMessage({ type: "error", message: msg });
     } finally {
       setSaving(false);
     }
   };
 
+  // ---------------------------
+  // DELETE ACCOUNT
+  // ---------------------------
   const handleDeleteAccount = async () => {
-    if (!safeUserId) return;
-    if (!password || !confirmDelete) return;
+    if (!password || !confirmDelete || !safeUserId) return;
 
     setDeleting(true);
     try {
-      await deleteSoftUser(String(safeUserId), String(password));
-      showMessage({ type: "success", message: "Tài khoản đã được vô hiệu hóa." });
-      if (logout) await logout();
+      await deleteSoftUser(String(safeUserId), password);
+      showMessage({ type: "success", message: "Tài khoản đã bị vô hiệu hóa." });
+
+      await logout?.();
       navigate("/");
     } catch (err: any) {
-      const message =
-        err?.response?.data?.message ||
-        err?.response?.data?.error ||
-        "Xóa tài khoản thất bại. Vui lòng kiểm tra mật khẩu.";
-      showMessage({ type: "error", message });
+      const msg =
+        err?.response?.data?.message ??
+        err?.response?.data?.error ??
+        "Xóa tài khoản thất bại.";
+      showMessage({ type: "error", message: msg });
     } finally {
       setDeleting(false);
     }
   };
 
-  const displayAvatar = me?.avatar || `/assets/img/avatars/${selectedAvatar}.png`;
-
-  // ===== OTP handlers
+  // ---------------------------
+  // OTP HANDLERS
+  // ---------------------------
   const resendOtp = async () => {
     if (!pendingEmail) return;
+
     setRequestingOtp(true);
     try {
       await requestEmailOtp(pendingEmail);
-      showMessage({ type: "success", message: `Đã gửi lại mã đến ${pendingEmail}.` });
-    } catch (e: any) {
-      const m = e?.response?.data || "Không thể gửi lại mã. Vui lòng thử lại.";
-      showMessage({ type: "error", message: m });
+      showMessage({ type: "success", message: "Đã gửi lại mã OTP." });
+    } catch {
+      showMessage({ type: "error", message: "Không thể gửi lại mã." });
     } finally {
       setRequestingOtp(false);
     }
@@ -168,22 +154,29 @@ const SettingProfilePage = () => {
 
   const confirmOtp = async () => {
     if (!otp) return;
+
     setVerifyingOtp(true);
     try {
       await verifyEmailOtp(otp);
-      await refreshMe(); // ✅ đồng bộ lại user từ server
+
+      await refreshStoreMe();
+      const newest = useAuthStore.getState().user;
+      if (newest) setMe(newest);
+
       setShowEmailOtp(false);
-      showMessage({ type: "success", message: "Xác minh thành công. Email đã được cập nhật." });
-    } catch (e: any) {
-      const m = e?.response?.data || "Mã không hợp lệ hoặc đã hết hạn.";
-      showMessage({ type: "error", message: m });
+      showMessage({ type: "success", message: "Xác minh thành công." });
+    } catch {
+      showMessage({ type: "error", message: "Mã OTP không hợp lệ." });
     } finally {
       setVerifyingOtp(false);
     }
   };
 
   return (
-    <div className="container-xxl flex-grow-1 container-p-y text-white" style={{ minHeight: "100vh" }}>
+    <div
+      className="container-xxl flex-grow-1 container-p-y text-white"
+      style={{ minHeight: "100vh" }}
+    >
       {/* Notification */}
       {notice && (
         <div
@@ -191,186 +184,108 @@ const SettingProfilePage = () => {
           role="alert"
         >
           {notice.message}
-          <button type="button" className="btn btn-close" aria-label="Close" onClick={() => setNotice(null)} />
+          <button
+            type="button"
+            className="btn btn-close"
+            onClick={() => setNotice(null)}
+          />
         </div>
       )}
 
-      {/* Profile Information */}
-      <div className="row mb-4">
-        <div className="col-12">
-          <div className="card p-0 rounded-4 border-0 shadow">
-            <h5 className="card-header px-4 pb-3 border-bottom border-secondary">Thông tin cá nhân</h5>
+      {/* Header */}
+      <HeaderProfile
+        profile={me}
+        onEditAvatar={() => setShowEditAvatar(true)}
+      />
 
-            <div className="card-body px-4 pt-4">
-              <div className="d-flex flex-column flex-md-row align-items-center gap-3 mb-4">
-                <div className="position-relative">
-                  <img
-                    src={displayAvatar}
-                    alt="User avatar"
-                    className="rounded-circle border border-2 border-primary"
-                    style={{ width: "100px", height: "100px", objectFit: "cover" }}
-                  />
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-primary position-absolute bottom-0 end-0 rounded-circle"
-                    style={{ width: "32px", height: "32px", padding: 0 }}
-                    title="Đổi ảnh đại diện"
-                    onClick={() => setShowEditAvatar(true)}
-                  >
-                    <i className="bx bx-camera fs-5"></i>
-                  </button>
-                </div>
+      {/* Profile Fields */}
+      <div className="card p-0 rounded-4 border-0 shadow mb-4">
+        <h5 className="card-header px-4 pb-3 border-bottom border-secondary">
+          Thông tin cá nhân
+        </h5>
 
-                <div className="mt-3 mt-md-0">
-                  <h5 className="mb-1">{me?.username ?? "Tài khoản"}</h5>
-                  <p className="text-muted mb-3">Chọn ảnh đại diện</p>
-                  <small className="text-muted d-block">
-                    Tip: Chọn ảnh trong gallery chỉ thay đổi hiển thị tạm thời. Ảnh đại diện chính thức sẽ cập nhật sau khi bạn tải/cắt và lưu.
-                  </small>
-                </div>
-              </div>
-
-              <div className="row g-4">
-                <EditableField
-                  label="Tên người dùng"
-                  initialValue={me?.username ?? ""}
-                  fieldName="username"
-                  fieldType="text"
-                  onValueChange={handleFieldChange}
-                  disabled={saving}
-                />
-                <EditableField
-                  label="Email"
-                  initialValue={me?.email ?? ""}
-                  fieldName="email"
-                  fieldType="email"
-                  onValueChange={handleFieldChange}
-                  disabled={requestingOtp || verifyingOtp}
-                />
-                <EditableField
-                  label="Số điện thoại"
-                  initialValue={me?.phone ?? ""}
-                  fieldName="phone"
-                  fieldType="phoneNumber"
-                  onValueChange={handleFieldChange}
-                  disabled={saving}
-                />
-                <EditableField
-                  label="Trường"
-                  initialValue={me?.school ?? ""}
-                  fieldName="school"
-                  onValueChange={handleFieldChange}
-                  disabled={saving}
-                />
-                <div className="col-md-6">
-                  <div className="form-group">
-                    <label className="form-label text-muted">Loại tài khoản</label>
-                    <select className="form-select rounded-3 border-0 bg-light" disabled>
-                      <option>{me?.roles?.includes("ADMIN") ? "Admin" : "User"}</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Interface Settings */}
-      <div className="row mb-4">
-        <div className="col-12">
-          <div className="card p-0 rounded-4 border-0 shadow">
-            <h5 className="card-header px-4 pb-3 border-bottom border-secondary">
-              Giao diện
-            </h5>
-            <div className="card-body px-4 pt-4">
-              <div className="row g-4">
-                <div className="col-md-6">
-                  <div className="form-group">
-                    <h5 className="form-label text-muted">Hình nền</h5>
-                    <select className="form-select">
-                      <option>Auto</option>
-                      <option>Dark</option>
-                      <option>Light</option>
-                    </select>
-                  </div>
-                </div>
-                <div className="col-md-6">
-                  <div className="form-group">
-                    <h5 className="form-label text-muted">Ngôn ngữ</h5>
-                    <select className="form-select">
-                      <option>Tiếng Việt</option>
-                      <option>English</option>
-                      <option>Français</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-            </div>
+        <div className="card-body px-4 pt-4">
+          <div className="row g-4">
+            <EditableField
+              label="Tên người dùng"
+              initialValue={me?.username ?? ""}
+              fieldName="username"
+              fieldType="text"
+              onValueChange={handleFieldChange}
+              disabled={saving}
+            />
+            <EditableField
+              label="Email"
+              initialValue={me?.email ?? ""}
+              fieldName="email"
+              fieldType="email"
+              onValueChange={handleFieldChange}
+              disabled={requestingOtp || verifyingOtp}
+            />
+            <EditableField
+              label="Số điện thoại"
+              initialValue={me?.phone ?? ""}
+              fieldName="phone"
+              fieldType="phoneNumber"
+              onValueChange={handleFieldChange}
+              disabled={saving}
+            />
+            <EditableField
+              label="Trường"
+              initialValue={me?.school ?? ""}
+              fieldName="school"
+              onValueChange={handleFieldChange}
+              disabled={saving}
+            />
           </div>
         </div>
       </div>
 
       {/* Delete Account */}
-      <div className="row mb-4">
-        <div className="col-12">
-          <div className="card p-0 rounded-4 border-0 shadow-sm overflow-hidden">
-            <div className="card-header d-flex justify-content-between align-items-center p-4 border-bottom">
-              <h5 className="m-0 text-danger d-flex align-items-center">
-                <i className="bx bx-trash fs-4 me-2"></i>
-                Xóa tài khoản
-              </h5>
-            </div>
-            <div className="card-body p-4">
-              <div className="alert alert-danger rounded-3 mb-4" role="alert">
-                <div className="d-flex">
-                  <i className="bx bx-error-circle fs-4 me-2"></i>
-                  <div>
-                    <p className="mb-1 fw-semibold">Cảnh báo: Hành động không thể hoàn tác</p>
-                    <p className="mb-0">
-                      Tài khoản sẽ bị vô hiệu hóa (soft delete). Quản trị viên có thể khôi phục nếu cần.
-                    </p>
-                  </div>
-                </div>
-              </div>
-              <div className="mb-4">
-                <label className="form-label text-muted">Xác nhận mật khẩu</label>
-                <input
-                  type="password"
-                  className="form-control"
-                  placeholder="Nhập mật khẩu của bạn"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-              </div>
-              <div className="form-check mb-3">
-                <input
-                  className="form-check-input"
-                  type="checkbox"
-                  id="confirmDelete"
-                  checked={confirmDelete}
-                  onChange={(e) => setConfirmDelete(e.target.checked)}
-                />
-                <label className="form-check-label" htmlFor="confirmDelete">
-                  Tôi xác nhận muốn xóa tài khoản của mình
-                </label>
-              </div>
-              <button
-                className="btn btn-danger px-4 py-2"
-                disabled={!password || !confirmDelete || deleting}
-                onClick={handleDeleteAccount}
-                aria-disabled={!password || !confirmDelete || deleting}
-              >
-                <i className={`bx ${deleting ? "bx-loader-alt bx-spin" : "bx-trash-alt"} me-1`}></i>
-                {deleting ? "Đang xóa..." : "Xóa tài khoản"}
-              </button>
-            </div>
+      <div className="card p-0 rounded-4 border-0 shadow-sm">
+        <div className="card-header d-flex justify-content-between align-items-center p-4 border-bottom">
+          <h5 className="m-0 text-danger d-flex align-items-center">
+            <i className="bx bx-trash fs-4 me-2"></i>Xóa tài khoản
+          </h5>
+        </div>
+
+        <div className="card-body p-4">
+          <div className="alert alert-danger rounded-3 mb-4">
+            <p className="mb-1 fw-semibold">Cảnh báo:</p>
+            <p className="mb-0">Hành động này không thể hoàn tác.</p>
           </div>
+
+          <label className="form-label text-muted">Xác nhận mật khẩu</label>
+          <input
+            type="password"
+            className="form-control mb-3"
+            placeholder="Nhập mật khẩu"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+
+          <div className="form-check mb-3">
+            <input
+              type="checkbox"
+              className="form-check-input"
+              checked={confirmDelete}
+              onChange={(e) => setConfirmDelete(e.target.checked)}
+            />
+            <label className="form-check-label">Tôi đồng ý xóa tài khoản</label>
+          </div>
+
+          <button
+            className="btn btn-danger px-4 py-2"
+            disabled={!password || !confirmDelete || deleting}
+            onClick={handleDeleteAccount}
+          >
+            <i className={`bx ${deleting ? "bx-loader-alt bx-spin" : "bx-trash"} me-1`} />
+            {deleting ? "Đang xóa..." : "Xóa tài khoản"}
+          </button>
         </div>
       </div>
 
-      {/* Modal cắt & cập nhật avatar */}
+      {/* Avatar Modal */}
       {showEditAvatar && me && (
         <EditAvatarModal
           profile={me}
@@ -378,41 +293,53 @@ const SettingProfilePage = () => {
           onUpdate={(updated) => {
             setMe(updated);
             setShowEditAvatar(false);
-            showMessage({ type: "success", message: "Cập nhật ảnh đại diện thành công." });
-            refreshMe(); // đồng bộ store sau khi cập nhật avatar
+            showMessage({
+              type: "success",
+              message: "Cập nhật ảnh đại diện thành công.",
+            });
+            refreshStoreMe();
           }}
         />
       )}
 
-      {/* ===== Modal nhập OTP xác thực email ===== */}
+      {/* OTP Modal */}
       {showEmailOtp && (
         <div className="modal fade show" style={{ display: "block", background: "rgba(0,0,0,.5)" }}>
           <div className="modal-dialog modal-dialog-centered">
             <div className="modal-content bg-dark text-white rounded-4 border-0">
               <div className="modal-header border-0">
                 <h5 className="modal-title">Xác thực email mới</h5>
-                <button className="btn btn-close btn-close-white" onClick={() => setShowEmailOtp(false)} />
+                <button
+                  className="btn btn-close btn-close-white"
+                  onClick={() => setShowEmailOtp(false)}
+                />
               </div>
+
               <div className="modal-body">
-                <p className="text-muted">
-                  Nhập mã gồm 6 chữ số đã gửi tới <strong>{pendingEmail}</strong>.
-                </p>
+                <p>Mã OTP đã gửi đến <b>{pendingEmail}</b>.</p>
                 <input
                   type="text"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
                   maxLength={6}
                   className="form-control"
-                  placeholder="Nhập mã OTP"
+                  placeholder="Nhập OTP"
                   value={otp}
                   onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
                 />
               </div>
-              <div className="modal-footer border-0 d-flex justify-content-between">
-                <button className="btn btn-outline-secondary" onClick={resendOtp} disabled={requestingOtp}>
-                  {requestingOtp ? "Đang gửi lại..." : "Gửi lại mã"}
+
+              <div className="modal-footer border-0">
+                <button
+                  className="btn btn-outline-secondary"
+                  onClick={resendOtp}
+                  disabled={requestingOtp}
+                >
+                  Gửi lại
                 </button>
-                <button className="btn btn-primary" onClick={confirmOtp} disabled={!otp || verifyingOtp}>
+                <button
+                  className="btn btn-primary"
+                  onClick={confirmOtp}
+                  disabled={!otp || verifyingOtp}
+                >
                   {verifyingOtp ? "Đang xác minh..." : "Xác nhận"}
                 </button>
               </div>

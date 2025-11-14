@@ -1,4 +1,5 @@
-// src/pages/articles/ArticleCreatePage.tsx (hoặc ArticleForm.tsx)
+// src/pages/articles/ArticleCreatePage.tsx
+
 import React, { useEffect, useMemo, useState } from "react";
 import MDEditor from "@uiw/react-md-editor";
 import { getCategories } from "@/services/categoryArticleService";
@@ -6,6 +7,7 @@ import { getTags, createTag } from "@/services/tagService";
 import { getSeriesByAuthor } from "@/services/seriesService";
 import { createArticle } from "@/services/articleService";
 import { ArticleCategoryDto } from "@/types/article";
+
 import {
   Card,
   Form,
@@ -21,6 +23,7 @@ import {
   Spin,
   notification,
 } from "antd";
+
 import {
   FileTextOutlined,
   FolderOpenOutlined,
@@ -30,6 +33,7 @@ import {
   TagsOutlined,
   ReadOutlined,
 } from "@ant-design/icons";
+
 import { useAuthStore } from "@/store/authStore";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
@@ -43,20 +47,20 @@ interface ArticleFormValues {
   seriesId?: string;
 }
 
-/** Đọc mode từ localStorage (đa key) */
+/** Đọc mode từ localStorage */
 function resolveModeFromLocalStorage(): "light" | "dark" {
   try {
     const keys = ["theme", "color-theme", "app-theme", "mode"];
     for (const k of keys) {
       const raw = localStorage.getItem(k);
       if (!raw) continue;
-      const v = String(raw).toLowerCase().trim();
+
+      const v = raw.toLowerCase().trim();
       if (v.includes("dark")) return "dark";
       if (v.includes("light")) return "light";
-      if (v === "1" || v === "true" || v === "darkmode" || v === "enabled") return "dark";
-      if (v === "0" || v === "false" || v === "disabled") return "light";
     }
   } catch {}
+
   if (document.documentElement.classList.contains("dark-mode")) return "dark";
   return "light";
 }
@@ -76,9 +80,10 @@ const ArticleForm: React.FC = () => {
   const [form] = Form.useForm();
   const [thumbnail, setThumbnail] = useState<File | null>(null);
   const [thumbnailPreview, setThumbnailPreview] = useState<string>("");
+
   const [contentMarkdown, setContentMarkdown] = useState<string>("");
 
-  const { user, ensureMe } = useAuthStore();
+  const user = useAuthStore((s) => s.user);
   const navigate = useNavigate();
 
   /** Theme cho MDEditor */
@@ -87,33 +92,31 @@ const ArticleForm: React.FC = () => {
   );
   const [mounted, setMounted] = useState(true);
 
-  // Khi mode đổi: set attribute lên <html> + remount editor
+  // Khi theme đổi, remount editor
   useEffect(() => {
     document.documentElement.setAttribute("data-color-mode", mdColorMode);
     setMounted(false);
+
     const t = setTimeout(() => setMounted(true), 0);
     return () => clearTimeout(t);
   }, [mdColorMode]);
 
-  // Lắng nghe đổi theme từ tab khác / cùng tab
+  // Nghe sự kiện theme-change
   useEffect(() => {
     const apply = () => setMdColorMode(resolveModeFromLocalStorage());
 
     const onStorage = (e: StorageEvent) => {
-      if (!e.key) return;
-      if (["theme", "color-theme", "app-theme", "mode"].includes(e.key)) apply();
+      if (["theme", "color-theme", "app-theme", "mode"].includes(e.key || "")) {
+        apply();
+      }
     };
     window.addEventListener("storage", onStorage);
 
-    // Ở nơi toggle, nhớ dispatch:
-    // window.dispatchEvent(new CustomEvent('theme-change', { detail: { mode: 'dark'|'light' } }))
     const onThemeChange = (e: Event) => {
       const detail = (e as CustomEvent).detail;
-      if (detail?.mode === "dark" || detail?.mode === "light") {
+      if (detail?.mode) {
         setMdColorMode(detail.mode);
-      } else {
-        apply();
-      }
+      } else apply();
     };
     window.addEventListener("theme-change", onThemeChange as EventListener);
 
@@ -123,7 +126,9 @@ const ArticleForm: React.FC = () => {
     };
   }, []);
 
-  // 🧩 Tải categories, tags, series (theo author nếu có)
+  // -----------------------------
+  // Load categories / tags / series
+  // -----------------------------
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -134,19 +139,20 @@ const ArticleForm: React.FC = () => {
         const [catRes, tagRes, seriesRes] = await Promise.all([
           getCategories(0, 50, "name,asc"),
           getTags(0, 50, "name,asc"),
-          user?.userId ? getSeriesByAuthor(String(user.userId), 0, 20, "createdAt,desc") : Promise.resolve({ content: [] }),
+          user?.userId
+            ? getSeriesByAuthor(String(user.userId), 0, 20, "createdAt,desc")
+            : Promise.resolve({ content: [] }),
         ]);
 
         setCategories(catRes.content);
         setTags(tagRes.content);
         setSeries(seriesRes.content ?? []);
 
-        // ✅ Nếu có seriesId từ params, tự động set
         if (seriesIdFromParams) {
           form.setFieldValue("seriesId", seriesIdFromParams);
         }
       } catch {
-        message.error("Không thể tải danh mục, tag hoặc series!");
+        message.error("Không thể tải dữ liệu!");
       } finally {
         setLoadingCategories(false);
         setLoadingTags(false);
@@ -154,11 +160,10 @@ const ArticleForm: React.FC = () => {
       }
     };
 
-    ensureMe();
     fetchData();
-  }, [ensureMe, form, seriesIdFromParams, user?.userId]);
+  }, [form, seriesIdFromParams, user?.userId]);
 
-  // ✅ Upload ảnh
+  // Upload thumbnail
   const handleThumbnailChange = (info: any) => {
     const file = info.file.originFileObj || info.file;
     setThumbnail(file);
@@ -170,20 +175,22 @@ const ArticleForm: React.FC = () => {
     }
   };
 
-  // ✅ Submit form
+  // ---------------------------------------
+  // Submit article
+  // ---------------------------------------
   const handleSubmit = async (values: ArticleFormValues) => {
     if (!user?.userId) {
       notification.error({
         message: "Lỗi",
-        description: "Vui lòng đăng nhập để tạo bài viết!",
+        description: "Vui lòng đăng nhập!",
       });
       return;
     }
 
     if (!contentMarkdown.trim()) {
       notification.error({
-        message: "Lỗi",
-        description: "Vui lòng nhập nội dung bài viết!",
+        message: "Thiếu nội dung",
+        description: "Vui lòng nhập nội dung bài viết.",
       });
       return;
     }
@@ -197,24 +204,27 @@ const ArticleForm: React.FC = () => {
     if (values.difficulty) formData.append("difficulty", values.difficulty);
     if (values.seriesId) formData.append("seriesId", values.seriesId);
     if (thumbnail) formData.append("thumbnail", thumbnail);
-    if (values.tags?.length > 0) values.tags.forEach((tag) => formData.append("tags", tag));
+
+    if (values.tags) {
+      values.tags.forEach((tag) => formData.append("tags", tag));
+    }
 
     try {
       await createArticle(formData);
+
       notification.success({
         message: "Thành công",
         description: "Tạo bài viết thành công!",
       });
+
       form.resetFields();
       setContentMarkdown("");
       setThumbnail(null);
       setThumbnailPreview("");
 
-      // ✅ Quay về series page nếu có, không thì về articles
       if (seriesIdFromParams) {
         const selectedSeries = series.find((s) => s.id === seriesIdFromParams);
-        if (selectedSeries) navigate(`/series/${selectedSeries.id}`);
-        else navigate("/articles");
+        navigate(selectedSeries ? `/series/${selectedSeries.id}` : "/articles");
       } else {
         navigate("/articles");
       }
@@ -226,15 +236,14 @@ const ArticleForm: React.FC = () => {
     }
   };
 
-  // ✅ Tạo tag mới
+  // Create new tag
   const handleTagCreate = async (newTagName: string) => {
     const existing = tags.find(
       (t) => t.name.toLowerCase() === newTagName.toLowerCase()
     );
     if (existing) {
       notification.warning({
-        message: "Cảnh báo",
-        description: "Tag đã tồn tại!",
+        message: "Tag đã tồn tại",
       });
       return existing.id;
     }
@@ -247,25 +256,26 @@ const ArticleForm: React.FC = () => {
       }
     } catch {
       notification.error({
-        message: "Lỗi",
-        description: "Không thể tạo tag mới!",
+        message: "Không thể tạo tag mới!",
       });
     }
   };
 
+  // ---------------------------------------
+  // JSX
+  // ---------------------------------------
   return (
     <div className="py-5">
       <div className="d-flex justify-content-center">
         <div className="col-lg-12 col-xl-11">
-          {/* Header */}
           <div className="text-center mb-5">
             <div
-              className="d-inline-flex align-items-center justify-content-center bg-primary bg-gradient rounded-circle mb-3"
+              className="d-inline-flex align-items-center justify-content-center bg-primary rounded-circle mb-3"
               style={{ width: 70, height: 70 }}
             >
               <FileTextOutlined style={{ fontSize: 32, color: "#fff" }} />
             </div>
-            <Title level={2} className="mb-1">Tạo bài viết mới</Title>
+            <Title level={2}>Tạo bài viết mới</Title>
             <Text type="secondary">
               Điền thông tin cơ bản, gắn thẻ và soạn nội dung bằng Markdown.
             </Text>
@@ -278,7 +288,7 @@ const ArticleForm: React.FC = () => {
               onFinish={handleSubmit}
               initialValues={{ difficulty: undefined }}
             >
-              {/* Tiêu đề */}
+              {/* title */}
               <Form.Item
                 name="title"
                 label={
@@ -289,12 +299,11 @@ const ArticleForm: React.FC = () => {
                 }
                 rules={[{ required: true, message: "Vui lòng nhập tiêu đề!" }]}
               >
-                <Input size="large" placeholder="Nhập tiêu đề hấp dẫn cho bài viết..." />
+                <Input size="large" placeholder="Nhập tiêu đề..." />
               </Form.Item>
 
-              {/* Category - Difficulty - Series */}
+              {/* Category / difficulty / series */}
               <Row gutter={16}>
-                {/* 🟢 Category */}
                 <Col xs={24} md={8}>
                   <Form.Item
                     name="categoryId"
@@ -313,21 +322,16 @@ const ArticleForm: React.FC = () => {
                         showSearch
                         allowClear
                         size="large"
-                        placeholder="-- Chọn hoặc tìm chuyên mục --"
-                        optionFilterProp="label"
-                        filterOption={(input, option) =>
-                          (option?.label ?? "")
-                            .toString()
-                            .toLowerCase()
-                            .includes(input.toLowerCase())
-                        }
-                        options={categories.map((c) => ({ label: c.name, value: c.id }))}
+                        placeholder="-- Chọn chuyên mục --"
+                        options={categories.map((c) => ({
+                          label: c.name,
+                          value: c.id,
+                        }))}
                       />
                     )}
                   </Form.Item>
                 </Col>
 
-                {/* 🟠 Difficulty */}
                 <Col xs={24} md={8}>
                   <Form.Item
                     name="difficulty"
@@ -335,22 +339,13 @@ const ArticleForm: React.FC = () => {
                       <Space>
                         <BarChartOutlined />
                         <strong>Độ khó</strong>
-                        <Text type="secondary">(tuỳ chọn)</Text>
                       </Space>
                     }
                   >
                     <Select
-                      showSearch
                       allowClear
                       size="large"
-                      placeholder="-- Chọn hoặc tìm độ khó --"
-                      optionFilterProp="label"
-                      filterOption={(input, option) =>
-                        (option?.label ?? "")
-                          .toString()
-                          .toLowerCase()
-                          .includes(input.toLowerCase())
-                      }
+                      placeholder="-- Độ khó --"
                       options={[
                         { label: "Cơ bản", value: "BEGINNER" },
                         { label: "Trung bình", value: "INTERMEDIATE" },
@@ -360,7 +355,6 @@ const ArticleForm: React.FC = () => {
                   </Form.Item>
                 </Col>
 
-                {/* 🔵 Series */}
                 <Col xs={24} md={8}>
                   <Form.Item
                     name="seriesId"
@@ -368,29 +362,21 @@ const ArticleForm: React.FC = () => {
                       <Space>
                         <ReadOutlined />
                         <strong>Series</strong>
-                        <Text type="secondary">(nếu có)</Text>
                       </Space>
                     }
                   >
                     {loadingSeries ? (
                       <Spin />
-                    ) : series.length > 0 ? (
+                    ) : (
                       <Select
-                        showSearch
                         allowClear
                         size="large"
-                        placeholder="-- Chọn hoặc tìm series --"
-                        optionFilterProp="label"
-                        filterOption={(input, option) =>
-                          (option?.label ?? "")
-                            .toString()
-                            .toLowerCase()
-                            .includes(input.toLowerCase())
-                        }
-                        options={series.map((s) => ({ label: s.title, value: s.id }))}
+                        placeholder="-- Series --"
+                        options={series.map((s) => ({
+                          label: s.title,
+                          value: s.id,
+                        }))}
                       />
-                    ) : (
-                      <Text type="secondary">Không có series nào, hãy tạo trước khi gắn bài viết.</Text>
                     )}
                   </Form.Item>
                 </Col>
@@ -403,7 +389,6 @@ const ArticleForm: React.FC = () => {
                   <Space>
                     <TagsOutlined />
                     <strong>Thẻ (tags)</strong>
-                    <Text type="secondary">– nhập để tạo mới</Text>
                   </Space>
                 }
               >
@@ -418,7 +403,10 @@ const ArticleForm: React.FC = () => {
                       const input = (e.target as HTMLInputElement).value.trim();
                       if (input) await handleTagCreate(input);
                     }}
-                    options={tags.map((t) => ({ label: t.name, value: t.name }))}
+                    options={tags.map((t) => ({
+                      label: t.name,
+                      value: t.name,
+                    }))}
                   />
                 )}
               </Form.Item>
@@ -429,30 +417,16 @@ const ArticleForm: React.FC = () => {
                   <Space>
                     <FileTextOutlined />
                     <strong>Nội dung bài viết</strong>
-                    <Text type="secondary">(Hỗ trợ Markdown)</Text>
                   </Space>
                 }
               >
                 {mounted && (
                   <div data-color-mode={mdColorMode} key={`wrap-${mdColorMode}`}>
                     <MDEditor
-                      key={`mde-${mdColorMode}`}
+                      key={`md-${mdColorMode}`}
                       value={contentMarkdown}
                       onChange={(v) => setContentMarkdown(v || "")}
                       height={500}
-                      preview="live"
-                      textareaProps={{
-                        placeholder: `✍️ Bắt đầu viết bài tại đây...
-
-# Tiêu đề chính
-Viết phần mở đầu hấp dẫn cho bài viết của bạn.
-
-## Mục 1
-- Gạch đầu dòng 1
-- Gạch đầu dòng 2
-
-> Gợi ý: bạn có thể sử dụng **Markdown** để định dạng văn bản.`,
-                      }}
                     />
                   </div>
                 )}
@@ -464,7 +438,6 @@ Viết phần mở đầu hấp dẫn cho bài viết của bạn.
                   <Space>
                     <PictureOutlined />
                     <strong>Ảnh thumbnail</strong>
-                    <Text type="secondary">(không bắt buộc)</Text>
                   </Space>
                 }
               >
@@ -472,18 +445,14 @@ Viết phần mở đầu hấp dẫn cho bài viết của bạn.
                   <Col xs={24} md={thumbnailPreview ? 16 : 24}>
                     <Upload
                       beforeUpload={() => false}
-                      onChange={handleThumbnailChange}
                       maxCount={1}
+                      onChange={handleThumbnailChange}
                       accept="image/*"
-                      listType="text"
                     >
-                      <Button icon={<UploadOutlined />} size="large" block>
-                        {thumbnail ? thumbnail.name : "Chọn ảnh thumbnail"}
+                      <Button icon={<UploadOutlined />} block size="large">
+                        {thumbnail ? thumbnail.name : "Chọn ảnh"}
                       </Button>
                     </Upload>
-                    <Text type="secondary" style={{ fontSize: 13 }}>
-                      PNG, JPG, GIF tối đa 5MB
-                    </Text>
                   </Col>
 
                   {thumbnailPreview && (
@@ -504,12 +473,12 @@ Viết phần mở đầu hấp dẫn cho bài viết của bạn.
               </Form.Item>
 
               {/* Submit */}
-              <Form.Item className="mb-0 mt-4">
+              <Form.Item>
                 <Button
                   type="primary"
                   htmlType="submit"
                   size="large"
-                  style={{ width: "100%", height: 50, fontSize: 16, fontWeight: 600, borderRadius: 12 }}
+                  style={{ width: "100%", height: 50 }}
                   disabled={!user}
                 >
                   Xuất bản bài viết
@@ -520,7 +489,7 @@ Viết phần mở đầu hấp dẫn cho bài viết của bạn.
 
           <div className="text-center mt-4">
             <Text type="secondary">
-              Bài viết của bạn sẽ được duyệt trước khi hiển thị công khai
+              Bài viết của bạn sẽ được duyệt trước khi hiển thị.
             </Text>
           </div>
         </div>

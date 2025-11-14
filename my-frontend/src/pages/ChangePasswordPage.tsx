@@ -4,7 +4,7 @@ import { Button } from "react-bootstrap";
 import PasswordField from "@/components/formFields/PasswordField";
 import { changePasswordschema } from "@/schemas/authSchema";
 import { useState } from "react";
-import { changePassword } from "@/services/authService";
+import { changePasswordApi } from "@/services/authService";
 
 interface ChangePasswordForm {
   currentPassword: string;
@@ -27,7 +27,7 @@ const ChangePasswordPage = () => {
     setIsLoading(true);
     setSubmitMessage(null);
     try {
-      await changePassword({
+      await changePasswordApi({
         currentPassword: data.currentPassword,
         newPassword: data.newPassword,
       });

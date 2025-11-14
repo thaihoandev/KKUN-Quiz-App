@@ -33,7 +33,7 @@ const HeaderMain: React.FC<NavbarProps> = ({ profile }) => {
     { label: "Join Game", path: "/join-game" },
   ];
 
-  if (profile) navItems.push({ label: "Dashboard", path: "/dashboard" });
+  if (profile) navItems.push({ label: "Dashboard", path: `/profile/${profile.userId}` });
 
   return (
     <nav

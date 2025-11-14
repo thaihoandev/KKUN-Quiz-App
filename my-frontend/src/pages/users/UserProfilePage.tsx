@@ -17,11 +17,11 @@ import { User } from "@/types/users";
 const UserProfilePage = () => {
   const { userId: routeUserId } = useParams<{ userId?: string }>();
 
-  const ensureMe = useAuthStore((s) => s.ensureMe);
+  const storeUser = useAuthStore((s) => s.user); // current logged-in user
+  console.log("store user:", storeUser);
+  
   const refreshMe = useAuthStore((s) => s.refreshMe);
-  const storeUser = useAuthStore((s) => s.user);
 
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -35,7 +35,6 @@ const UserProfilePage = () => {
     const checkDarkMode = () => {
       setIsDark(document.body.classList.contains("dark-mode"));
     };
-
     checkDarkMode();
 
     const observer = new MutationObserver(checkDarkMode);
@@ -44,13 +43,18 @@ const UserProfilePage = () => {
     return () => observer.disconnect();
   }, []);
 
-  // Xác định có phải đang xem trang của chính mình
+  // ------------------------
+  // Determine if owner
+  // ------------------------
   const isOwner = useMemo(() => {
-    if (!currentUser) return false;
-    return !routeUserId || routeUserId === currentUser.userId;
-  }, [routeUserId, currentUser]);
+    if (!storeUser) return false;
+    if (!routeUserId) return true;
+    return routeUserId === storeUser.userId;
+  }, [routeUserId, storeUser]);
 
-  // Menu động theo quyền
+  // ------------------------
+  // Dynamic menu
+  // ------------------------
   const menuItems = useMemo(
     () =>
       isOwner
@@ -68,21 +72,22 @@ const UserProfilePage = () => {
     [isOwner]
   );
 
-  // Load user hiện tại và profile đang xem
+  // ------------------------
+  // Load profile (only others)
+  // ------------------------
   useEffect(() => {
     let cancelled = false;
 
     const load = async () => {
       setLoading(true);
       setError(null);
-      try {
-        const me = await ensureMe();
-        if (cancelled) return;
-        setCurrentUser(me);
 
-        if (!routeUserId || routeUserId === me?.userId) {
-          setProfile(me);
-        } else {
+      try {
+        if (isOwner) {
+          // Xem trang chính mình → dùng storeUser
+          setProfile(storeUser);
+        } else if (routeUserId) {
+          // Xem người khác → fetch API
           const other = await getUserById(routeUserId);
           if (!cancelled) setProfile(other);
         }
@@ -97,33 +102,37 @@ const UserProfilePage = () => {
     };
 
     load();
+
     return () => {
       cancelled = true;
     };
-  }, [routeUserId, ensureMe]);
+  }, [routeUserId, storeUser, isOwner]);
 
-  // Reset tab khi đổi user
+  // Reset tab when switching user
   useEffect(() => {
     setActiveTab("profile");
   }, [routeUserId]);
 
+  // Update profile
   const handleUpdateProfile = (updated: User) => {
     setProfile(updated);
     if (isOwner) {
-      setCurrentUser(updated);
       refreshMe();
     }
   };
 
-  const targetProfile = isOwner ? currentUser || storeUser : profile;
+  const targetProfile = profile;
 
+  // ------------------------
+  // Render tab content
+  // ------------------------
   const renderTabContent = () => {
     switch (activeTab) {
       case "profile":
         return (
           <ProfileTab
             profile={targetProfile}
-            currentUser={currentUser}
+            currentUser={storeUser}
             isOwner={isOwner}
             onEditProfile={() => setShowProfileModal(true)}
           />
@@ -142,7 +151,7 @@ const UserProfilePage = () => {
         return (
           <ProfileTab
             profile={targetProfile}
-            currentUser={currentUser}
+            currentUser={storeUser}
             isOwner={isOwner}
             onEditProfile={() => setShowProfileModal(true)}
           />
@@ -164,7 +173,7 @@ const UserProfilePage = () => {
         onEditAvatar={isOwner ? () => setShowAvatarModal(true) : () => {}}
       />
 
-      {/* Navigation Menu */}
+      {/* Menu */}
       <NavigationMenu
         menuItems={menuItems}
         activeTab={activeTab}
@@ -196,13 +205,7 @@ const UserProfilePage = () => {
           >
             <span className="visually-hidden">Đang tải...</span>
           </div>
-          <p
-            style={{
-              color: "var(--text-muted)",
-              fontSize: "0.95rem",
-              margin: 0,
-            }}
-          >
+          <p style={{ color: "var(--text-muted)", fontSize: "0.95rem" }}>
             Đang tải thông tin người dùng...
           </p>
         </div>
@@ -216,27 +219,16 @@ const UserProfilePage = () => {
             padding: "1.25rem",
             borderRadius: "14px",
             marginBottom: "2rem",
-            animation: "slideInUp 0.3s ease forwards",
             display: "flex",
             alignItems: "center",
             gap: "0.75rem",
           }}
         >
-          <i
-            className="bx bx-error-circle"
-            style={{
-              fontSize: "1.25rem",
-              flexShrink: 0,
-            }}
-          />
+          <i className="bx bx-error-circle" style={{ fontSize: "1.25rem" }} />
           <span>{error}</span>
         </div>
       ) : (
-        <div
-          style={{
-            animation: "slideInUp 0.5s ease forwards",
-          }}
-        >
+        <div style={{ animation: "slideInUp 0.5s ease forwards" }}>
           {renderTabContent()}
         </div>
       )}
@@ -261,14 +253,8 @@ const UserProfilePage = () => {
 
       <style>{`
         @keyframes slideInUp {
-          from {
-            opacity: 0;
-            transform: translateY(20px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
+          from { opacity: 0; transform: translateY(20px); }
+          to { opacity: 1; transform: translateY(0); }
         }
       `}</style>
     </div>

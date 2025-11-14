@@ -1,6 +1,5 @@
 package com.kkunquizapp.QuizAppBackend.common.config;
 
-import com.kkunquizapp.QuizAppBackend.common.security.CookieJwtAuthConverter;
 import com.kkunquizapp.QuizAppBackend.common.security.JwtToUserPrincipalConverter;
 import com.kkunquizapp.QuizAppBackend.user.model.enums.UserRole;
 import com.kkunquizapp.QuizAppBackend.user.service.CustomUserDetailsService;
@@ -8,10 +7,13 @@ import com.nimbusds.jose.jwk.*;
 import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jose.jwk.source.*;
 import com.nimbusds.jose.proc.SecurityContext;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.*;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpHeaders;
 import org.springframework.security.authentication.*;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
@@ -37,6 +39,8 @@ import java.util.*;
 @Configuration
 @EnableWebSecurity
 @EnableAspectJAutoProxy
+@RequiredArgsConstructor
+@Slf4j
 public class SecurityConfig {
 
     @Value("${jwt.public-key:}")
@@ -57,25 +61,32 @@ public class SecurityConfig {
     private final CustomUserDetailsService userDetailsService;
     private final JwtToUserPrincipalConverter jwtToUserPrincipalConverter;
 
-    public SecurityConfig(CustomUserDetailsService userDetailsService,
-                          JwtToUserPrincipalConverter jwtToUserPrincipalConverter) {
-        this.userDetailsService = userDetailsService;
-        this.jwtToUserPrincipalConverter = jwtToUserPrincipalConverter;
-    }
-
     // ===================== SECURITY FILTER CHAIN =====================
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+        log.info("Configuring Security Filter Chain");
+
         http
+                // ========== CORS ==========
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+
+                // ========== CSRF - Disable for stateless API ==========
                 .csrf(csrf -> csrf.disable())
+
+                // ========== SESSION - STATELESS MODE ==========
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+
+                // ========== AUTHORIZATION RULES ==========
                 .authorizeHttpRequests(auth -> auth
 
-                        // ============ PUBLIC ENDPOINTS ============
+                        // ============ PUBLIC AUTH / WS ============
                         .requestMatchers(
                                 "/ws/**",
-                                "/api/auth/**",
+                                "/api/auth/**"
+                        ).permitAll()
+
+                        // ============ PUBLIC QUIZZES / ARTICLES / SEARCH ============
+                        .requestMatchers(
                                 "/api/quizzes/published",
                                 "/api/quizzes/users/**",
                                 "/api/articles",
@@ -86,23 +97,23 @@ public class SecurityConfig {
                                 "/api/search/**",
                                 "/api/games/join",
                                 "/api/games/{gameId}/answer",
-                                "/api/users/me/confirm-email-change"
+                                "/api/games/{gameId}/players",
+                                "/api/games/{gameId}/details",
+                                "/api/games/{gameId}/leaderboard"
                         ).permitAll()
 
-                        // ============ PUBLIC USER PROFILE ============
-                        // ai cũng xem được → service tự ẩn field nhạy cảm
-                        .requestMatchers(
-                                "/api/users/{id}",
-                                "/api/users/{id}/**"
-                        ).permitAll()
-
-                        // ============ PRIVATE USER ENDPOINTS ============
-                        // chỉ user đăng nhập mới xem/me
+                        // ============ PRIVATE USER (me) ============
                         .requestMatchers(
                                 "/api/users/me/**",
                                 "/api/users/me/friends/**",
                                 "/api/users/me/friend-requests/**"
                         ).hasAnyAuthority(UserRole.USER.name(), UserRole.ADMIN.name())
+
+                        // ============ PUBLIC USER PROFILE (by id) ============
+                        .requestMatchers(
+                                "/api/users/{id}",
+                                "/api/users/{id}/**"
+                        ).permitAll()
 
                         // ============ AI ============
                         .requestMatchers("/api/ai/**")
@@ -138,18 +149,12 @@ public class SecurityConfig {
                         .requestMatchers("/api/chat/**")
                         .hasAnyAuthority(UserRole.USER.name(), UserRole.ADMIN.name())
 
-                        // ============ GAME =============
+                        // ============ GAME (host actions) ============
                         .requestMatchers(
                                 "/api/games/create",
                                 "/api/games/{gameId}/start",
                                 "/api/games/{gameId}/end"
                         ).hasAnyAuthority(UserRole.USER.name(), UserRole.ADMIN.name())
-
-                        .requestMatchers(
-                                "/api/games/{gameId}/players",
-                                "/api/games/{gameId}/details",
-                                "/api/games/{gameId}/leaderboard"
-                        ).permitAll()
 
                         // ============ NOTIFICATIONS ============
                         .requestMatchers("/api/notifications/**")
@@ -167,7 +172,7 @@ public class SecurityConfig {
                         .anyRequest().permitAll()
                 )
 
-                // Xử lý lỗi 401 / 403
+                // ========== EXCEPTION HANDLING - 401/403 ==========
                 .exceptionHandling(ex -> ex
                         .defaultAuthenticationEntryPointFor(
                                 new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED),
@@ -179,30 +184,26 @@ public class SecurityConfig {
                         )
                 )
 
-                // OAuth2 login (Google)
-                .oauth2Login(oauth2 -> oauth2
-                        .loginPage("/oauth2/authorization/google")
-                        .defaultSuccessUrl("/api/auth/login-success", true)
-                )
-
-                // JWT Auth
+                // ========== JWT RESOURCE SERVER - BEARER TOKEN AUTH ==========
                 .oauth2ResourceServer(rs -> rs
-                        .bearerTokenResolver(new CookieJwtAuthConverter())
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtToUserPrincipalConverter))
                 );
 
+        log.info("Security Filter Chain configured successfully");
         return http.build();
     }
 
     // ===================== JWT DECODER =====================
     @Bean
     public JwtDecoder jwtDecoder(RSAPublicKey publicKey) {
+        log.info("Creating JWT Decoder with RSA Public Key");
         return NimbusJwtDecoder.withPublicKey(publicKey).build();
     }
 
     // ===================== JWT ENCODER =====================
     @Bean
     public JwtEncoder jwtEncoder(RSAPublicKey publicKey, RSAPrivateKey privateKey) {
+        log.info("Creating JWT Encoder with RSA Keys");
         JWK jwk = new RSAKey.Builder(publicKey).privateKey(privateKey).build();
         JWKSource<SecurityContext> jwkSrc = new ImmutableJWKSet<>(new JWKSet(jwk));
         return new NimbusJwtEncoder(jwkSrc);
@@ -232,7 +233,10 @@ public class SecurityConfig {
     // ===================== RSA KEYS =====================
     @Bean
     public RSAPublicKey publicKey() throws Exception {
+        log.info("Loading RSA Public Key");
+
         if (publicKeyBase64 != null && !publicKeyBase64.isBlank()) {
+            log.info("Loading public key from environment variable (JWT_PUBLIC_KEY)");
             String key = publicKeyBase64.trim().replace("\\n", "\n");
             String pem = key
                     .replace("-----BEGIN PUBLIC KEY-----", "")
@@ -242,6 +246,7 @@ public class SecurityConfig {
             X509EncodedKeySpec spec = new X509EncodedKeySpec(decoded);
             return (RSAPublicKey) KeyFactory.getInstance("RSA").generatePublic(spec);
         } else if (publicKeyPath != null && publicKeyPath.exists()) {
+            log.info("Loading public key from file: {}", publicKeyPath.getFilename());
             try (InputStream is = publicKeyPath.getInputStream()) {
                 String pem = new String(is.readAllBytes(), StandardCharsets.UTF_8)
                         .replace("-----BEGIN PUBLIC KEY-----", "")
@@ -252,12 +257,16 @@ public class SecurityConfig {
                         .generatePublic(new X509EncodedKeySpec(decoded));
             }
         }
-        throw new IllegalStateException("No public key configured!");
+
+        throw new IllegalStateException("No public key configured! Set JWT_PUBLIC_KEY env var or jwt.public-key-path property");
     }
 
     @Bean
     public RSAPrivateKey privateKey() throws Exception {
+        log.info("Loading RSA Private Key");
+
         if (privateKeyBase64 != null && !privateKeyBase64.isBlank()) {
+            log.info("Loading private key from environment variable (JWT_PRIVATE_KEY)");
             String key = privateKeyBase64.trim().replace("\\n", "\n");
             String pem = key
                     .replace("-----BEGIN PRIVATE KEY-----", "")
@@ -267,6 +276,7 @@ public class SecurityConfig {
             PKCS8EncodedKeySpec spec = new PKCS8EncodedKeySpec(decoded);
             return (RSAPrivateKey) KeyFactory.getInstance("RSA").generatePrivate(spec);
         } else if (privateKeyPath != null && privateKeyPath.exists()) {
+            log.info("Loading private key from file: {}", privateKeyPath.getFilename());
             try (InputStream is = privateKeyPath.getInputStream()) {
                 String pem = new String(is.readAllBytes(), StandardCharsets.UTF_8)
                         .replace("-----BEGIN PRIVATE KEY-----", "")
@@ -277,27 +287,34 @@ public class SecurityConfig {
                         .generatePrivate(new PKCS8EncodedKeySpec(decoded));
             }
         }
-        throw new IllegalStateException("No private key configured!");
+
+        throw new IllegalStateException("No private key configured! Set JWT_PRIVATE_KEY env var or jwt.private-key-path property");
     }
 
-    // ===================== CORS =====================
+    // ===================== CORS CONFIGURATION =====================
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
+        log.info("Configuring CORS");
+
         CorsConfiguration cfg = new CorsConfiguration();
         List<String> origins = Arrays.stream(allowedOriginsCsv.split(","))
                 .map(String::trim)
                 .filter(s -> !s.isEmpty())
                 .toList();
 
+        log.info("Allowed Origins: {}", origins);
+
         cfg.setAllowedOrigins(origins);
         cfg.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         cfg.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"));
-        cfg.setExposedHeaders(List.of("Set-Cookie"));
-        cfg.setAllowCredentials(true);
+        cfg.setExposedHeaders(List.of("Set-Cookie")); // ✅ IMPORTANT: Expose Set-Cookie header for refresh token
+        cfg.setAllowCredentials(true); // ✅ IMPORTANT: Allow credentials (cookies)
         cfg.setMaxAge(3600L);
 
         UrlBasedCorsConfigurationSource src = new UrlBasedCorsConfigurationSource();
         src.registerCorsConfiguration("/**", cfg);
+
+        log.info("CORS configured successfully");
         return src;
     }
 }

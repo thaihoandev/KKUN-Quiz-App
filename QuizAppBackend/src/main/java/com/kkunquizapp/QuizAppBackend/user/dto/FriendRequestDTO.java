@@ -7,7 +7,6 @@ import java.util.UUID;
 @Getter @Setter @Builder @AllArgsConstructor @NoArgsConstructor
 public class FriendRequestDTO {
     private UUID id;
-    private String status;          // PENDING / ACCEPTED / DECLINED / CANCELED
     private LocalDateTime createdAt;
 
     // requester

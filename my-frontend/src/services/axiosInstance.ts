@@ -1,90 +1,128 @@
-// src/utils/axiosInstance.ts
-import axios, { AxiosError, InternalAxiosRequestConfig } from "axios";
-import Cookies from "js-cookie";
+import axios, { InternalAxiosRequestConfig, AxiosError } from "axios";
 import { useAuthStore } from "@/store/authStore";
-import { redirectToLogin } from "@/utils/navigationHelper";
 
-/** Extend the Axios config to track retry state */
-interface CustomAxiosRequestConfig extends InternalAxiosRequestConfig {
-  _retry?: boolean;
-}
+const baseURL = import.meta.env.VITE_BASE_API_URL;
 
-/** Base URL từ .env */
-const baseURL = import.meta.env.VITE_BASE_API_URL || "http://localhost:8080/api";
-
-/** Tạo instance riêng cho refresh token */
-const refreshInstance = axios.create({
+const api = axios.create({
   baseURL,
-  withCredentials: true,
+  withCredentials: true, // ✅ Quan trọng: gửi cookie refreshToken
   timeout: 10000,
 });
 
-/** Tạo instance chính cho toàn app */
-const axiosInstance = axios.create({
-  baseURL,
-  withCredentials: true,
-  timeout: 10000,
-});
+let isRefreshing = false;
+let failedQueue: QueueItem[] = [];
 
-/** Gọi refresh token API */
-export const refreshToken = async (): Promise<boolean> => {
-  try {
-    await refreshInstance.post("/auth/refresh-token", {});
-    console.info("[axiosInstance] ✅ Access token refreshed");
-    return true;
-  } catch (err) {
-    console.error("[axiosInstance] ❌ Refresh token failed:", err);
-    return false;
-  }
+type QueueItem = {
+  resolve: (token: string) => void;
+  reject: (err: any) => void;
 };
 
-/** Request interceptor */
-axiosInstance.interceptors.request.use(
-  (config) => config,
-  (error) => Promise.reject(error)
-);
-
-/** Response interceptor */
-axiosInstance.interceptors.response.use(
-  (response) => response,
-  async (error: unknown) => {
-    if (!(error instanceof AxiosError) || !error.config) {
-      return Promise.reject(error);
+const processQueue = (error: any, token: string | null = null) => {
+  failedQueue.forEach((p) => {
+    if (error) {
+      p.reject(error);
+    } else {
+      p.resolve(token!);
     }
+  });
+  failedQueue = [];
+};
 
-    const originalRequest = error.config as CustomAxiosRequestConfig;
-    const is401 = error.response?.status === 401;
-    const isRefreshCall = originalRequest.url?.endsWith("/auth/refresh-token");
-    const hasRefreshCookie = Boolean(Cookies.get("refreshToken"));
-
-    // ✅ Trường hợp 1: accessToken hết hạn nhưng vẫn có refreshToken
-    if (is401 && !originalRequest._retry && !isRefreshCall && hasRefreshCookie) {
-      originalRequest._retry = true;
-      const ok = await refreshToken();
-
-      if (ok) {
-        // Đợi backend set cookie mới (~100ms)
-        await new Promise((r) => setTimeout(r, 150));
-        console.info("[axiosInstance] Retrying original request after refresh");
-        return axiosInstance(originalRequest);
-      }
-
-      // ❌ Refresh thất bại thật → xóa session
-      console.warn("[axiosInstance] Refresh failed — logging out...");
-      useAuthStore.getState().logout();
-      return Promise.reject(error);
+// ============================================
+// REQUEST INTERCEPTOR: Attach Access Token
+// ============================================
+api.interceptors.request.use(
+  (config: InternalAxiosRequestConfig) => {
+    const token = useAuthStore.getState().accessToken;
+    if (token && config.headers) {
+      config.headers.Authorization = `Bearer ${token}`;
     }
-
-    // ✅ Trường hợp 2: không có refreshToken (đăng xuất)
-    if (is401 && !isRefreshCall && !hasRefreshCookie) {
-      console.warn("[axiosInstance] 401 without refresh cookie — skipping auto redirect");
-      useAuthStore.getState().logout();
-      // ❌ Không redirect tự động ở đây nữa
-      return Promise.reject(error);
-    }
-
+    return config;
+  },
+  (error) => {
     return Promise.reject(error);
   }
 );
 
-export default axiosInstance;
+// ============================================
+// RESPONSE INTERCEPTOR: Handle Token Refresh
+// ============================================
+api.interceptors.response.use(
+  (response) => response,
+  async (error: AxiosError) => {
+    const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
+
+    // ❌ Không retry nếu không có config
+    if (!originalRequest) {
+      return Promise.reject(error);
+    }
+
+    // ✅ Chỉ retry khi 401 và chưa retry lần nào
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      
+      // ❌ Không retry các endpoint auth (tránh infinite loop)
+      if (
+        originalRequest.url?.includes("/auth/login") ||
+        originalRequest.url?.includes("/auth/register") ||
+        originalRequest.url?.includes("/auth/google") ||
+        originalRequest.url?.includes("/auth/refresh-token")
+      ) {
+        return Promise.reject(error);
+      }
+
+      originalRequest._retry = true;
+
+      // ✅ Nếu đang refresh, đưa request vào queue
+      if (isRefreshing) {
+        return new Promise((resolve, reject) => {
+          failedQueue.push({
+            resolve: (token: string) => {
+              if (originalRequest.headers) {
+                originalRequest.headers.Authorization = `Bearer ${token}`;
+              }
+              resolve(api(originalRequest));
+            },
+            reject: (err: any) => {
+              reject(err);
+            },
+          });
+        });
+      }
+
+      isRefreshing = true;
+
+      try {
+        // ✅ Gọi refresh token endpoint
+        // refreshToken được gửi tự động qua cookie (withCredentials: true)
+        const response = await api.post("/auth/refresh-token", {});
+        const newAccessToken = response.data.accessToken;
+
+        // ✅ Lưu token mới vào store
+        useAuthStore.getState().setAccessToken(newAccessToken);
+
+        // ✅ Process tất cả request trong queue
+        processQueue(null, newAccessToken);
+
+        // ✅ Retry original request với token mới
+        if (originalRequest.headers) {
+          originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
+        }
+        
+        return api(originalRequest);
+      } catch (refreshError) {
+        // ❌ Refresh failed -> logout user
+        processQueue(refreshError, null);
+        useAuthStore.getState().logout();
+        
+        return Promise.reject(refreshError);
+      } finally {
+        isRefreshing = false;
+      }
+    }
+
+    // ❌ Các lỗi khác không retry
+    return Promise.reject(error);
+  }
+);
+
+export default api;

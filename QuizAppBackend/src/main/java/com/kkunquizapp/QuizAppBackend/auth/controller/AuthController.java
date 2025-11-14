@@ -13,10 +13,10 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.oauth2.jwt.JwtException;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.UUID;
@@ -29,128 +29,204 @@ public class AuthController {
     private final AuthService authService;
     private final UserService userService;
 
-    // ================= Cookie helper =================
-    private void writeCookie(HttpServletResponse resp, String name, String value, int maxAgeSeconds, boolean httpOnly) {
-        boolean isLocalhost = System.getenv("SPRING_PROFILES_ACTIVE") == null
+    // ============================================================
+    // Cookie helper
+    // ============================================================
+    private void writeRefreshCookie(HttpServletResponse resp, String token, int maxAgeSeconds) {
+        boolean isLocal = System.getenv("SPRING_PROFILES_ACTIVE") == null
                 || System.getenv("SPRING_PROFILES_ACTIVE").equals("local");
 
-        ResponseCookie cookie = ResponseCookie.from(name, value == null ? "" : value)
-                .httpOnly(httpOnly)
-                .secure(!isLocalhost) // ❗ localhost không cần HTTPS
-                .sameSite(isLocalhost ? "Lax" : "None") // ❗ Lax cho dev, None cho deploy
+        ResponseCookie cookie = ResponseCookie.from("refreshToken", token == null ? "" : token)
+                .httpOnly(true)
+                .secure(!isLocal)
+                .sameSite(isLocal ? "Lax" : "None")
                 .path("/")
-                .maxAge(Duration.ofSeconds(Math.max(0, maxAgeSeconds)))
+                .maxAge(maxAgeSeconds)
                 .build();
 
         resp.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
     }
 
-    // ================= Register =================
+    // ============================================================
+    // Register
+    // ============================================================
     @PostMapping("/register")
     public ResponseEntity<?> register(@RequestBody UserRequestDTO user, HttpServletResponse response) {
         try {
+            // ✅ FIXED: Chỉ register user, không generate tokens 2 lần
             UserResponseDTO userResponse = authService.register(user);
+
+            // ✅ Generate tokens 1 lần duy nhất
             Map<String, String> tokens = authService.generateTokensForUser(userResponse.getUsername());
+            String accessToken = tokens.get("accessToken");
+            String refreshToken = tokens.get("refreshToken");
 
-            writeCookie(response, "accessToken", tokens.get("accessToken"), 60 * 60, true);
-            writeCookie(response, "refreshToken", tokens.get("refreshToken"), 7 * 24 * 60 * 60, true);
+            // ✅ Set refresh token vào cookie
+            writeRefreshCookie(response, refreshToken, 7 * 24 * 60 * 60);
 
-            return ResponseEntity.ok(userResponse);
+            // ✅ Trả về accessToken + user (không trả refreshToken trong body)
+            return ResponseEntity.ok(Map.of(
+                    "accessToken", accessToken,
+                    "user", userResponse
+            ));
+
         } catch (InvalidRequestException | DuplicateEntityException e) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+            return ResponseEntity.badRequest()
                     .body(new ErrorResponse(LocalDateTime.now(), "Registration failed", e.getMessage()));
         } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+            return ResponseEntity.internalServerError()
                     .body(new ErrorResponse(LocalDateTime.now(), "Error registering user", e.getMessage()));
         }
     }
 
-    // ================= Username/Password login =================
+    // ============================================================
+    // Login
+    // ============================================================
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody UserRequestDTO user, HttpServletResponse response) {
         try {
+            // ✅ FIXED: verifyAndGenerateTokens đã generate và save tokens
             Map<String, Object> authResult = authService.verifyAndGenerateTokens(user);
-            writeCookie(response, "accessToken", (String) authResult.get("accessToken"), 60 * 60, true);
-            writeCookie(response, "refreshToken", (String) authResult.get("refreshToken"), 7 * 24 * 60 * 60, true);
-            return ResponseEntity.ok(authResult);
+
+            String accessToken = (String) authResult.get("accessToken");
+            UserResponseDTO userResponse = (UserResponseDTO) authResult.get("user");
+
+            // ✅ FIXED: Lấy refreshToken từ authResult thay vì generate lại
+            String refreshToken = (String) authResult.get("refreshToken");
+
+            // ✅ Set refresh token vào cookie
+            writeRefreshCookie(response, refreshToken, 7 * 24 * 60 * 60);
+
+            // ✅ Trả về accessToken + user (không trả refreshToken trong body)
+            return ResponseEntity.ok(Map.of(
+                    "accessToken", accessToken,
+                    "user", userResponse
+            ));
+
         } catch (BadCredentialsException e) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(new ErrorResponse(LocalDateTime.now(), "Login failed", "Invalid username or password"));
         } catch (InvalidRequestException | IllegalArgumentException e) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+            return ResponseEntity.badRequest()
                     .body(new ErrorResponse(LocalDateTime.now(), "Login failed", e.getMessage()));
         } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+            return ResponseEntity.internalServerError()
                     .body(new ErrorResponse(LocalDateTime.now(), "Error logging in", e.getMessage()));
         }
     }
 
-
-    // ================= Google login =================
+    // ============================================================
+    // Google Login
+    // ============================================================
     @PostMapping(value = "/google", consumes = "application/json")
     public ResponseEntity<?> googleLogin(@RequestBody Map<String, String> request, HttpServletResponse response) {
         try {
-            String accessToken = request.get("accessToken");
-            if (accessToken == null || accessToken.isBlank()) {
-                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+            String token = request.get("accessToken");
+            if (token == null || token.isBlank()) {
+                return ResponseEntity.badRequest()
                         .body(new ErrorResponse(LocalDateTime.now(), "Access Token is required", ""));
             }
 
-            Map<String, Object> authResult = authService.authenticateWithGoogleAndGenerateTokens(accessToken);
+            // ✅ authenticateWithGoogleAndGenerateTokens đã trả về refreshToken
+            Map<String, Object> authResult = authService.authenticateWithGoogleAndGenerateTokens(token);
 
-            writeCookie(response, "accessToken", (String) authResult.get("accessToken"), 60 * 60, true);
-            writeCookie(response, "refreshToken", (String) authResult.get("refreshToken"), 7 * 24 * 60 * 60, true);
+            String accessToken = (String) authResult.get("accessToken");
+            String refreshToken = (String) authResult.get("refreshToken");
+            UserResponseDTO userResponse = (UserResponseDTO) authResult.get("user");
 
-            return ResponseEntity.ok(authResult);
+            // ✅ Set refresh token vào cookie
+            writeRefreshCookie(response, refreshToken, 7 * 24 * 60 * 60);
+
+            // ✅ Trả về accessToken + user (không trả refreshToken trong body)
+            return ResponseEntity.ok(Map.of(
+                    "accessToken", accessToken,
+                    "user", userResponse
+            ));
+
         } catch (IllegalArgumentException e) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+            return ResponseEntity.badRequest()
                     .body(new ErrorResponse(LocalDateTime.now(), "Google login failed", e.getMessage()));
         } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+            return ResponseEntity.internalServerError()
                     .body(new ErrorResponse(LocalDateTime.now(), "Error with Google login", e.getMessage()));
         }
     }
 
-    // ================= Refresh access token =================
+    // ============================================================
+// Refresh Token (WITH RTR)
+// ============================================================
     @PostMapping("/refresh-token")
-    public ResponseEntity<?> refreshAccessToken(@CookieValue(name = "refreshToken", required = false) String refreshToken,
-                                                HttpServletResponse response) {
+    public ResponseEntity<?> refreshAccessToken(
+            @CookieValue(name = "refreshToken", required = false) String refreshToken,
+            HttpServletResponse response) {  // 👈 thêm response vào đây
+
+        if (refreshToken == null || refreshToken.isBlank()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("error", "Missing refresh token"));
+        }
+
         try {
-            if (refreshToken == null || refreshToken.isBlank()) {
-                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                        .body(new ErrorResponse(LocalDateTime.now(), "Refresh Token is required", ""));
-            }
-            String newAccessToken = authService.refreshAccessToken(refreshToken);
-            writeCookie(response, "accessToken", newAccessToken, 60 * 60, true);
-            return ResponseEntity.ok(Map.of("message", "Access token refreshed"));
+            // 🔁 Lấy cả accessToken & refreshToken mới
+            Map<String, String> tokens = authService.refreshAccessToken(refreshToken);
+            String newAccessToken = tokens.get("accessToken");
+            String newRefreshToken = tokens.get("refreshToken");
+
+            // 📝 Ghi refreshToken mới vào cookie (RTR đúng chuẩn)
+            writeRefreshCookie(response, newRefreshToken, 7 * 24 * 60 * 60);
+
+            // FE chỉ cần accessToken trong body
+            return ResponseEntity.ok(Map.of(
+                    "accessToken", newAccessToken
+            ));
+
+        } catch (JwtException e) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(new ErrorResponse(LocalDateTime.now(), "Token refresh failed", e.getMessage()));
         } catch (ResponseStatusException e) {
             return ResponseEntity.status(e.getStatusCode())
                     .body(new ErrorResponse(LocalDateTime.now(), e.getReason(), ""));
         } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(new ErrorResponse(LocalDateTime.now(), "Error refreshing token: " + e.getMessage(), ""));
+            return ResponseEntity.internalServerError()
+                    .body(new ErrorResponse(LocalDateTime.now(), "Error refreshing token", e.getMessage()));
         }
     }
 
-    // ================= Logout =================
+
+    // ============================================================
+    // Logout (INVALIDATE TOKEN)
+    // ============================================================
     @PostMapping("/logout")
-    public ResponseEntity<?> logout(HttpServletResponse response) {
-        writeCookie(response, "accessToken", null, 0, true);
-        writeCookie(response, "refreshToken", null, 0, true);
+    public ResponseEntity<?> logout(
+            @CookieValue(name = "refreshToken", required = false) String refreshToken,
+            HttpServletResponse response) {
+
+        // ✅ REVOKE TOKEN ON SERVER
+        if (refreshToken != null && !refreshToken.isBlank()) {
+            authService.logout(refreshToken);
+        }
+
+        // ✅ DELETE COOKIE CLIENT-SIDE
+        writeRefreshCookie(response, null, 0);
+
         return ResponseEntity.ok(Map.of("message", "Logged out successfully"));
     }
 
-    // ================= Change password =================
+    // ============================================================
+    // Change Password
+    // ============================================================
     @PostMapping("/change-password")
     public ResponseEntity<?> changePassword(@RequestBody ChangePasswordRequestDTO req) {
         try {
             UUID userId = UUID.fromString(authService.getCurrentUserId());
             userService.changePassword(userId, req.getCurrentPassword(), req.getNewPassword());
+
             return ResponseEntity.ok(Map.of("message", "Password updated successfully"));
+
         } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(new ErrorResponse(LocalDateTime.now(), "Change password failed", e.getMessage()));
+            return ResponseEntity.badRequest()
+                    .body(new ErrorResponse(LocalDateTime.now(), "Change password failed", e.getMessage()));
         } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+            return ResponseEntity.internalServerError()
                     .body(new ErrorResponse(LocalDateTime.now(), "Error changing password", e.getMessage()));
         }
     }

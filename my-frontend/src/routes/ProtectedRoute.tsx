@@ -1,33 +1,52 @@
-// src/routes/ProtectedRoute.tsx
 import React, { useEffect, useState } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuthStore } from "@/store/authStore";
+import api from "@/services/axiosInstance";
 
-/**
- * Route bảo vệ (chỉ cho phép user đã đăng nhập).
- */
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const ensureMe = useAuthStore((s) => s.ensureMe);
-  const [checking, setChecking] = useState(true);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const {
+    accessToken,
+    user,
+    setAccessToken,
+    setUser,
+    hasInitialized,
+    setInitialized,
+  } = useAuthStore();
+
+  const [checking, setChecking] = useState(!hasInitialized);
   const location = useLocation();
 
   useEffect(() => {
-    const verify = async () => {
+    const initSession = async () => {
+      if (hasInitialized) {
+        setChecking(false);
+        return;
+      }
+
       try {
-        const me = await ensureMe();
-        setIsAuthenticated(!!me);
+        // Nếu chưa có accessToken → thử refresh token
+        if (!accessToken) {
+          const refreshResp = await api.post("/auth/refresh-token");
+          setAccessToken(refreshResp.data.accessToken);
+        }
+
+        // Sau đó load user
+        const meResp = await api.get("/users/me");
+        setUser(meResp.data);
       } catch (err) {
-        console.warn("[ProtectedRoute] Error verifying session:", err);
-        setIsAuthenticated(false);
+        console.warn("[ProtectedRoute] Session restore failed:", err);
+        setAccessToken(null);
+        setUser(null);
       } finally {
+        setInitialized();
         setChecking(false);
       }
     };
-    verify();
-  }, [ensureMe]);
 
-  // 🌀 Hiển thị khi đang kiểm tra
+    initSession();
+  }, [hasInitialized, accessToken]);
+
+  // Loading UI khi đang kiểm tra
   if (checking) {
     return (
       <div className="vh-100 d-flex justify-content-center align-items-center bg-light">
@@ -38,9 +57,9 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
     );
   }
 
-  // 🚪 Nếu chưa đăng nhập → chuyển về /login (nhưng không redirect lặp khi đang ở login)
-  if (!isAuthenticated && location.pathname !== "/login") {
-    return <Navigate to="/login" replace />;
+  // Nếu không có accessToken → redirect vào Login
+  if (!accessToken) {
+    return <Navigate to="/login" replace state={{ from: location }} />;
   }
 
   return <>{children}</>;

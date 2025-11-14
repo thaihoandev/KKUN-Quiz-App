@@ -470,28 +470,36 @@ public class UserServiceImpl implements UserService {
     // ===================== FRIEND REQUESTS & FRIENDS =====================
     @Override
     @Transactional
-    public void sendFriendRequest(UUID requesterId, UUID targetUserId) {
-        if (requesterId.equals(targetUserId))
+    public void sendFriendRequest(UUID requesterId, UUID targetId) {
+        if (requesterId.equals(targetId))
             throw new InvalidRequestException("Cannot add yourself");
 
         User requester = getUserOrThrow(requesterId);
-        User target = getUserOrThrow(targetUserId);
+        User target = getUserOrThrow(targetId);
 
-        boolean alreadyFriends = requester.getFriends().stream()
-                .anyMatch(f -> f.getUserId().equals(targetUserId));
-        if (alreadyFriends) return;
+        if (requester.isFriendsWith(targetId)) return;
 
-        Optional<FriendRequest> reverse = friendRequestRepo
-                .findByRequesterAndReceiverAndStatus(target, requester, FriendRequest.Status.PENDING);
+        // Xóa lời mời cũ (accepted -> friends, declined -> bỏ)
+        friendRequestRepo.findAnyBetween(requester, target)
+                .ifPresent(fr -> {
+                    if (fr.getStatus() != FriendRequest.Status.PENDING) {
+                        friendRequestRepo.delete(fr);
+                    }
+                });
 
+        // Nếu target đã gửi cho requester → auto accept
+        Optional<FriendRequest> reverse = friendRequestRepo.findPending(target, requester);
         if (reverse.isPresent()) {
-            FriendRequest req = reverse.get();
-            req.setStatus(FriendRequest.Status.ACCEPTED);
+            FriendRequest fr = reverse.get();
+            fr.setStatus(FriendRequest.Status.ACCEPTED);
+            friendRequestRepo.save(fr);
+
             requester.addFriend(target);
             userRepo.saveAll(List.of(requester, target));
             return;
         }
 
+        // Tạo request mới
         FriendRequest fr = FriendRequest.builder()
                 .requester(requester)
                 .receiver(target)
@@ -500,14 +508,6 @@ public class UserServiceImpl implements UserService {
                 .build();
 
         friendRequestRepo.save(fr);
-        notificationService.createNotification(
-                target.getUserId(),
-                requester.getUserId(),
-                "FRIEND_REQUEST_SENT",
-                "FRIEND_REQUEST",
-                fr.getId(),
-                requester.getName() + " đã gửi lời mời kết bạn"
-        );
     }
 
     @Override
@@ -515,37 +515,28 @@ public class UserServiceImpl implements UserService {
     public void acceptFriendRequest(UUID receiverId, UUID requestId) {
         FriendRequest fr = friendRequestRepo.findById(requestId)
                 .orElseThrow(() -> new InvalidRequestException("Friend request not found"));
+
         if (!fr.getReceiver().getUserId().equals(receiverId))
             throw new UnauthorizedException("Not your request");
 
         fr.setStatus(FriendRequest.Status.ACCEPTED);
-        fr.setUpdatedAt(LocalDateTime.now());
         friendRequestRepo.save(fr);
 
-        User requester = fr.getRequester();
-        User receiver = fr.getReceiver();
-        requester.addFriend(receiver);
-        userRepo.saveAll(List.of(requester, receiver));
-
-        notificationService.createNotification(
-                requester.getUserId(),
-                receiver.getUserId(),
-                "FRIEND_REQUEST_ACCEPTED",
-                "FRIEND_REQUEST",
-                fr.getId(),
-                receiver.getName() + " đã chấp nhận lời mời kết bạn"
-        );
+        fr.getRequester().addFriend(fr.getReceiver());
+        userRepo.saveAll(List.of(fr.getRequester(), fr.getReceiver()));
     }
+
 
     @Override
     @Transactional
     public void declineFriendRequest(UUID receiverId, UUID requestId) {
         FriendRequest fr = friendRequestRepo.findById(requestId)
                 .orElseThrow(() -> new InvalidRequestException("Request not found"));
+
         if (!fr.getReceiver().getUserId().equals(receiverId))
             throw new UnauthorizedException("Not your request");
+
         fr.setStatus(FriendRequest.Status.DECLINED);
-        fr.setUpdatedAt(LocalDateTime.now());
         friendRequestRepo.save(fr);
     }
 
@@ -554,11 +545,11 @@ public class UserServiceImpl implements UserService {
     public void cancelFriendRequest(UUID requesterId, UUID requestId) {
         FriendRequest fr = friendRequestRepo.findById(requestId)
                 .orElseThrow(() -> new InvalidRequestException("Request not found"));
+
         if (!fr.getRequester().getUserId().equals(requesterId))
             throw new UnauthorizedException("Cannot cancel this request");
-        fr.setStatus(FriendRequest.Status.CANCELED);
-        fr.setUpdatedAt(LocalDateTime.now());
-        friendRequestRepo.save(fr);
+
+        friendRequestRepo.delete(fr);
     }
 
     @Override
@@ -690,12 +681,11 @@ public class UserServiceImpl implements UserService {
     private FriendRequestDTO toDto(FriendRequest fr) {
         return FriendRequestDTO.builder()
                 .id(fr.getId())
-                .status(fr.getStatus().name())
-                .createdAt(fr.getCreatedAt())
                 .requesterId(fr.getRequester().getUserId())
                 .requesterName(fr.getRequester().getName())
                 .receiverId(fr.getReceiver().getUserId())
                 .receiverName(fr.getReceiver().getName())
+                .createdAt(fr.getCreatedAt())
                 .build();
     }
 
