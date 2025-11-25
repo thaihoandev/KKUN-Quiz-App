@@ -271,7 +271,7 @@ export default function EditSeriesPage() {
                               ref={drag.innerRef}
                               {...drag.draggableProps}
                               {...drag.dragHandleProps}
-                              className="border rounded p-2 mb-2 bg-light d-flex align-items-center justify-content-between"
+                              className="border rounded p-2 mb-2  d-flex align-items-center justify-content-between"
                             >
                               {/* 👉 Nhóm kéo-thả + nội dung */}
                               <div className="d-flex align-items-center gap-3">
@@ -279,7 +279,7 @@ export default function EditSeriesPage() {
                                 <MenuOutlined className="text-muted fs-5" />
 
                                 <div>
-                                  <Text strong>
+                                  <Text className="text-invert" strong>
                                     {index + 1}. {a.title}
                                   </Text>
                                   <br />

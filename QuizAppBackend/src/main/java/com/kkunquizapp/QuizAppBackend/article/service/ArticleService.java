@@ -15,6 +15,5 @@ public interface ArticleService {
     ArticleDto getBySlug(String slug);
     ArticleDto create(ArticleCreateRequest req);
     ArticleDto update(String slug, ArticleUpdateRequest req);
-
     void delete(UUID id);
 }

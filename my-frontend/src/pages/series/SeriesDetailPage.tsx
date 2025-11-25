@@ -75,7 +75,7 @@ export default function SeriesDetailPage() {
 
           <div className="col-md-9 d-flex flex-column justify-content-center">
             <h1 className="mb-3 fw-bold">{series.title}</h1>
-            <p className="text-muted mb-3 fs-6" style={{ lineHeight: 1.6 }}>
+            <p className="text-invert mb-3 fs-6" style={{ lineHeight: 1.6 }}>
               {series.description || "Không có mô tả"}
             </p>
 
@@ -83,13 +83,13 @@ export default function SeriesDetailPage() {
               {series.authorName && (
                 <div className="d-flex align-items-center gap-2">
                   <UserOutlined className="text-primary" />
-                  <span className="text-muted fw-bold">{series.authorName}</span>
+                  <span className="text-invert fw-bold">{series.authorName}</span>
                 </div>
               )}
               {series.articles && (
                 <div className="d-flex align-items-center gap-2">
                   <BookOutlined className="text-primary" />
-                  <span className="text-muted">
+                  <span className="text-invert">
                     <strong>{series.articles.length}</strong> bài viết
                   </span>
                 </div>

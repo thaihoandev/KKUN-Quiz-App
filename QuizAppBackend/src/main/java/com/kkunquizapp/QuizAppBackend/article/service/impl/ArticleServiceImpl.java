@@ -15,6 +15,7 @@ import com.kkunquizapp.QuizAppBackend.article.repository.SeriesRepository;
 import com.kkunquizapp.QuizAppBackend.article.service.ArticleCategoryService;
 import com.kkunquizapp.QuizAppBackend.article.service.ArticleService;
 import com.kkunquizapp.QuizAppBackend.article.service.TagService;
+import com.kkunquizapp.QuizAppBackend.article.service.ViewService;
 import com.kkunquizapp.QuizAppBackend.common.utils.MarkdownProcessor;
 import com.kkunquizapp.QuizAppBackend.common.utils.SlugUtil;
 import com.kkunquizapp.QuizAppBackend.fileUpload.service.CloudinaryService;
@@ -26,6 +27,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -51,6 +53,8 @@ public class ArticleServiceImpl implements ArticleService {
     private final CloudinaryService cloudinaryService;
     private final TagService tagService;
     private final UserService userService;
+    private final ViewService viewService;
+
     private final ArticleMapper mapper;
 
     /**
@@ -72,32 +76,32 @@ public class ArticleServiceImpl implements ArticleService {
     @Override
     @Transactional(readOnly = true)
     public ArticleDto getBySlug(String slug) {
-        Article article = articleRepository.findBySlug(slug)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Article not found with slug: " + slug));
 
-        // Tăng lượt xem
-        article.setViews(article.getViews() + 1);
-        articleRepository.save(article);
+        Article article = articleRepository.findBySlug(slug)
+                .orElseThrow(() ->
+                        new ResponseStatusException(HttpStatus.NOT_FOUND, "Article not found with slug: " + slug));
+
+        // Bắn event tăng view (không block logic)
+        viewService.increaseViews(article.getId());
 
         ArticleDto dto = mapper.toDto(article);
 
-        // ✅ Gắn thông tin series rút gọn (nếu có)
+        // Series mapping
         articleSeriesRepository.findByArticleId(article.getId()).ifPresent(link -> {
-            Series series = link.getSeries();
-            if (series != null) {
-                SeriesSummaryDto summary = new SeriesSummaryDto();
-                summary.setId(series.getId());
-                summary.setTitle(series.getTitle());
-                summary.setSlug(series.getSlug());
-                summary.setDescription(series.getDescription());
-                summary.setThumbnailUrl(series.getThumbnailUrl());
-                dto.setSeries(summary);
+            Series s = link.getSeries();
+            if (s != null) {
+                SeriesSummaryDto sm = new SeriesSummaryDto();
+                sm.setId(s.getId());
+                sm.setTitle(s.getTitle());
+                sm.setSlug(s.getSlug());
+                sm.setDescription(s.getDescription());
+                sm.setThumbnailUrl(s.getThumbnailUrl());
+                dto.setSeries(sm);
             }
         });
 
         return dto;
     }
-
 
     /**
      * Create a new article with optional Cloudinary thumbnail upload.
