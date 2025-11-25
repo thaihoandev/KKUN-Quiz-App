@@ -8,6 +8,7 @@ import com.kkunquizapp.QuizAppBackend.article.mapper.ArticleMapper;
 import com.kkunquizapp.QuizAppBackend.article.model.Article;
 import com.kkunquizapp.QuizAppBackend.article.model.ArticleCategory;
 import com.kkunquizapp.QuizAppBackend.article.model.ArticleSeries;
+import com.kkunquizapp.QuizAppBackend.article.model.Series;
 import com.kkunquizapp.QuizAppBackend.article.repository.ArticleRepository;
 import com.kkunquizapp.QuizAppBackend.article.repository.ArticleSeriesRepository;
 import com.kkunquizapp.QuizAppBackend.article.repository.SeriesRepository;
@@ -26,6 +27,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -57,7 +59,7 @@ public class ArticleServiceImpl implements ArticleService {
      */
     @Override
     public Page<ArticleDto> getAllPublished(Pageable pageable) {
-        return articleRepository.findByPublishedTrue(pageable)
+        return articleRepository.findAllPublishedWithRelations(pageable)
                 .map(mapper::toDto);
     }
 
@@ -68,6 +70,7 @@ public class ArticleServiceImpl implements ArticleService {
      * @throws ResponseStatusException if the article is not found.
      */
     @Override
+    @Transactional(readOnly = true)
     public ArticleDto getBySlug(String slug) {
         Article article = articleRepository.findBySlug(slug)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Article not found with slug: " + slug));
@@ -80,7 +83,8 @@ public class ArticleServiceImpl implements ArticleService {
 
         // ✅ Gắn thông tin series rút gọn (nếu có)
         articleSeriesRepository.findByArticleId(article.getId()).ifPresent(link -> {
-            seriesRepository.findById(link.getSeriesId()).ifPresent(series -> {
+            Series series = link.getSeries();
+            if (series != null) {
                 SeriesSummaryDto summary = new SeriesSummaryDto();
                 summary.setId(series.getId());
                 summary.setTitle(series.getTitle());
@@ -88,7 +92,7 @@ public class ArticleServiceImpl implements ArticleService {
                 summary.setDescription(series.getDescription());
                 summary.setThumbnailUrl(series.getThumbnailUrl());
                 dto.setSeries(summary);
-            });
+            }
         });
 
         return dto;
@@ -150,8 +154,9 @@ public class ArticleServiceImpl implements ArticleService {
 
         if (req.getSeriesId() != null) {
             ArticleSeries link = new ArticleSeries();
-            link.setSeriesId(req.getSeriesId());
-            link.setArticleId(article.getId());
+            link.setArticle(article);
+            link.setSeries(seriesRepository.findById(req.getSeriesId())
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Series not found")));
 
             // Lấy thứ tự tiếp theo trong series
             int nextOrder = articleSeriesRepository
@@ -172,6 +177,7 @@ public class ArticleServiceImpl implements ArticleService {
      * @return List of ArticleDto for published articles in the category.
      */
     @Override
+    @Transactional(readOnly = true)
     public Page<ArticleDto> getPublishedByCategory(UUID categoryId, Pageable pageable) {
         ArticleCategory category = categoryService.getById(categoryId);
         return articleRepository.findByArticleCategoryAndPublishedTrue(category, pageable)
@@ -235,12 +241,17 @@ public class ArticleServiceImpl implements ArticleService {
                     .ifPresent(articleSeriesRepository::delete);
 
             // Tạo liên kết mới
+            Series newSeries = seriesRepository.findById(req.getSeriesId())
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Series not found"));
+
             ArticleSeries link = new ArticleSeries();
-            link.setArticleId(article.getId());
-            link.setSeriesId(req.getSeriesId());
+            link.setArticle(article);
+            link.setSeries(newSeries);
+
             int nextOrder = articleSeriesRepository
-                    .findBySeriesIdOrderByOrderIndex(req.getSeriesId())
+                    .findBySeriesIdOrderByOrderIndex(newSeries.getId())
                     .size() + 1;
+
             link.setOrderIndex(nextOrder);
             articleSeriesRepository.save(link);
         }

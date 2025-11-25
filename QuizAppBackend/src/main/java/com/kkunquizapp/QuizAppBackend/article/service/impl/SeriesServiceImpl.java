@@ -44,27 +44,33 @@ public class SeriesServiceImpl implements SeriesService {
 
     @Override
     public SeriesDto getBySlug(String slug) {
-        Series series = seriesRepository.findBySlug(slug)
+        Series series = seriesRepository.findBySlugWithRelations(slug)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Series not found"));
 
-        List<ArticleSeries> links = articleSeriesRepository.findBySeriesIdOrderByOrderIndex(series.getId());
+        // Lấy ArticleSeries đã fetch sẵn từ series
+        List<ArticleSeries> links = series.getArticles() == null
+                ? new ArrayList<>()
+                : series.getArticles().stream()
+                .sorted(Comparator.comparing(ArticleSeries::getOrderIndex))
+                .toList();
+
+        // Map ArticleSeries -> ArticleDto, KHÔNG query lại
         List<ArticleDto> articles = links.stream()
                 .map(link -> {
-                    Article article = articleRepository.findById(link.getArticleId()).orElse(null);
-                    if (article == null) return null;
-
+                    Article article = link.getArticle(); // đã fetch join
                     ArticleDto dto = mapper.toDto(article);
-                    dto.setOrderIndex(link.getOrderIndex()); // ✅ Gắn thứ tự
+                    dto.setOrderIndex(link.getOrderIndex());
                     return dto;
                 })
-                .filter(Objects::nonNull)
-                .sorted(Comparator.comparing(ArticleDto::getOrderIndex)) // đảm bảo đúng thứ tự
                 .collect(Collectors.toList());
 
+        // Build DTO series
         SeriesDto dto = toDtoWithoutArticles(series);
         dto.setArticles(articles);
+
         return dto;
     }
+
 
     @Override
     @Transactional

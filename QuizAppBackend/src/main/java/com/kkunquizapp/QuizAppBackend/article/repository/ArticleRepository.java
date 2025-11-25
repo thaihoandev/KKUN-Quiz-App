@@ -28,5 +28,18 @@ public interface ArticleRepository extends JpaRepository<Article, UUID> {
     """)
     Page<Article> findUnassignedByAuthorId(@Param("authorId") UUID authorId, Pageable pageable);
 
+    @Query(
+            value = """
+            SELECT a FROM Article a
+            JOIN FETCH a.articleCategory
+            LEFT JOIN FETCH a.tags
+            WHERE a.published = true
+        """,
+            countQuery = """
+            SELECT COUNT(a) FROM Article a
+            WHERE a.published = true
+        """
+    )
+    Page<Article> findAllPublishedWithRelations(Pageable pageable);
 }
 
