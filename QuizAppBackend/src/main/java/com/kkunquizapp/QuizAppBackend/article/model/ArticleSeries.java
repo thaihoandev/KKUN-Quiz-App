@@ -8,24 +8,32 @@ import org.hibernate.annotations.GenericGenerator;
 import java.util.UUID;
 
 @Entity
-@Table(name = "article_series")
 @Getter
 @Setter
+@Table(name = "article_series")
 public class ArticleSeries {
 
     @Id
-    @GeneratedValue(generator = "uuid2")
-    @GenericGenerator(name = "uuid2", strategy = "org.hibernate.id.UUIDGenerator")
-    @Column(columnDefinition = "UUID")
+    @GeneratedValue
     private UUID id;
 
-    @Column(columnDefinition = "UUID")
+    // GIỮ field id dưới dạng raw ID (để dễ dùng)
+    @Column(name = "article_id", insertable = false, updatable = false)
     private UUID articleId;
 
-    @Column(columnDefinition = "UUID")
+    @Column(name = "series_id", insertable = false, updatable = false)
     private UUID seriesId;
 
-    @Column(nullable = false)
-    private int orderIndex = 0;
+    // Relation thực sự
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "article_id")
+    private Article article;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "series_id")
+    private Series series;
+
+    private int orderIndex;
 }
+
 

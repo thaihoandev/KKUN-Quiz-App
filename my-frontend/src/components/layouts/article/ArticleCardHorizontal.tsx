@@ -92,7 +92,8 @@ const ArticleCardHorizontal: React.FC<ArticleCardHorizontalProps> = ({ article }
               left: 0,
               right: 0,
               padding: "20px 24px",
-              color: "#fff",
+              color:"var(--text-invert) !important",
+
             }}
           >
             <Title
@@ -100,10 +101,9 @@ const ArticleCardHorizontal: React.FC<ArticleCardHorizontalProps> = ({ article }
               style={{
                 fontSize: "26px",
                 fontWeight: 700,
-                color: "#fff",
+                color:"var(--text-invert) !important",
                 margin: 0,
                 lineHeight: "1.3",
-                textShadow: "0 2px 8px rgba(0,0,0,0.6)", // 👈 tạo chiều sâu, chữ nổi bật
                 WebkitLineClamp: 2,
                 WebkitBoxOrient: "vertical",
                 overflow: "hidden",

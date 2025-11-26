@@ -7,7 +7,9 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Optional;
@@ -28,5 +30,23 @@ public interface ArticleRepository extends JpaRepository<Article, UUID> {
     """)
     Page<Article> findUnassignedByAuthorId(@Param("authorId") UUID authorId, Pageable pageable);
 
+    @Query(
+            value = """
+            SELECT a FROM Article a
+            JOIN FETCH a.articleCategory
+            LEFT JOIN FETCH a.tags
+            WHERE a.published = true
+        """,
+            countQuery = """
+            SELECT COUNT(a) FROM Article a
+            WHERE a.published = true
+        """
+    )
+    Page<Article> findAllPublishedWithRelations(Pageable pageable);
+
+    @Modifying
+    @Transactional
+    @Query("UPDATE Article a SET a.views = a.views + 1 WHERE a.id = :id")
+    void incrementViews(@Param("id") UUID id);
 }
 

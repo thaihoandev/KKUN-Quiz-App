@@ -6,6 +6,8 @@ import lombok.Setter;
 import org.hibernate.annotations.GenericGenerator;
 
 import java.time.LocalDateTime;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.UUID;
 
 @Entity
@@ -33,6 +35,9 @@ public class Series {
 
     @Column(nullable = false)
     private UUID authorId;
+
+    @OneToMany(fetch = FetchType.LAZY, mappedBy = "series")
+    private Set<ArticleSeries> articles = new HashSet<>();
 
     private LocalDateTime createdAt = LocalDateTime.now();
     private LocalDateTime updatedAt = LocalDateTime.now();

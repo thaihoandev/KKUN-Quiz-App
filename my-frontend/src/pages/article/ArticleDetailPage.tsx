@@ -150,7 +150,6 @@ export default function ArticleDetailPage() {
     return (
       <div
         style={{
-          maxWidth: "1400px",
           margin: "0 auto",
           padding: "2rem 1rem",
           background: "var(--background-color)",
@@ -175,7 +174,6 @@ export default function ArticleDetailPage() {
     >
       <div
         style={{
-          maxWidth: "1400px",
           margin: "0 auto",
           padding: "2rem 1rem",
         }}

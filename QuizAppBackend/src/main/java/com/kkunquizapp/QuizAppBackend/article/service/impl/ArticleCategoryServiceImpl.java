@@ -7,11 +7,10 @@ import com.kkunquizapp.QuizAppBackend.article.service.ArticleCategoryService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
-import java.util.List;
 import java.util.UUID;
-import java.util.stream.Collectors;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
@@ -20,6 +19,7 @@ public class ArticleCategoryServiceImpl implements ArticleCategoryService {
     private final ArticleCategoryRepository repository;
 
     @Override
+    @Transactional(readOnly = true)
     public Page<ArticleCategoryDto> getAllActive(Pageable pageable) {
         return repository.findByActiveTrue(pageable)
                 .map(this::toDto);
