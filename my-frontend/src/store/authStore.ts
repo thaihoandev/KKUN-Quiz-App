@@ -10,6 +10,7 @@ interface AuthState {
   accessToken: string | null;
   user: User | null;
   hasInitialized: boolean;
+  lastRefreshedAt: number | null; // ← MỚI: để biết lần cuối refresh khi nào
 
   setAccessToken: (token: string | null) => void;
   setUser: (user: User | null) => void;
@@ -41,21 +42,31 @@ export const useAuthStore = create<AuthState>()(
       accessToken: null,
       user: null,
       hasInitialized: false,
+      lastRefreshedAt: null,
 
       setAccessToken: (token) => set({ accessToken: token }),
       setUser: (user) => set({ user }),
       setInitialized: () => set({ hasInitialized: true }),
 
       // ============================
-      // LOAD CURRENT USER
+      // LOAD CURRENT USER (có cập nhật thời gian refresh)
       // ============================
       refreshMe: async () => {
+        const { accessToken } = get();
+        if (!accessToken) return;
+
         try {
           const resp = await api.get("/users/me");
-          set({ user: mapUser(resp.data) });
-        } catch (e) {
-          console.warn("refreshMe failed", e);
-          set({ accessToken: null, user: null });
+          set({
+            user: mapUser(resp.data),
+            lastRefreshedAt: Date.now(), // ← Cập nhật thời gian refresh
+          });
+        } catch (e: any) {
+          console.warn("refreshMe failed → logout", e);
+          if (e.response?.status === 401) {
+            // Token hết hạn → tự động logout
+            get().logout();
+          }
         }
       },
 
@@ -65,13 +76,13 @@ export const useAuthStore = create<AuthState>()(
       login: async (username, password) => {
         try {
           const res = await loginApi(username, password);
-
           set({
             accessToken: res.accessToken,
             user: mapUser(res.user),
+            lastRefreshedAt: Date.now(),
           });
         } catch (e) {
-          handleApiError(e, "Login failed");
+          handleApiError(e, "Đăng nhập thất bại");
           throw e;
         }
       },
@@ -82,13 +93,13 @@ export const useAuthStore = create<AuthState>()(
       register: async (name, username, email, password) => {
         try {
           const res = await registerApi({ name, username, email, password });
-
           set({
             accessToken: res.accessToken,
             user: mapUser(res.user),
+            lastRefreshedAt: Date.now(),
           });
         } catch (e) {
-          handleApiError(e, "Registration failed");
+          handleApiError(e, "Đăng ký thất bại");
           throw e;
         }
       },
@@ -100,13 +111,13 @@ export const useAuthStore = create<AuthState>()(
         try {
           const googleAccess = tokenResponse.access_token;
           const res = await loginGoogleApi(googleAccess);
-
           set({
             accessToken: res.accessToken,
             user: mapUser(res.user),
+            lastRefreshedAt: Date.now(),
           });
         } catch (e) {
-          handleApiError(e, "Google login failed");
+          handleApiError(e, "Đăng nhập Google thất bại");
           throw e;
         }
       },
@@ -118,15 +129,16 @@ export const useAuthStore = create<AuthState>()(
         try {
           await api.post("/auth/logout");
         } catch (e) {
-          console.warn("logout API error", e);
+          console.warn("Logout API error", e);
         } finally {
           set({
             accessToken: null,
             user: null,
-            hasInitialized: false, // Reset khi logout
+            hasInitialized: false,
+            lastRefreshedAt: null,
           });
-
-          localStorage.removeItem("auth-storage");
+          // Xóa persist storage
+          sessionStorage.removeItem("auth-storage");
         }
       },
     }),
@@ -136,6 +148,7 @@ export const useAuthStore = create<AuthState>()(
       partialize: (state) => ({
         accessToken: state.accessToken,
         user: state.user,
+        lastRefreshedAt: state.lastRefreshedAt,
       }),
     }
   )
