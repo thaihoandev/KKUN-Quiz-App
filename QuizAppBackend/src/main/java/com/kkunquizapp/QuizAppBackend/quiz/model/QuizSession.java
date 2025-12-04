@@ -15,7 +15,7 @@ import java.util.UUID;
 @Table(
         name = "quiz_sessions",
         indexes = {
-                @Index(name = "idx_quiz_sessions_user_created", columnList = "user_id, created_at DESC"),
+                @Index(name = "idx_quiz_sessions_user_created", columnList = "user_id, started_at DESC"),
                 @Index(name = "idx_quiz_sessions_quiz", columnList = "quiz_id"),
                 @Index(name = "idx_quiz_sessions_mode", columnList = "mode")
         }

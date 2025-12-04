@@ -1,6 +1,7 @@
 package com.kkunquizapp.QuizAppBackend.question.repository;
 
 import com.kkunquizapp.QuizAppBackend.question.model.Question;
+import com.kkunquizapp.QuizAppBackend.quiz.model.Quiz;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -65,4 +66,6 @@ public interface QuestionRepo extends JpaRepository<Question, UUID> {
 
     // Check if question exists
     boolean existsByQuestionIdAndDeletedFalse(UUID questionId);
+
+    List<Question> findByQuizAndDeletedFalse(Quiz quiz);
 }
