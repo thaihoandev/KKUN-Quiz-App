@@ -1,14 +1,19 @@
 package com.kkunquizapp.QuizAppBackend.question.model;
 
-import com.kkunquizapp.QuizAppBackend.question.model.enums.QuestionType;
-import jakarta.persistence.*;
+import jakarta.persistence.DiscriminatorValue;
+import jakarta.persistence.Entity;
+import lombok.AllArgsConstructor;
 import lombok.Data;
-import lombok.EqualsAndHashCode;
+import lombok.NoArgsConstructor;
+import lombok.experimental.SuperBuilder;
 
-@Data
+// ==================== TRUE/FALSE OPTION ====================
 @Entity
-@DiscriminatorValue(QuestionType.TRUE_FALSE_TYPE)
-@EqualsAndHashCode(callSuper = true)
+@DiscriminatorValue("TRUE_FALSE")
+@Data
+@SuperBuilder              // QUAN TRỌNG: dùng @SuperBuilder thay vì @Builder
+@AllArgsConstructor
 public class TrueFalseOption extends Option {
-    // Dùng chung structure với MultipleChoiceOption
+    // Inherits all from Option
+    // Exactly 2 options: True & False
 }

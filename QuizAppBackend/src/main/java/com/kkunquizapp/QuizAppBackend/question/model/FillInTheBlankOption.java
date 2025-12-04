@@ -1,23 +1,29 @@
 package com.kkunquizapp.QuizAppBackend.question.model;
 
-import com.kkunquizapp.QuizAppBackend.question.model.enums.QuestionType;
-import jakarta.persistence.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.DiscriminatorValue;
+import jakarta.persistence.Entity;
+import lombok.AllArgsConstructor;
 import lombok.Data;
-import lombok.EqualsAndHashCode;
+import lombok.NoArgsConstructor;
+import lombok.experimental.SuperBuilder;
 
-@Data
 @Entity
-@DiscriminatorValue(QuestionType.FILL_IN_THE_BLANK_TYPE)
-@EqualsAndHashCode(callSuper = true)
+@DiscriminatorValue("FILL_IN_THE_BLANK")
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+@SuperBuilder(toBuilder = true)
 public class FillInTheBlankOption extends Option {
-
-    @Column(length = 1000, nullable = false)
+    @Column(columnDefinition = "TEXT")
     private String correctAnswer;
 
-    // Gợi ý: Fill in the blank luôn là đáp án đúng, không cần boolean correct
-    @PrePersist
-    @PreUpdate
-    public void markAsCorrect() {
-        setCorrect(true);
-    }
+    @Column(nullable = false)
+    private boolean caseInsensitive = false;
+
+    @Column(columnDefinition = "TEXT")
+    private String acceptedVariations;
+
+    @Column(nullable = false)
+    private int typoTolerance = 0;
 }

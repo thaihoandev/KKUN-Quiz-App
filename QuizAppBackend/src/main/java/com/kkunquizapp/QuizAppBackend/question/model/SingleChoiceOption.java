@@ -1,14 +1,19 @@
 package com.kkunquizapp.QuizAppBackend.question.model;
 
-import com.kkunquizapp.QuizAppBackend.question.model.enums.QuestionType;
-import jakarta.persistence.*;
+import jakarta.persistence.DiscriminatorValue;
+import jakarta.persistence.Entity;
+import lombok.AllArgsConstructor;
 import lombok.Data;
-import lombok.EqualsAndHashCode;
+import lombok.NoArgsConstructor;
+import lombok.experimental.SuperBuilder;
 
-@Data
+// ==================== SINGLE CHOICE OPTION ====================
 @Entity
-@DiscriminatorValue(QuestionType.SINGLE_CHOICE_TYPE)
-@EqualsAndHashCode(callSuper = true)
+@DiscriminatorValue("SINGLE_CHOICE")
+@Data
+@SuperBuilder              // QUAN TRỌNG: dùng @SuperBuilder thay vì @Builder
+@AllArgsConstructor
 public class SingleChoiceOption extends Option {
-    // Không có gì thêm – dùng optionText và correct từ Option
+    // Inherits all from Option
+    // Only one correct answer
 }

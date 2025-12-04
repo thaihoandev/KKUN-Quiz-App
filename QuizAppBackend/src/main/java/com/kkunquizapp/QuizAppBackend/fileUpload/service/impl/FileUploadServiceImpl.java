@@ -266,7 +266,7 @@ public class FileUploadServiceImpl implements FileUploadService {
                 if (!optionText.isEmpty()) {
                     OptionRequestDTO option = new OptionRequestDTO();
                     option.setOptionId(UUID.randomUUID());
-                    option.setOptionText(optionText);
+                    option.setCorrectAnswer(optionText);
                     option.setCorrect(isCorrect);
                     options.add(option);
                 }
@@ -283,9 +283,9 @@ public class FileUploadServiceImpl implements FileUploadService {
                 QuestionRequestDTO question = new QuestionRequestDTO();
                 question.setQuizId(quizId);
                 question.setQuestionText(questionText);
-                question.setQuestionType(QuestionType.SINGLE_CHOICE_TYPE);
+                question.setQuestionType(QuestionType.SINGLE_CHOICE.toString());
                 question.setImageUrl(null);
-                question.setTimeLimit(30);
+                question.setTimeLimitSeconds(30);
                 question.setPoints(10);
                 question.setOptions(options);
 

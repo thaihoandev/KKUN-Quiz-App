@@ -1,9 +1,8 @@
-// com.kkunquizapp.QuizAppBackend.service.GeminiService
 package com.kkunquizapp.QuizAppBackend.chatBot.service;
 
+import com.kkunquizapp.QuizAppBackend.chatBot.dto.TopicGenerateRequest;
 import com.kkunquizapp.QuizAppBackend.question.dto.QuestionRequestDTO;
 import com.kkunquizapp.QuizAppBackend.question.dto.QuestionResponseDTO;
-import com.kkunquizapp.QuizAppBackend.chatBot.dto.TopicGenerateRequest;
 
 import java.util.List;
 
