@@ -108,7 +108,7 @@ const AppRoutes: React.FC = () => (
           <Route path="/posts" element={<HomePostPage />} />
 
           {/* Quizzes */}
-          <Route path="/quiz/:slug" element={<QuizManagementPage />} />
+          <Route path="/quiz/:quizId" element={<QuizManagementPage />} />
           <Route path="/quiz/:quizId/edit" element={<QuizEditorPage />} />
           <Route path="/quiz/:quizId/questions/create" element={<QuestionCreatePage />} />
           <Route path="/quiz/:quizId/questions/:questionId/edit" element={<QuestionEditorPage />} />

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState } from "react";
 import { notification, Spin } from "antd";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
@@ -18,8 +18,6 @@ interface QuizPageState {
   showAnswers: boolean;
   loading: boolean;
   publishing: boolean;
-  page: number;
-  size: number;
   total: number;
 }
 
@@ -33,77 +31,76 @@ const QuizManagementPage: React.FC = () => {
     showAnswers: true,
     loading: true,
     publishing: false,
-    page: 0,
-    size: 10,
     total: 0,
   });
+
+  // ✅ Tách page/size ra khỏi state chính để tránh re-render loop
+  const [page, setPage] = useState(0);
+  const [size, setSize] = useState(10);
 
   const user = useAuthStore((s) => s.user);
   const currentUserId = (user as any)?.userId || (user as any)?.id;
 
-  // Determine if current user is the quiz owner
   const isOwner =
     state.quiz?.isOwner ?? (state.quiz?.creator?.userId === currentUserId);
 
   /**
-   * Fetch quiz details
-   */
-  const fetchQuizInfo = useCallback(async () => {
-    if (!quizId) return;
-
-    try {
-      setState((prev) => ({ ...prev, loading: true }));
-      const quiz = await getQuizById(quizId);
-      setState((prev) => ({ ...prev, quiz }));
-    } catch (error) {
-      console.error("Error fetching quiz info:", error);
-      notification.error({
-        message: "Error",
-        description: "Unable to load quiz information.",
-      });
-    } finally {
-      setState((prev) => ({ ...prev, loading: false }));
-    }
-  }, [quizId]);
-
-  /**
-   * Fetch paginated questions for quiz
-   */
-  const fetchQuestions = useCallback(async () => {
-    if (!quizId) return;
-
-    try {
-      setState((prev) => ({ ...prev, loading: true }));
-      const response = await getQuestionsByQuizPaged(quizId, state.page, state.size);
-      setState((prev) => ({
-        ...prev,
-        questions: response.content ?? [],
-        total: response.totalElements ?? 0,
-      }));
-    } catch (error) {
-      console.error("Error fetching questions:", error);
-      notification.error({
-        message: "Error",
-        description: "Unable to load the question list.",
-      });
-    } finally {
-      setState((prev) => ({ ...prev, loading: false }));
-    }
-  }, [quizId, state.page, state.size]);
-
-  /**
-   * Initial load - quiz info and first page of questions
+   * Fetch quiz details - chỉ chạy 1 lần khi mount
    */
   useEffect(() => {
+    if (!quizId) return;
+
+    const fetchQuizInfo = async () => {
+      try {
+        setState((prev) => ({ ...prev, loading: true }));
+        const quiz = await getQuizById(quizId);
+        setState((prev) => ({ ...prev, quiz }));
+      } catch (error) {
+        console.error("Error fetching quiz info:", error);
+        notification.error({
+          message: "Error",
+          description: "Unable to load quiz information.",
+        });
+      } finally {
+        setState((prev) => ({ ...prev, loading: false }));
+      }
+    };
+
     fetchQuizInfo();
-  }, [fetchQuizInfo]);
+  }, [quizId]); // ✅ Chỉ phụ thuộc vào quizId
 
   /**
-   * Load questions when page or size changes
+   * Fetch paginated questions - chạy khi page/size thay đổi
    */
   useEffect(() => {
+    if (!quizId) return;
+
+    const fetchQuestions = async () => {
+      try {
+        setState((prev) => ({ ...prev, loading: true }));
+        const response = await getQuestionsByQuizPaged(
+          quizId,
+          page,
+          size
+        );
+        setState((prev) => ({
+          ...prev,
+          questions: response.content ?? [],
+          total: response.totalElements ?? 0,
+          loading: false, // ✅ Set loading false ngay khi có data
+        }));
+      } catch (error) {
+        console.error("Error fetching questions:", error);
+        notification.error({
+          message: "Error",
+          description: "Unable to load the question list.",
+        });
+        setState((prev) => ({ ...prev, loading: false })); // ✅ Set loading false khi error
+      }
+    };
+
     fetchQuestions();
-  }, [fetchQuestions]);
+  }, [quizId, page, size]); // ✅ Dependency là primitive values, không gây re-render loop
 
   /**
    * Handle publish quiz
@@ -118,8 +115,10 @@ const QuizManagementPage: React.FC = () => {
         message: "Success",
         description: "The quiz has been published successfully!",
       });
-      // Refresh quiz info after publishing
-      await fetchQuizInfo();
+      
+      // Refresh quiz info
+      const quiz = await getQuizById(quizId);
+      setState((prev) => ({ ...prev, quiz }));
     } catch (error) {
       notification.error({
         message: "Error",
@@ -131,21 +130,18 @@ const QuizManagementPage: React.FC = () => {
   };
 
   /**
-   * Handle page change (pagination)
+   * Handle page change
    */
   const handlePageChange = (p: number, pageSize?: number) => {
-    const newSize = pageSize ?? state.size;
-    const newPage = pageSize ? 0 : p - 1; // Reset to page 0 if size changes
+    const newSize = pageSize ?? size;
+    const newPage = pageSize ? 0 : p - 1;
 
-    setState((prev) => ({
-      ...prev,
-      page: newPage,
-      size: newSize,
-    }));
+    setSize(newSize);
+    setPage(newPage);
   };
 
   /**
-   * Handle toggle show/hide answers
+   * Toggle show/hide answers
    */
   const handleToggleShowAnswers = () => {
     setState((prev) => ({ ...prev, showAnswers: !prev.showAnswers }));
@@ -514,7 +510,7 @@ const QuizManagementPage: React.FC = () => {
                   }}
                 >
                   <select
-                    value={state.size}
+                    value={size}
                     onChange={(e) =>
                       handlePageChange(1, parseInt(e.target.value))
                     }
@@ -535,7 +531,7 @@ const QuizManagementPage: React.FC = () => {
 
                   <div style={{ display: "flex", gap: "0.5rem" }}>
                     <button
-                      disabled={state.page === 0}
+                      disabled={page === 0}
                       onClick={() => handlePageChange(1)}
                       style={{
                         padding: "0.5rem 0.75rem",
@@ -543,8 +539,8 @@ const QuizManagementPage: React.FC = () => {
                         background: "var(--surface-alt)",
                         color: "var(--text-color)",
                         borderRadius: "6px",
-                        cursor: state.page === 0 ? "not-allowed" : "pointer",
-                        opacity: state.page === 0 ? 0.5 : 1,
+                        cursor: page === 0 ? "not-allowed" : "pointer",
+                        opacity: page === 0 ? 0.5 : 1,
                       }}
                     >
                       ←
@@ -557,16 +553,16 @@ const QuizManagementPage: React.FC = () => {
                         fontSize: "14px",
                       }}
                     >
-                      Page {state.page + 1} of{" "}
-                      {Math.ceil(state.total / state.size) || 1}
+                      Page {page + 1} of{" "}
+                      {Math.ceil(state.total / size) || 1}
                     </span>
 
                     <button
                       disabled={
-                        state.page >=
-                        Math.ceil(state.total / state.size) - 1
+                        page >=
+                        Math.ceil(state.total / size) - 1
                       }
-                      onClick={() => handlePageChange(state.page + 2)}
+                      onClick={() => handlePageChange(page + 2)}
                       style={{
                         padding: "0.5rem 0.75rem",
                         border: "1px solid var(--border-color)",
@@ -574,13 +570,13 @@ const QuizManagementPage: React.FC = () => {
                         color: "var(--text-color)",
                         borderRadius: "6px",
                         cursor:
-                          state.page >=
-                          Math.ceil(state.total / state.size) - 1
+                          page >=
+                          Math.ceil(state.total / size) - 1
                             ? "not-allowed"
                             : "pointer",
                         opacity:
-                          state.page >=
-                          Math.ceil(state.total / state.size) - 1
+                          page >=
+                          Math.ceil(state.total / size) - 1
                             ? 0.5
                             : 1,
                       }}

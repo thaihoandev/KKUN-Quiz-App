@@ -53,7 +53,12 @@ public class Quiz {
 
     private String coverImageUrl;
 
-    @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    @OneToMany(
+            mappedBy = "quiz",
+            cascade = CascadeType.ALL,
+            orphanRemoval = true,
+            fetch = FetchType.LAZY
+    )
     @OrderBy("orderIndex ASC")
     private List<Question> questions = new ArrayList<>();
 

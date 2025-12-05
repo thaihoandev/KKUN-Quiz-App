@@ -255,4 +255,16 @@ public interface QuizRepo extends JpaRepository<Quiz, UUID> {
             "WHERE q.published = true AND q.deleted = false " +
             "GROUP BY q.creator.userId ORDER BY quiz_count DESC")
     Page<Object[]> getTopCreators(Pageable pageable);
+
+    @Query("SELECT DISTINCT q FROM Quiz q " +
+            "LEFT JOIN FETCH q.questions qs " +
+            "WHERE q.slug = :slug AND q.deleted = false " +
+            "ORDER BY qs.orderIndex ASC")
+    Optional<Quiz> findBySlugWithQuestions(@Param("slug") String slug);
+
+    @Query("SELECT DISTINCT q FROM Quiz q " +
+            "LEFT JOIN FETCH q.questions qs " +
+            "WHERE q.quizId = :quizId AND q.deleted = false " +
+            "ORDER BY qs.orderIndex ASC")
+    Optional<Quiz> findByIdWithQuestions(@Param("quizId") UUID quizId);
 }

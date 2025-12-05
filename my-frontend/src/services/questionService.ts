@@ -241,7 +241,7 @@ export const addQuestion = async (
             formData.append("image", image);
         }
 
-        const response = await axiosInstance.post(`/api/questions`, formData, {
+        const response = await axiosInstance.post(`/questions`, formData, {
             headers: { "Content-Type": "multipart/form-data" },
         });
         return response.data;
@@ -260,13 +260,9 @@ export const addQuestionsBulk = async (
 ): Promise<QuestionResponseDTO[]> => {
     try {
         const payload = questions.map((q) => ({ ...q, quizId }));
-        const response = await axiosInstance.post(
-            `/api/questions/bulk`,
-            payload,
-            {
-                headers: { "Content-Type": "application/json" },
-            }
-        );
+        const response = await axiosInstance.post(`/questions/bulk`, payload, {
+            headers: { "Content-Type": "application/json" },
+        });
         return response.data;
     } catch (error) {
         handleApiError(error, "Failed to add questions in bulk");
@@ -285,9 +281,7 @@ export const getQuestionById = async (
     questionId: string
 ): Promise<QuestionResponseDTO> => {
     try {
-        const response = await axiosInstance.get(
-            `/api/questions/${questionId}`
-        );
+        const response = await axiosInstance.get(`/questions/${questionId}`);
         return response.data;
     } catch (error) {
         handleApiError(error, "Failed to fetch question");
@@ -304,12 +298,9 @@ export const getQuestionsByQuiz = async (
     size: number = 20
 ): Promise<PageResponse<QuestionResponseDTO>> => {
     try {
-        const response = await axiosInstance.get(
-            `/api/questions/quiz/${quizId}`,
-            {
-                params: { page, size },
-            }
-        );
+        const response = await axiosInstance.get(`/questions/quiz/${quizId}`, {
+            params: { page, size },
+        });
         return response.data;
     } catch (error) {
         handleApiError(error, "Failed to fetch questions by quiz");
@@ -335,7 +326,7 @@ export const searchQuestions = async (
         params.append("page", page.toString());
         params.append("size", size.toString());
 
-        const response = await axiosInstance.get(`/api/questions/search`, {
+        const response = await axiosInstance.get(`/questions/search`, {
             params,
         });
         return response.data;
@@ -352,7 +343,7 @@ export const getQuestionsByTag = async (
     tag: string
 ): Promise<QuestionResponseDTO[]> => {
     try {
-        const response = await axiosInstance.get(`/api/questions/tag/${tag}`);
+        const response = await axiosInstance.get(`/questions/tag/${tag}`);
         return response.data;
     } catch (error) {
         handleApiError(error, "Failed to fetch questions by tag");
@@ -367,7 +358,7 @@ export const getFavoriteQuestions = async (): Promise<
     QuestionResponseDTO[]
 > => {
     try {
-        const response = await axiosInstance.get(`/api/questions/favorites`);
+        const response = await axiosInstance.get(`/questions/favorites`);
         return response.data;
     } catch (error) {
         handleApiError(error, "Failed to fetch favorite questions");
@@ -398,7 +389,7 @@ export const updateQuestion = async (
         }
 
         const response = await axiosInstance.put(
-            `/api/questions/${questionId}`,
+            `/questions/${questionId}`,
             formData,
             {
                 headers: { "Content-Type": "multipart/form-data" },
@@ -420,7 +411,7 @@ export const updateQuestion = async (
  */
 export const softDeleteQuestion = async (questionId: string): Promise<void> => {
     try {
-        await axiosInstance.delete(`/api/questions/${questionId}`);
+        await axiosInstance.delete(`/questions/${questionId}`);
     } catch (error) {
         handleApiError(error, "Failed to soft delete question");
         throw error;
@@ -432,7 +423,7 @@ export const softDeleteQuestion = async (questionId: string): Promise<void> => {
  */
 export const hardDeleteQuestion = async (questionId: string): Promise<void> => {
     try {
-        await axiosInstance.delete(`/api/questions/${questionId}/hard`);
+        await axiosInstance.delete(`/questions/${questionId}/hard`);
     } catch (error) {
         handleApiError(error, "Failed to permanently delete question");
         throw error;
@@ -444,7 +435,7 @@ export const hardDeleteQuestion = async (questionId: string): Promise<void> => {
  */
 export const restoreQuestion = async (questionId: string): Promise<void> => {
     try {
-        await axiosInstance.post(`/api/questions/${questionId}/restore`);
+        await axiosInstance.post(`/questions/${questionId}/restore`);
     } catch (error) {
         handleApiError(error, "Failed to restore question");
         throw error;
@@ -464,7 +455,7 @@ export const duplicateQuestion = async (
 ): Promise<QuestionResponseDTO> => {
     try {
         const response = await axiosInstance.post(
-            `/api/questions/${questionId}/duplicate`,
+            `/questions/${questionId}/duplicate`,
             {},
             { params: { targetQuizId } }
         );
@@ -484,7 +475,7 @@ export const duplicateQuestionsFromQuiz = async (
 ): Promise<QuestionResponseDTO[]> => {
     try {
         const response = await axiosInstance.post(
-            `/api/questions/duplicate-from-quiz`,
+            `/questions/duplicate-from-quiz`,
             {},
             { params: { sourceQuizId, targetQuizId } }
         );
@@ -512,7 +503,7 @@ export const importQuestionsFromCSV = async (
         formData.append("quizId", quizId);
 
         const response = await axiosInstance.post(
-            `/api/questions/import/csv`,
+            `/questions/import/csv`,
             formData,
             { headers: { "Content-Type": "multipart/form-data" } }
         );
@@ -528,7 +519,7 @@ export const importQuestionsFromCSV = async (
  */
 export const exportQuestionsAsCSV = async (quizId: string): Promise<Blob> => {
     try {
-        const response = await axiosInstance.get(`/api/questions/export/csv`, {
+        const response = await axiosInstance.get(`/questions/export/csv`, {
             params: { quizId },
             responseType: "blob",
         });
@@ -568,7 +559,7 @@ export const getQuestionAnalytics = async (
 ): Promise<QuestionAnalyticsDTO> => {
     try {
         const response = await axiosInstance.get(
-            `/api/questions/${questionId}/analytics`
+            `/questions/${questionId}/analytics`
         );
         return response.data;
     } catch (error) {
@@ -586,7 +577,7 @@ export const getQuestionAnalytics = async (
  */
 export const markAsFavorite = async (questionId: string): Promise<void> => {
     try {
-        await axiosInstance.post(`/api/questions/${questionId}/favorite`);
+        await axiosInstance.post(`/questions/${questionId}/favorite`);
     } catch (error) {
         handleApiError(error, "Failed to mark as favorite");
         throw error;
@@ -598,7 +589,7 @@ export const markAsFavorite = async (questionId: string): Promise<void> => {
  */
 export const unmarkAsFavorite = async (questionId: string): Promise<void> => {
     try {
-        await axiosInstance.delete(`/api/questions/${questionId}/favorite`);
+        await axiosInstance.delete(`/questions/${questionId}/favorite`);
     } catch (error) {
         handleApiError(error, "Failed to unmark as favorite");
         throw error;

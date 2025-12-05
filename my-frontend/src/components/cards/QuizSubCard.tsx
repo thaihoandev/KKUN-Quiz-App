@@ -76,7 +76,7 @@ const QuizSubCard: React.FC<QuizCardProps> = ({ quiz }) => {
   };
 
   const handleViewDetails = () => {
-    navigate(`/quiz/${quiz.slug}`);
+    navigate(`/quiz/${quiz.quizId}`);
   };
   
   return (

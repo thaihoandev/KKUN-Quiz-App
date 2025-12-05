@@ -125,7 +125,7 @@ public class QuizServiceImpl implements QuizService {
     public QuizDetailResponse getQuizDetailBySlug(String slug, UUID userId, String password) {
         log.info("Fetching quiz by slug: {}", slug);
 
-        Quiz quiz = quizRepo.findBySlugAndDeletedFalse(slug)
+        Quiz quiz = quizRepo.findBySlugWithQuestions(slug)
                 .orElseThrow(() -> {
                     log.warn("Quiz not found with slug: {}", slug);
                     return new QuizNotFoundException("Quiz not found");
@@ -133,10 +133,6 @@ public class QuizServiceImpl implements QuizService {
 
         // Validate access
         validateAccess(quiz, userId, password);
-
-        // Load questions + options
-        List<Question> questions = questionRepo.findByQuizQuizIdAndDeletedFalseOrderByOrderIndexAsc(quiz.getQuizId());
-        quiz.setQuestions(questions);
 
         boolean isOwner = userId != null && quiz.getCreator().getUserId().equals(userId);
 
@@ -162,7 +158,7 @@ public class QuizServiceImpl implements QuizService {
     public QuizDetailResponse getQuizDetailById(UUID quizId, UUID userId) {
         log.info("Fetching quiz by ID: {}", quizId);
 
-        Quiz quiz = quizRepo.findByQuizIdAndDeletedFalse(quizId)
+        Quiz quiz = quizRepo.findByIdWithQuestions(quizId)
                 .orElseThrow(() -> {
                     log.warn("Quiz not found with ID: {}", quizId);
                     return new QuizNotFoundException("Quiz not found");
@@ -175,10 +171,6 @@ public class QuizServiceImpl implements QuizService {
             log.warn("Access denied to private quiz: {} by user: {}", quizId, userId);
             throw new UnauthorizedException("Quiz is private");
         }
-
-        // Load questions
-        List<Question> questions = questionRepo.findByQuizQuizIdAndDeletedFalseOrderByOrderIndexAsc(quizId);
-        quiz.setQuestions(questions);
 
         QuizDetailResponse response = quizMapper.toDetailDto(quiz);
 
