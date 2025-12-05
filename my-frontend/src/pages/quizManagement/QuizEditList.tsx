@@ -1,29 +1,39 @@
-import React from "react";
+import React, { useMemo } from "react";
+import { Button, Spin, Empty, Space, Pagination, Tag, Tooltip } from "antd";
+import {
+  PlusCircleOutlined,
+  BulbOutlined,
+  LoadingOutlined,
+} from "@ant-design/icons";
 import QuestionEditorCard from "@/components/cards/QuestionEditorCard";
-import { Question } from "@/interfaces";
-import CustomPagination from "@/components/paginations/CustomPagination";
+import { QuestionResponseDTO } from "@/services/questionService";
 
-type QuestionWithClientKey = Question & { clientKey: string };
+type QuestionWithClientKey = QuestionResponseDTO & { clientKey: string };
 
-type Props = {
+interface QuizEditListProps {
   quizId: string;
   questions: QuestionWithClientKey[];
   loading: boolean;
-
   page: number; // 0-based index
   size: number;
   total: number;
   onPageChange: (page0Based: number, size: number) => void;
-
   onAddQuestion: () => void;
-  onTimeChange: (quizId: string, questionIdOrClientKey: string, time: number) => void;
-  onPointsChange: (quizId: string, questionIdOrClientKey: string, points: number) => void;
-
+  onTimeChange: (
+    quizId: string,
+    questionIdOrClientKey: string,
+    time: number
+  ) => void;
+  onPointsChange: (
+    quizId: string,
+    questionIdOrClientKey: string,
+    points: number
+  ) => void;
   onAddSimilar: () => void;
   aiLoading?: boolean;
-};
+}
 
-const QuizEditList: React.FC<Props> = ({
+const QuizEditList: React.FC<QuizEditListProps> = ({
   quizId,
   questions,
   loading,
@@ -37,105 +47,194 @@ const QuizEditList: React.FC<Props> = ({
   onAddSimilar,
   aiLoading = false,
 }) => {
-  const start = total === 0 ? 0 : page * size + 1;
-  const end = Math.min(total, page * size + questions.length);
-  const totalPoints = questions.reduce((sum, q) => sum + (q.points || 0), 0);
+  // Calculate pagination info
+  const paginationInfo = useMemo(() => {
+    const start = total === 0 ? 0 : page * size + 1;
+    const end = Math.min(total, page * size + questions.length);
+    const totalPoints = questions.reduce((sum, q) => sum + (q.points || 0), 0);
 
-  const handleChange = (newPage: number) => {
-    onPageChange(newPage - 1, size); // ✅ chuyển 1-based → 0-based
+    return { start, end, totalPoints };
+  }, [page, size, total, questions]);
+
+  /**
+   * Handle pagination change (convert 1-based to 0-based)
+   */
+  const handlePageChange = (newPage: number) => {
+    onPageChange(newPage - 1, size);
+  };
+
+  /**
+   * Handle page size change
+   */
+  const handlePageSizeChange = (_current: number, newSize: number) => {
+    onPageChange(0, newSize);
   };
 
   return (
-    <div className="row">
-      {/* Header tools */}
-      <div className="d-flex justify-content-between align-items-center mb-4">
-        <div className="d-flex align-items-baseline gap-2">
-          <div className="fw-bold fs-5">
-            {start}-{end}
-          </div>
-          <div className="fw-bold fs-6">of {total} questions</div>
-          <div className="text-muted small">({totalPoints} points on this page)</div>
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: "1.5rem",
+      }}
+    >
+      {/* Header Controls */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          padding: "1rem",
+          background: "var(--surface-alt)",
+          borderRadius: "var(--border-radius)",
+          flexWrap: "wrap",
+          gap: "1rem",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "1rem",
+            fontSize: "14px",
+            color: "var(--text-light)",
+          }}
+        >
+          <span style={{ fontWeight: 600, color: "var(--text-color)" }}>
+            {paginationInfo.start}-{paginationInfo.end}
+          </span>
+          <span>of {total} questions</span>
+          <span>
+            ({paginationInfo.totalPoints} pts on this page)
+          </span>
         </div>
-        <button className="btn btn-outline-secondary btn-sm me-2" onClick={onAddQuestion}>
-          <i className="bx bx-plus-circle"></i>
-          <span className="ms-1">Thêm câu hỏi</span>
-        </button>
+
+        <Tooltip title="Add a new question">
+          <Button
+            type="primary"
+            icon={<PlusCircleOutlined />}
+            onClick={onAddQuestion}
+            size="middle"
+          >
+            Add Question
+          </Button>
+        </Tooltip>
       </div>
 
-      {/* List / empty / loading */}
-      {loading ? (
-        <div className="text-center py-4">
-          <div className="spinner-border text-primary" role="status">
-            <span className="visually-hidden">Loading…</span>
+      {/* Questions List or Empty State */}
+      <div>
+        {loading ? (
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "center",
+              alignItems: "center",
+              padding: "3rem 1rem",
+              minHeight: "300px",
+            }}
+          >
+            <Spin tip="Loading questions..." size="large" />
           </div>
-          <p className="mt-2">Đang tải câu hỏi...</p>
-        </div>
-      ) : questions.length > 0 ? (
-        <div>
-          {questions.map((q, idx) => {
-            const key = q.clientKey || q.questionId || `q-${idx}`;
-            const globalIndex = page * size + idx;
-            return (
-              <QuestionEditorCard
-                key={key}
-                quizId={quizId}
-                question={q}
-                index={globalIndex}
-                onTimeChange={onTimeChange}
-                onPointsChange={onPointsChange}
-              />
-            );
-          })}
-        </div>
-      ) : (
-        <div className="text-center py-4 card shadow-sm">
-          <div className="card-body">
-            <p className="mb-3">Chưa có câu hỏi nào. Hãy thêm câu hỏi đầu tiên!</p>
-            <button className="btn btn-primary" onClick={onAddQuestion}>
-              <i className="bx bx-plus-circle me-1"></i>
-              <span>Thêm câu hỏi</span>
-            </button>
+        ) : questions.length > 0 ? (
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "1.25rem",
+            }}
+          >
+            {questions.map((q, idx) => {
+              const key = q.clientKey || q.questionId || `q-${idx}`;
+              const globalIndex = page * size + idx + 1;
+
+              return (
+                <QuestionEditorCard
+                  key={key}
+                  quizId={quizId}
+                  question={q}
+                  index={globalIndex}
+                  onTimeChange={onTimeChange}
+                  onPointsChange={onPointsChange}
+                />
+              );
+            })}
           </div>
-        </div>
-      )}
+        ) : (
+          <Empty
+            description="No questions yet"
+            style={{
+              padding: "3rem 1rem",
+            }}
+          >
+            <Tooltip title="Create your first question">
+              <Button
+                type="primary"
+                icon={<PlusCircleOutlined />}
+                onClick={onAddQuestion}
+                size="large"
+              >
+                Add First Question
+              </Button>
+            </Tooltip>
+          </Empty>
+        )}
+      </div>
 
-      {/* Bottom controls */}
-      <div className="d-flex justify-content-between align-items-center mt-4">
-        <div>
-          <button className="btn btn-outline-primary me-2" onClick={onAddQuestion}>
-            <i className="bx bx-plus-circle"></i>
-            <span className="ms-1">Thêm câu hỏi</span>
-          </button>
+      {/* Bottom Action Buttons */}
+      <div
+        style={{
+          display: "flex",
+          gap: "0.75rem",
+          flexWrap: "wrap",
+          padding: "1rem",
+          background: "var(--surface-alt)",
+          borderRadius: "var(--border-radius)",
+        }}
+      >
+        <Tooltip title="Add a new question to quiz">
+          <Button
+            type="default"
+            icon={<PlusCircleOutlined />}
+            onClick={onAddQuestion}
+          >
+            Add Question
+          </Button>
+        </Tooltip>
 
-          <button
-            className="btn btn-outline-secondary"
+        <Tooltip title="Generate similar questions using AI based on existing questions">
+          <Button
+            type="default"
+            icon={<BulbOutlined />}
             onClick={onAddSimilar}
             disabled={aiLoading}
-            title="AI sẽ gợi ý câu hỏi tương tự"
+            loading={aiLoading}
           >
-            {aiLoading ? (
-              <>
-                <span className="spinner-border spinner-border-sm me-2"></span>
-                <span>Đang sinh (AI)...</span>
-              </>
-            ) : (
-              <>
-                <i className="bx bx-bulb"></i>
-                <span className="ms-1">Thêm tương tự (AI)</span>
-              </>
-            )}
-          </button>
-        </div>
+            {aiLoading ? "Generating (AI)..." : "AI Suggestions"}
+          </Button>
+        </Tooltip>
       </div>
 
-      {/* ✅ Custom Pagination */}
+      {/* Pagination */}
       {total > 0 && (
-        <div className="d-flex justify-content-end align-items-center mt-4">
-          <CustomPagination
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "center",
+            padding: "1rem",
+            background: "var(--surface-alt)",
+            borderRadius: "var(--border-radius)",
+          }}
+        >
+          <Pagination
             current={page + 1}
             total={total}
             pageSize={size}
-            onChange={handleChange}
+            onChange={handlePageChange}
+            onShowSizeChange={handlePageSizeChange}
+            showSizeChanger
+            showTotal={(total) => `Total ${total} questions`}
+            pageSizeOptions={["5", "10", "20", "50"]}
+            style={{ marginBottom: 0 }}
           />
         </div>
       )}
@@ -143,4 +242,4 @@ const QuizEditList: React.FC<Props> = ({
   );
 };
 
-export default QuizEditList;
+export default  QuizEditList;

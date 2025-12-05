@@ -10,7 +10,9 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UpdateTimestamp;
+import org.hibernate.type.SqlTypes;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -56,6 +58,7 @@ public class Quiz {
     private List<Question> questions = new ArrayList<>();
 
     @Column(columnDefinition = "JSONB")
+    @JdbcTypeCode(SqlTypes.JSON)
     private String tagsJson = "[]";
 
     @Enumerated(EnumType.STRING)
@@ -73,6 +76,7 @@ public class Quiz {
     private String accessPassword;
 
     @Column(columnDefinition = "JSONB")
+    @JdbcTypeCode(SqlTypes.JSON)
     private String allowedUserIdsJson = "[]";
 
     // Soft delete

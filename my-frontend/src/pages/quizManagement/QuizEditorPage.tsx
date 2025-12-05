@@ -1,14 +1,19 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { notification } from "antd";
+import { notification, Spin } from "antd";
 import { useParams, useNavigate } from "react-router-dom";
 import {
-  getPagedQuestionsByQuizId,
   getQuizById,
-  publishedQuiz,
+  publishQuiz,
   generateQuestionsByTopic,
   TopicGenerateRequest,
   addAiQuestionsToQuiz,
+  QuizDetailResponse,
 } from "@/services/quizService";
+import {
+  getQuestionsByQuiz,
+  addAiQuestionsToQuiz as addQuestionsToQuiz,
+  QuestionResponseDTO,
+} from "@/services/questionService";
 
 import QuestionEditorHeader from "@/components/headers/QuestionEditorHeader";
 import QuestionEditorSidebar from "@/components/sidebars/QuestionEditorSidebar";
@@ -16,12 +21,14 @@ import AddQuestionByTypeModal from "@/components/modals/AddQuestionByTypeModal";
 import AiSuggestionModal from "@/components/modals/AiSuggestionModal";
 import TopicGenerateModal from "@/components/modals/TopicGenerateModal";
 
-import { Question, Quiz } from "@/interfaces";
 import QuizEditList from "./QuizEditList";
 
 let clientKeyCounter = 0;
 
-function genIdFallback() {
+/**
+ * Generate unique client key for questions
+ */
+function genIdFallback(): string {
   clientKeyCounter += 1;
   const timestamp = Date.now();
   const random = Math.random().toString(36).slice(2, 9);
@@ -30,6 +37,9 @@ function genIdFallback() {
 
 type WithClientKey<T> = T & { clientKey: string };
 
+/**
+ * Ensure all questions have a clientKey
+ */
 function withClientKey<T extends { questionId?: string; clientKey?: string }>(
   arr: T[]
 ): WithClientKey<T>[] {
@@ -48,115 +58,187 @@ function withClientKey<T extends { questionId?: string; clientKey?: string }>(
   });
 }
 
+interface QuizEditorState {
+  quiz: QuizDetailResponse | null;
+  questions: WithClientKey<QuestionResponseDTO>[];
+  loading: boolean;
+  publishing: boolean;
+  page: number;
+  size: number;
+  total: number;
+  topicModalOpen: boolean;
+  aiModalVisible: boolean;
+  aiQuestions: any[];
+  aiLoading: boolean;
+  savingAi: boolean;
+}
+
 const QuizEditorPage: React.FC = () => {
   const { quizId } = useParams<{ quizId: string }>();
   const navigate = useNavigate();
 
-  const [quiz, setQuiz] = useState<Quiz | null>(null);
-  const [questions, setQuestions] = useState<WithClientKey<Question>[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [state, setState] = useState<QuizEditorState>({
+    quiz: null,
+    questions: [],
+    loading: true,
+    publishing: false,
+    page: 0,
+    size: 10,
+    total: 0,
+    topicModalOpen: false,
+    aiModalVisible: false,
+    aiQuestions: [],
+    aiLoading: false,
+    savingAi: false,
+  });
+
   const [showModal, setShowModal] = useState(false);
-  const [publishing, setPublishing] = useState(false);
 
-  const [page, setPage] = useState<number>(0);
-  const [size, setSize] = useState<number>(10);
-  const [total, setTotal] = useState<number>(0);
-
-  const [topicModalOpen, setTopicModalOpen] = useState(false);
-  const [aiModalVisible, setAiModalVisible] = useState(false);
-  const [aiQuestions, setAiQuestions] = useState<Question[]>([]);
-  const [aiLoading, setAiLoading] = useState(false);
-
-  const [savingAi, setSavingAi] = useState(false);
-
+  /**
+   * Fetch quiz details
+   */
   const fetchQuiz = useCallback(async () => {
     if (!quizId) return;
     try {
       const data = await getQuizById(quizId);
-      setQuiz(data ?? null);
+      setState((prev) => ({ ...prev, quiz: data }));
     } catch (err) {
       console.error("Error fetching quiz:", err);
+      notification.error({
+        message: "Error",
+        description: "Failed to load quiz details",
+      });
     }
   }, [quizId]);
 
+  /**
+   * Fetch paginated questions for quiz
+   */
   const fetchQuestions = useCallback(async () => {
     if (!quizId) return;
-    setLoading(true);
+
+    setState((prev) => ({ ...prev, loading: true }));
     try {
-      const data = await getPagedQuestionsByQuizId(quizId, page, size);
+      const response = await getQuestionsByQuiz(quizId, state.page, state.size);
+      const content = Array.isArray(response?.content) ? response.content : [];
+      const processed = withClientKey(
+        content as QuestionResponseDTO[]
+      );
 
-      const content = Array.isArray(data?.content) ? data.content : [];
-      const processed = withClientKey(content as Question[]);
-
-      setQuestions(processed);
-      setTotal(data?.totalElements ?? 0);
+      setState((prev) => ({
+        ...prev,
+        questions: processed,
+        total: response?.totalElements ?? 0,
+        loading: false,
+      }));
     } catch (err) {
       console.error("Error fetching questions:", err);
       notification.error({
         message: "Error",
-        description: "Unable to load the question list.",
+        description: "Unable to load the question list",
       });
-      setQuestions([]);
-      setTotal(0);
-    } finally {
-      setLoading(false);
+      setState((prev) => ({
+        ...prev,
+        questions: [],
+        total: 0,
+        loading: false,
+      }));
     }
-  }, [quizId, page, size]);
+  }, [quizId, state.page, state.size]);
 
+  /**
+   * Initial load - fetch quiz info
+   */
   useEffect(() => {
     fetchQuiz();
   }, [fetchQuiz]);
 
+  /**
+   * Fetch questions when page/size changes
+   */
   useEffect(() => {
     fetchQuestions();
   }, [fetchQuestions]);
 
+  /**
+   * Handle publish quiz
+   */
   const handlePublish = async () => {
     if (!quizId) return;
-    setPublishing(true);
+
+    setState((prev) => ({ ...prev, publishing: true }));
     try {
-      await publishedQuiz(quizId);
+      await publishQuiz(quizId);
       notification.success({
         message: "Success",
-        description: "The quiz has been published successfully!",
+        description: "Quiz published successfully!",
       });
+      fetchQuiz();
     } catch (err) {
       notification.error({
         message: "Error",
-        description: "Failed to publish the quiz!",
+        description: "Failed to publish quiz",
       });
     } finally {
-      setPublishing(false);
+      setState((prev) => ({ ...prev, publishing: false }));
     }
   };
 
-  const onPageChange = (nextPage0: number, nextSize: number) => {
-    if (nextSize !== size) {
-      setSize(nextSize);
-      setPage(0);
+  /**
+   * Handle pagination change
+   */
+  const handlePageChange = (nextPage: number, nextSize: number) => {
+    if (nextSize !== state.size) {
+      setState((prev) => ({
+        ...prev,
+        page: 0,
+        size: nextSize,
+      }));
     } else {
-      setPage(nextPage0);
+      setState((prev) => ({
+        ...prev,
+        page: nextPage,
+      }));
     }
   };
 
+  /**
+   * Close AI modal
+   */
   const handleCloseAiModal = useCallback(() => {
-    if (savingAi) return;
+    if (state.savingAi) return;
 
-    setAiModalVisible(false);
+    setState((prev) => ({
+      ...prev,
+      aiModalVisible: false,
+    }));
+
     setTimeout(() => {
-      setAiQuestions([]);
-      setTopicModalOpen(false);
+      setState((prev) => ({
+        ...prev,
+        aiQuestions: [],
+        topicModalOpen: false,
+      }));
     }, 300);
-  }, [savingAi]);
+  }, [state.savingAi]);
 
+  /**
+   * Handle add similar questions
+   */
   const handleAddSimilar = () => {
-    setAiQuestions([]);
-    setAiModalVisible(false);
-    setTopicModalOpen(true);
+    setState((prev) => ({
+      ...prev,
+      aiQuestions: [],
+      aiModalVisible: false,
+      topicModalOpen: true,
+    }));
   };
 
+  /**
+   * Handle generate questions by topic
+   */
   const handleSubmitTopic = async (payload: TopicGenerateRequest) => {
-    setAiLoading(true);
+    setState((prev) => ({ ...prev, aiLoading: true }));
     try {
       const req = {
         ...payload,
@@ -179,86 +261,108 @@ const QuizEditorPage: React.FC = () => {
       });
 
       if (validQuestions.length === 0) {
-        throw { __isEmptyAI: true, message: "No valid questions generated" };
+        throw {
+          __isEmptyAI: true,
+          message: "No valid questions generated",
+        };
       }
 
-      setAiQuestions(validQuestions);
-      setAiModalVisible(true);
-      setTopicModalOpen(false);
+      setState((prev) => ({
+        ...prev,
+        aiQuestions: validQuestions,
+        aiModalVisible: true,
+        topicModalOpen: false,
+      }));
     } catch (e: any) {
       const status = e?.__status;
       const isEmpty = e?.__isEmptyAI;
-      let description = "Không thể sinh câu hỏi từ AI!";
+      let description = "Unable to generate questions from AI";
 
       if (status === 503 || status === 429) {
         description =
-          "Hệ thống AI đang bận (503/429). Vui lòng thử lại sau vài giây.";
+          "AI system is busy. Please try again in a few seconds.";
       } else if (isEmpty) {
         description =
-          "AI trả về rỗng hoặc sai định dạng. Hãy cụ thể hơn chủ đề hoặc giảm số câu.";
+          "AI returned empty or invalid format. Be more specific or reduce question count.";
       } else if (e?.message) {
         description = e.message;
       }
 
       notification.error({ message: "Error", description });
     } finally {
-      setAiLoading(false);
+      setState((prev) => ({ ...prev, aiLoading: false }));
     }
   };
 
-  const handleAcceptAiQuestions = async (selected: Question[]) => {
+  /**
+   * Handle accept and save AI questions
+   */
+  const handleAcceptAiQuestions = async (selected: any[]) => {
     if (!quizId) return;
 
     if (!Array.isArray(selected) || selected.length === 0) {
-      setAiModalVisible(false);
-      setTimeout(() => setAiQuestions([]), 300);
+      setState((prev) => ({
+        ...prev,
+        aiModalVisible: false,
+      }));
+      setTimeout(() => {
+        setState((prev) => ({
+          ...prev,
+          aiQuestions: [],
+        }));
+      }, 300);
       return;
     }
 
-    setSavingAi(true);
+    setState((prev) => ({ ...prev, savingAi: true }));
     try {
+      // Use addAiQuestionsToQuiz from quizService which delegates to questionService
       const saved = await addAiQuestionsToQuiz(quizId, selected);
 
       if (!Array.isArray(saved)) {
         throw new Error("Invalid response from addAiQuestionsToQuiz");
       }
 
-      const prepared = withClientKey(saved as Question[]);
+      const prepared = withClientKey(saved as QuestionResponseDTO[]);
 
-      setQuestions((prev) => {
-        const updated = [...prepared, ...prev];
-        return updated;
-      });
-
-      setTotal((prev) => {
-        const newTotal = prev + prepared.length;
-        return newTotal;
-      });
+      setState((prev) => ({
+        ...prev,
+        questions: [...prepared, ...prev.questions],
+        total: prev.total + prepared.length,
+        aiModalVisible: false,
+        savingAi: false,
+      }));
 
       notification.success({
-        message: "Đã thêm",
-        description: `Đã lưu ${prepared.length} câu hỏi vào quiz`,
+        message: "Success",
+        description: `Added ${prepared.length} questions to quiz`,
       });
 
-      setAiModalVisible(false);
-      setSavingAi(false);
-
       setTimeout(() => {
-        setAiQuestions([]);
-        setAiLoading(false);
+        setState((prev) => ({
+          ...prev,
+          aiQuestions: [],
+          aiLoading: false,
+        }));
       }, 300);
     } catch (e: any) {
       console.error("❌ Error in handleAcceptAiQuestions:", e);
-      setSavingAi(false);
+
+      setState((prev) => ({
+        ...prev,
+        savingAi: false,
+      }));
 
       const status = e?.__status || e?.response?.status;
-      let description = e?.message || "Lỗi khi thêm câu hỏi (bulk).";
+      let description =
+        e?.message || "Error adding questions (bulk operation)";
 
       if (status === 400) {
-        description = "Dữ liệu không hợp lệ. Kiểm tra lại dạng câu hỏi/đáp án.";
+        description =
+          "Invalid data. Check question/answer format.";
       }
       if (status === 404) {
-        description = "Quiz không tồn tại.";
+        description = "Quiz not found";
       }
 
       notification.error({ message: "Error", description });
@@ -266,45 +370,53 @@ const QuizEditorPage: React.FC = () => {
     }
   };
 
+  /**
+   * Handle time limit change
+   */
   const handleTimeChange = useCallback(
-    (_qz: any, qidOrKey: string, t: number) => {
-      setQuestions((prev) =>
-        prev.map((q) => {
+    (_quizId: string, questionId: string, timeLimit: number) => {
+      setState((prev) => ({
+        ...prev,
+        questions: prev.questions.map((q) => {
           const key = q.questionId ?? q.clientKey;
-          if (key !== qidOrKey) return q;
-
-          return { ...q, timeLimit: t };
-        })
-      );
+          if (key !== questionId) return q;
+          return { ...q, timeLimitSeconds: timeLimit };
+        }),
+      }));
     },
     []
   );
 
+  /**
+   * Handle points change
+   */
   const handlePointsChange = useCallback(
-    (_qz: any, qidOrKey: string, p: number) => {
-      setQuestions((prev) =>
-        prev.map((q) => {
+    (_quizId: string, questionId: string, points: number) => {
+      setState((prev) => ({
+        ...prev,
+        questions: prev.questions.map((q) => {
           const key = q.questionId ?? q.clientKey;
-          if (key !== qidOrKey) return q;
-
-          return { ...q, points: p };
-        })
-      );
+          if (key !== questionId) return q;
+          return { ...q, points };
+        }),
+      }));
     },
     []
   );
 
-  const fallbackSeedFromQuestions = questions
-    .slice(-3)
-    .map((q) => q.questionText)
-    .filter(Boolean)
-    .join("; ");
-
-  const topicSeed =
-    (quiz?.title?.trim() || "") ||
-    (quiz?.description?.trim() || "") ||
-    fallbackSeedFromQuestions ||
-    "";
+  /**
+   * Generate topic seed from quiz title/description/recent questions
+   */
+  const topicSeed = (
+    state.quiz?.title?.trim() ||
+    state.quiz?.description?.trim() ||
+    state.questions
+      .slice(-3)
+      .map((q) => q.questionText)
+      .filter(Boolean)
+      .join("; ") ||
+    ""
+  ).substring(0, 200); // Limit to 200 chars
 
   return (
     <div
@@ -318,7 +430,7 @@ const QuizEditorPage: React.FC = () => {
       <QuestionEditorHeader
         onBack={() => navigate(`/quizzes/${quizId}`)}
         onPublish={handlePublish}
-        publishing={publishing}
+        publishing={state.publishing}
       />
 
       <div
@@ -328,33 +440,46 @@ const QuizEditorPage: React.FC = () => {
           padding: "2rem 1rem",
         }}
       >
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 3fr",
-            gap: "2rem",
-            alignItems: "start",
-            justifyItems: "center",
-          }}
-        >
-          <QuestionEditorSidebar />
-          <QuizEditList
-            quizId={quizId ?? ""}
-            questions={questions}
-            loading={loading}
-            page={page}
-            size={size}
-            total={total}
-            onPageChange={onPageChange}
-            onAddQuestion={() => setShowModal(true)}
-            onTimeChange={handleTimeChange}
-            onPointsChange={handlePointsChange}
-            onAddSimilar={handleAddSimilar}
-            aiLoading={aiLoading || savingAi}
-          />
-        </div>
+        {state.loading ? (
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "center",
+              alignItems: "center",
+              minHeight: "400px",
+            }}
+          >
+            <Spin tip="Loading quiz..." />
+          </div>
+        ) : (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 3fr",
+              gap: "2rem",
+              alignItems: "start",
+            }}
+          >
+            <QuestionEditorSidebar />
+            <QuizEditList
+              quizId={quizId ?? ""}
+              questions={state.questions}
+              loading={state.loading}
+              page={state.page}
+              size={state.size}
+              total={state.total}
+              onPageChange={handlePageChange}
+              onAddQuestion={() => setShowModal(true)}
+              onTimeChange={handleTimeChange}
+              onPointsChange={handlePointsChange}
+              onAddSimilar={handleAddSimilar}
+              aiLoading={state.aiLoading || state.savingAi}
+            />
+          </div>
+        )}
       </div>
 
+      {/* Add Question Modal */}
       <AddQuestionByTypeModal
         show={showModal}
         onHide={() => setShowModal(false)}
@@ -364,10 +489,16 @@ const QuizEditorPage: React.FC = () => {
         }}
       />
 
+      {/* Topic Generate Modal */}
       <TopicGenerateModal
-        open={topicModalOpen}
-        loading={aiLoading}
-        onCancel={() => setTopicModalOpen(false)}
+        open={state.topicModalOpen}
+        loading={state.aiLoading}
+        onCancel={() =>
+          setState((prev) => ({
+            ...prev,
+            topicModalOpen: false,
+          }))
+        }
         initial={{
           topic: topicSeed,
           count: 5,
@@ -379,10 +510,11 @@ const QuizEditorPage: React.FC = () => {
         onSubmit={handleSubmitTopic}
       />
 
+      {/* AI Suggestion Modal */}
       <AiSuggestionModal
-        show={aiModalVisible}
-        loading={aiLoading || savingAi}
-        questions={aiQuestions}
+        show={state.aiModalVisible}
+        loading={state.aiLoading || state.savingAi}
+        questions={state.aiQuestions}
         onClose={handleCloseAiModal}
         onAccept={handleAcceptAiQuestions}
       />

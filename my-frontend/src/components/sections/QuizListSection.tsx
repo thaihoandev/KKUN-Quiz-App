@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
-import { Quiz } from "@/interfaces";
-import { getPublishedQuizzes } from "@/services/quizService";
+import { PageResponse } from "@/interfaces";
+import { getPublishedQuizzes, QuizSummaryDto } from "@/services/quizService";
 import ProcessQuizCard from "../cards/ProcessQuizCard";
 
 interface QuizListSectionProps {
@@ -12,7 +12,7 @@ const QuizListSection = ({
   initialPage = 0,
   pageSize = 6,
 }: QuizListSectionProps) => {
-  const [quizzes, setQuizzes] = useState<Quiz[]>([]);
+  const [quizzes, setQuizzes] = useState<QuizSummaryDto[]>([]);
   const [totalPages, setTotalPages] = useState(0);
   const [currentPage, setCurrentPage] = useState(initialPage);
   const [loading, setLoading] = useState(true);
@@ -25,41 +25,77 @@ const QuizListSection = ({
     };
 
     checkDarkMode();
-
     const observer = new MutationObserver(checkDarkMode);
     observer.observe(document.body, { attributes: true, attributeFilter: ["class"] });
 
     return () => observer.disconnect();
   }, []);
 
-  // Fetch quizzes
+  // Fetch quizzes - dùng đúng signature mới của getPublishedQuizzes
   useEffect(() => {
     const fetchQuizzes = async () => {
       setLoading(true);
       try {
-        const response = await getPublishedQuizzes(
+        // Ưu tiên sort theo recommendationScore nếu có, fallback về startCount hoặc createdAt
+        const response: PageResponse<QuizSummaryDto> = await getPublishedQuizzes(
+          undefined,        // keyword
           currentPage,
           pageSize,
-          "recommendationScore,desc"
+          "createdAt",  // sortBy
+          "DESC"                    // sortDirection
         );
-        if (response) {
+
+        // Nếu backend không hỗ trợ recommendationScore (trả về lỗi hoặc rỗng), fallback
+        if (!response || response.content.length === 0 && currentPage === 0) {
+          const fallback = await getPublishedQuizzes(
+            undefined,
+            currentPage,
+            pageSize,
+            "startCount",
+            "DESC"
+          );
+          setQuizzes(fallback.content);
+          setTotalPages(fallback.totalPages);
+        } else {
           setQuizzes(response.content);
           setTotalPages(response.totalPages);
         }
-      } catch (e) {
+      } catch (e: any) {
         console.error("Failed to fetch quizzes:", e);
-        setQuizzes([]);
-        setTotalPages(0);
+
+        // Fallback khi recommendationScore chưa được hỗ trợ
+        if (e?.response?.status === 400 || e?.message?.includes("sort")) {
+          try {
+            const fallback = await getPublishedQuizzes(
+              undefined,
+              currentPage,
+              pageSize,
+              "startCount",
+              "DESC"
+            );
+            setQuizzes(fallback.content);
+            setTotalPages(fallback.totalPages);
+          } catch (fallbackError) {
+            setQuizzes([]);
+            setTotalPages(0);
+          }
+        } else {
+          setQuizzes([]);
+          setTotalPages(0);
+        }
       } finally {
         setLoading(false);
       }
     };
+
     fetchQuizzes();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPage, pageSize]);
 
   const handlePageChange = (page: number) => {
     if (page < 0 || page >= totalPages) return;
     setCurrentPage(page);
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   return (
@@ -88,7 +124,7 @@ const QuizListSection = ({
               transition: "color 0.25s ease",
             }}
           >
-            ⭐ Recommended Quizzes
+            Recommended Quizzes
           </h4>
           <small
             style={{
@@ -96,7 +132,7 @@ const QuizListSection = ({
               transition: "color 0.25s ease",
             }}
           >
-            {loading ? "Loading…" : `Showing ${quizzes.length} item(s)`}
+            {loading ? "Loading…" : `Showing ${quizzes.length} quiz(s)`}
           </small>
         </div>
 
@@ -109,12 +145,8 @@ const QuizListSection = ({
               disabled={currentPage === 0}
               onClick={() => handlePageChange(0)}
               aria-label="First page"
-              title="First page"
-              style={{
-                transition: "all 0.25s ease",
-              }}
             >
-              <i className="bx bx-chevrons-left" style={{ fontSize: "1rem" }} />
+              <i className="bx bx-chevrons-left" />
             </button>
             <button
               type="button"
@@ -122,24 +154,12 @@ const QuizListSection = ({
               disabled={currentPage === 0}
               onClick={() => handlePageChange(currentPage - 1)}
               aria-label="Previous page"
-              title="Previous page"
-              style={{
-                transition: "all 0.25s ease",
-              }}
             >
-              <i className="bx bx-chevron-left" style={{ fontSize: "1rem" }} />
+              <i className="bx bx-chevron-left" />
             </button>
 
-            <span
-              className="small"
-              style={{
-                color: "var(--text-muted)",
-                whiteSpace: "nowrap",
-                transition: "color 0.25s ease",
-              }}
-            >
-              Page <strong style={{ color: "var(--text-color)" }}>{currentPage + 1}</strong> /{" "}
-              {totalPages}
+            <span className="small text-muted">
+              Page <strong className="text-primary">{currentPage + 1}</strong> of {totalPages}
             </span>
 
             <button
@@ -148,12 +168,8 @@ const QuizListSection = ({
               disabled={currentPage >= totalPages - 1}
               onClick={() => handlePageChange(currentPage + 1)}
               aria-label="Next page"
-              title="Next page"
-              style={{
-                transition: "all 0.25s ease",
-              }}
             >
-              <i className="bx bx-chevron-right" style={{ fontSize: "1rem" }} />
+              <i className="bx bx-chevron-right" />
             </button>
             <button
               type="button"
@@ -161,77 +177,30 @@ const QuizListSection = ({
               disabled={currentPage >= totalPages - 1}
               onClick={() => handlePageChange(totalPages - 1)}
               aria-label="Last page"
-              title="Last page"
-              style={{
-                transition: "all 0.25s ease",
-              }}
             >
-              <i className="bx bx-chevrons-right" style={{ fontSize: "1rem" }} />
+              <i className="bx bx-chevrons-right" />
             </button>
           </div>
         )}
       </div>
 
       {/* Card Body */}
-      <div className="card-body pt-2">
+      <div className="card-body pt-4">
         {loading ? (
-          // Loading State - Skeleton
           <div className="row gy-4">
             {Array.from({ length: pageSize }).map((_, i) => (
               <div key={i} className="col-12 col-sm-6 col-lg-4">
                 <div
-                  className="card rounded-3 border-0 shadow-sm"
-                  style={{
-                    background: "var(--surface-alt)",
-                    animation: "pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite",
-                  }}
+                  className="card rounded-3 border-0 shadow-sm h-100 placeholder-glow"
+                  style={{ background: "var(--surface-alt)" }}
                 >
                   <div className="card-body">
-                    <div className="placeholder-glow">
-                      <div
-                        className="placeholder col-8 mb-2"
-                        style={{
-                          backgroundColor: "var(--border-color)",
-                          height: "14px",
-                        }}
-                      />
-                      <div
-                        className="placeholder col-6 mb-2"
-                        style={{
-                          backgroundColor: "var(--border-color)",
-                          height: "12px",
-                        }}
-                      />
-                      <div
-                        className="placeholder col-10 mb-2"
-                        style={{
-                          backgroundColor: "var(--border-color)",
-                          height: "12px",
-                        }}
-                      />
-                      <div
-                        className="placeholder col-7 mb-2"
-                        style={{
-                          backgroundColor: "var(--border-color)",
-                          height: "12px",
-                        }}
-                      />
-                      <div className="d-flex gap-2 mt-3">
-                        <span
-                          className="placeholder col-3"
-                          style={{
-                            backgroundColor: "var(--border-color)",
-                            height: "20px",
-                          }}
-                        />
-                        <span
-                          className="placeholder col-4"
-                          style={{
-                            backgroundColor: "var(--border-color)",
-                            height: "20px",
-                          }}
-                        />
-                      </div>
+                    <div className="placeholder col-8 mb-3 h-20px" />
+                    <div className="placeholder col-10 mb-2 h-16px" />
+                    <div className="placeholder col-7 mb-4 h-16px" />
+                    <div className="d-flex gap-2">
+                      <div className="placeholder col-4 h-32px rounded" />
+                      <div className="placeholder col-5 h-32px rounded" />
                     </div>
                   </div>
                 </div>
@@ -239,37 +208,21 @@ const QuizListSection = ({
             ))}
           </div>
         ) : quizzes.length === 0 ? (
-          // Empty State
-          <div
-            className="text-center py-5"
-            style={{
-              color: "var(--text-muted)",
-              transition: "color 0.25s ease",
-            }}
-          >
-            <i
-              className="bx bx-notepad"
-              style={{
-                fontSize: "3rem",
-                display: "block",
-                marginBottom: "1rem",
-                opacity: 0.6,
-              }}
-            />
-            <p style={{ margin: 0, fontSize: "1rem" }}>
-              No quizzes available right now.
-            </p>
+          <div className="text-center py-5 text-muted">
+            <i className="bx bx-notepad" style={{ fontSize: "4rem", opacity: 0.5 }} />
+            <p className="mt-3 mb-0">No recommended quizzes available at the moment.</p>
           </div>
         ) : (
-          // Quizzes Grid
           <div className="row g-4">
             {quizzes.map((quiz, index) => (
-              <div 
+              <div
                 key={quiz.quizId}
                 className="col-12 col-sm-6 col-lg-4"
                 style={{
-                  animation: `slideInUp 0.5s ease forwards`,
+                  animation: `slideInUp 0.6s ease forwards`,
                   animationDelay: `${index * 0.1}s`,
+                  opacity: 0,
+                  animationFillMode: "forwards",
                 }}
               >
                 <ProcessQuizCard quiz={quiz} />
@@ -279,184 +232,71 @@ const QuizListSection = ({
         )}
       </div>
 
-      {/* Card Footer - Pagination */}
-      {totalPages > 1 && (
+      {/* Footer Pagination - chỉ hiện khi có nhiều trang */}
+      {totalPages > 1 && !loading && (
         <div
           className="card-footer bg-transparent border-0 pt-0"
-          style={{
-            borderTop: "2px solid var(--border-color)",
-            transition: "border-color 0.25s ease",
-          }}
+          style={{ borderTop: "2px solid var(--border-color)" }}
         >
-          <nav
-            aria-label="Page navigation"
-            className="d-flex align-items-center justify-content-center"
-          >
-            <ul className="pagination mb-0 pagination-rounded">
-              <li
-                className={`page-item ${currentPage === 0 ? "disabled" : ""}`}
-                style={{
-                  opacity: currentPage === 0 ? 0.5 : 1,
-                  transition: "opacity 0.25s ease",
-                }}
-              >
-                <button
-                  className="page-link"
-                  onClick={() => handlePageChange(0)}
-                  aria-label="First page"
-                  disabled={currentPage === 0}
-                  style={{
-                    borderColor: "var(--border-color)",
-                    color: "var(--primary-color)",
-                    background: "var(--surface-color)",
-                    transition: "all 0.25s ease",
-                  }}
-                  onMouseEnter={(e) => {
-                    if (currentPage !== 0) {
-                      e.currentTarget.style.background = "var(--gradient-primary)";
-                      e.currentTarget.style.color = "white";
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = "var(--surface-color)";
-                    e.currentTarget.style.color = "var(--primary-color)";
-                  }}
-                >
+          <nav aria-label="Quiz pagination" className="d-flex justify-content-center">
+            <ul className="pagination mb-0">
+              <li className={`page-item ${currentPage === 0 ? "disabled" : ""}`}>
+                <button className="page-link" onClick={() => handlePageChange(0)} disabled={currentPage === 0}>
                   <i className="bx bx-chevrons-left" />
                 </button>
               </li>
-
-              <li
-                className={`page-item ${currentPage === 0 ? "disabled" : ""}`}
-                style={{
-                  opacity: currentPage === 0 ? 0.5 : 1,
-                  transition: "opacity 0.25s ease",
-                }}
-              >
-                <button
-                  className="page-link"
-                  onClick={() => handlePageChange(currentPage - 1)}
-                  aria-label="Previous page"
-                  disabled={currentPage === 0}
-                  style={{
-                    borderColor: "var(--border-color)",
-                    color: "var(--primary-color)",
-                    background: "var(--surface-color)",
-                    transition: "all 0.25s ease",
-                  }}
-                  onMouseEnter={(e) => {
-                    if (currentPage !== 0) {
-                      e.currentTarget.style.background = "var(--gradient-primary)";
-                      e.currentTarget.style.color = "white";
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = "var(--surface-color)";
-                    e.currentTarget.style.color = "var(--primary-color)";
-                  }}
-                >
+              <li className={`page-item ${currentPage === 0 ? "disabled" : ""}`}>
+                <button className="page-link" onClick={() => handlePageChange(currentPage - 1)} disabled={currentPage === 0}>
                   <i className="bx bx-chevron-left" />
                 </button>
               </li>
 
-              {/* Page Numbers */}
-              {Array.from({ length: totalPages }).map((_, index) => (
-                <li
-                  key={index}
-                  className={`page-item ${currentPage === index ? "active" : ""}`}
-                  style={{
-                    transition: "all 0.25s ease",
-                  }}
-                >
-                  <button
-                    className="page-link"
-                    onClick={() => handlePageChange(index)}
-                    aria-label={`Page ${index + 1}`}
-                    style={{
-                      borderColor: currentPage === index ? "var(--primary-color)" : "var(--border-color)",
-                      color: currentPage === index ? "white" : "var(--text-color)",
-                      background: currentPage === index ? "var(--gradient-primary)" : "var(--surface-color)",
-                      fontWeight: currentPage === index ? 600 : 500,
-                      transition: "all 0.25s ease",
-                      cursor: "pointer",
-                    }}
-                    onMouseEnter={(e) => {
-                      if (currentPage !== index) {
-                        e.currentTarget.style.background = "var(--surface-alt)";
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (currentPage !== index) {
-                        e.currentTarget.style.background = "var(--surface-color)";
-                      }
-                    }}
-                  >
-                    {index + 1}
-                  </button>
-                </li>
-              ))}
+              {Array.from({ length: Math.min(7, totalPages) }, (_, i) => {
+                let pageNum: number;
+                if (totalPages <= 7) {
+                  pageNum = i;
+                } else if (currentPage < 4) {
+                  pageNum = i;
+                } else if (currentPage > totalPages - 5) {
+                  pageNum = totalPages - 7 + i;
+                } else {
+                  pageNum = currentPage - 3 + i;
+                }
 
-              <li
-                className={`page-item ${currentPage === totalPages - 1 ? "disabled" : ""}`}
-                style={{
-                  opacity: currentPage === totalPages - 1 ? 0.5 : 1,
-                  transition: "opacity 0.25s ease",
-                }}
-              >
+                return (
+                  <li
+                    key={pageNum}
+                    className={`page-item ${currentPage === pageNum ? "active" : ""}`}
+                  >
+                    <button
+                      className="page-link"
+                      onClick={() => handlePageChange(pageNum)}
+                      style={{
+                        background: currentPage === pageNum ? "var(--gradient-primary)" : "var(--surface-color)",
+                        color: currentPage === pageNum ? "white" : "var(--text-color)",
+                        borderColor: "var(--border-color)",
+                      }}
+                    >
+                      {pageNum + 1}
+                    </button>
+                  </li>
+                );
+              }).filter(Boolean)}
+
+              <li className={`page-item ${currentPage >= totalPages - 1 ? "disabled" : ""}`}>
                 <button
                   className="page-link"
                   onClick={() => handlePageChange(currentPage + 1)}
-                  aria-label="Next page"
-                  disabled={currentPage === totalPages - 1}
-                  style={{
-                    borderColor: "var(--border-color)",
-                    color: "var(--primary-color)",
-                    background: "var(--surface-color)",
-                    transition: "all 0.25s ease",
-                  }}
-                  onMouseEnter={(e) => {
-                    if (currentPage !== totalPages - 1) {
-                      e.currentTarget.style.background = "var(--gradient-primary)";
-                      e.currentTarget.style.color = "white";
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = "var(--surface-color)";
-                    e.currentTarget.style.color = "var(--primary-color)";
-                  }}
+                  disabled={currentPage >= totalPages - 1}
                 >
                   <i className="bx bx-chevron-right" />
                 </button>
               </li>
-
-              <li
-                className={`page-item ${currentPage === totalPages - 1 ? "disabled" : ""}`}
-                style={{
-                  opacity: currentPage === totalPages - 1 ? 0.5 : 1,
-                  transition: "opacity 0.25s ease",
-                }}
-              >
+              <li className={`page-item ${currentPage >= totalPages - 1 ? "disabled" : ""}`}>
                 <button
                   className="page-link"
                   onClick={() => handlePageChange(totalPages - 1)}
-                  aria-label="Last page"
-                  disabled={currentPage === totalPages - 1}
-                  style={{
-                    borderColor: "var(--border-color)",
-                    color: "var(--primary-color)",
-                    background: "var(--surface-color)",
-                    transition: "all 0.25s ease",
-                  }}
-                  onMouseEnter={(e) => {
-                    if (currentPage !== totalPages - 1) {
-                      e.currentTarget.style.background = "var(--gradient-primary)";
-                      e.currentTarget.style.color = "white";
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = "var(--surface-color)";
-                    e.currentTarget.style.color = "var(--primary-color)";
-                  }}
+                  disabled={currentPage >= totalPages - 1}
                 >
                   <i className="bx bx-chevrons-right" />
                 </button>
@@ -466,27 +306,6 @@ const QuizListSection = ({
         </div>
       )}
 
-      <style>{`
-        @keyframes slideInUp {
-          from {
-            opacity: 0;
-            transform: translateY(20px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-
-        @keyframes pulse {
-          0%, 100% {
-            opacity: 1;
-          }
-          50% {
-            opacity: 0.5;
-          }
-        }
-      `}</style>
     </div>
   );
 };

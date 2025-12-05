@@ -98,8 +98,7 @@ public interface QuizRepo extends JpaRepository<Quiz, UUID> {
      */
     @Query("SELECT q FROM Quiz q WHERE q.published = true AND q.deleted = false AND " +
             "(LOWER(q.title) LIKE LOWER(CONCAT('%', :keyword, '%')) OR " +
-            "LOWER(q.description) LIKE LOWER(CONCAT('%', :keyword, '%')) OR " +
-            "LOWER(q.tagsJson) LIKE LOWER(CONCAT('%', :keyword, '%')))")
+            "LOWER(q.description) LIKE LOWER(CONCAT('%', :keyword, '%')))")
     Page<Quiz> searchPublicQuizzes(@Param("keyword") String keyword, Pageable pageable);
 
     /**
@@ -107,8 +106,7 @@ public interface QuizRepo extends JpaRepository<Quiz, UUID> {
      */
     @Query("SELECT q FROM Quiz q WHERE q.published = true AND q.deleted = false AND " +
             "(:keyword IS NULL OR LOWER(q.title) LIKE LOWER(CONCAT('%', :keyword, '%')) OR " +
-            "LOWER(q.description) LIKE LOWER(CONCAT('%', :keyword, '%')) OR " +
-            "LOWER(q.tagsJson) LIKE LOWER(CONCAT('%', :keyword, '%'))) AND " +
+            "LOWER(q.description) LIKE LOWER(CONCAT('%', :keyword, '%'))) AND " +
             "(:difficulty IS NULL OR q.difficulty = :difficulty) AND " +
             "(:categoryId IS NULL OR q.categoryId = :categoryId)")
     Page<Quiz> searchQuizzesAdvanced(@Param("keyword") String keyword,

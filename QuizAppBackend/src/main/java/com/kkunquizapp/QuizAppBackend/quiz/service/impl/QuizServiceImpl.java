@@ -87,7 +87,11 @@ public class QuizServiceImpl implements QuizService {
                 .estimatedMinutes(request.getEstimatedMinutes() != null ? request.getEstimatedMinutes() : 10)
                 .visibility(request.getVisibility() != null ? request.getVisibility() : Visibility.PUBLIC)
                 .accessPassword(encodedPassword)
-                .allowedUserIdsJson("[]")
+                .allowedUserIdsJson(toJsonArray(
+                        request.getAllowedUserIds() != null
+                                ? request.getAllowedUserIds().stream().map(UUID::toString).collect(Collectors.toList())
+                                : new ArrayList<>()
+                ))
                 .published(false)
                 .deleted(false)
                 .totalQuestions(0)
@@ -106,7 +110,7 @@ public class QuizServiceImpl implements QuizService {
         log.info("Quiz created successfully: {}", quiz.getQuizId());
 
         // Cache vào Redis
-        redisService.saveQuiz(quiz.getQuizId(), quiz);
+        redisService.saveQuiz(quiz.getQuizId(), quizMapper.toDetailDto(quiz));
 
         // Gửi event Kafka
         kafkaTemplate.send("quiz.events", new QuizEvent(quiz.getQuizId(), "QUIZ_CREATED", creatorId));

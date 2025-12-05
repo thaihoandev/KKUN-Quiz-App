@@ -10,6 +10,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.util.List;
+import java.util.UUID;
 
 @Data
 @NoArgsConstructor
@@ -35,5 +36,8 @@ public class QuizCreateRequest {
     private String accessPassword;
 
     private List<String> tags;
+
+    private List<UUID> allowedUserIds;
+
 }
 
