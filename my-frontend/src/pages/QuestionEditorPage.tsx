@@ -1,10 +1,10 @@
 import React, { useState } from "react";
-import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { Empty, Spin, message } from "antd";
 import {
   updateQuestion,
   QuestionResponseDTO,
-  QuestionUpdateRequest,
+  QuestionRequestDTO,
 } from "@/services/questionService";
 import QuestionForm from "@/components/forms/QuestionForm";
 
@@ -26,8 +26,12 @@ const QuestionEditorPage: React.FC = () => {
 
   /**
    * Handle save question
+   * Receives question data and optional image file from QuestionForm
    */
-  const handleSaveQuestion = async (formData: FormData) => {
+  const handleSaveQuestion = async (
+    questionData: QuestionRequestDTO,
+    imageFile?: File
+  ) => {
     try {
       if (!quizId) {
         message.error("Quiz ID not found");
@@ -41,27 +45,28 @@ const QuestionEditorPage: React.FC = () => {
 
       setState((prev) => ({ ...prev, submitting: true }));
 
-      // updateQuestion expects (questionId, request, userId)
-      // But formData comes from QuestionForm
-      // Extract question data from FormData
-      const questionBlob = formData.get("question");
-      if (!questionBlob) {
-        throw new Error("No question data in form");
-      }
+      // Map QuestionRequestDTO to QuestionUpdateRequest
+      // Only send fields that can be updated
+      const updateRequest = {
+        questionText: questionData.questionText,
+        explanation: questionData.explanation,
+        hint: questionData.hint,
+        difficulty: questionData.difficulty,
+        tags: questionData.tags,
+        points: questionData.points,
+        timeLimitSeconds: questionData.timeLimitSeconds,
+        shuffleOptions: questionData.shuffleOptions,
+        caseInsensitive: questionData.caseInsensitive,
+        partialCredit: questionData.partialCredit,
+        options: questionData.options,
+      };
 
-      const questionJson = await (questionBlob as Blob).text();
-      const updateData = JSON.parse(questionJson) as QuestionUpdateRequest;
-
-      const imageFile = formData.get("image") as File | null;
-
-      await updateQuestion(
-        question.questionId,
-        updateData,
-        imageFile || undefined
-      );
+      // Call updateQuestion with questionId, updateRequest, and optional image
+      await updateQuestion(question.questionId, updateRequest, imageFile);
 
       message.success("Question updated successfully!");
 
+      // Navigate back to quiz edit page
       navigate(`/quizzes/${quizId}/edit`, {
         state: { updatedQuestion: true },
       });
@@ -86,7 +91,7 @@ const QuestionEditorPage: React.FC = () => {
     navigate(`/quizzes/${quizId}/edit`);
   };
 
-  // Validation
+  // Validation - check if required data exists
   if (!quizId) {
     return (
       <Empty
@@ -120,7 +125,7 @@ const QuestionEditorPage: React.FC = () => {
   }
 
   // Convert QuestionResponseDTO to QuestionRequestDTO for form
-  const initialQuestion = {
+  const initialQuestion: QuestionRequestDTO = {
     quizId,
     questionText: question.questionText,
     questionType: question.questionType,

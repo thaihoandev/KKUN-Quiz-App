@@ -131,8 +131,10 @@ public class GeminiServiceImpl implements GeminiService {
             Quiz quiz = quizRepo.findById(req.getQuizId()).orElse(null);
             if (quiz != null) {
                 context = quiz.getTitle() + " " + Optional.ofNullable(quiz.getDescription()).orElse("");
+                // FIX: Use the correct method name
                 existingKeys = questionRepo.findByQuizAndDeletedFalse(quiz).stream()
-                        .map(this::makeQuestionKey).collect(Collectors.toSet());
+                        .map(this::makeQuestionKey)
+                        .collect(Collectors.toSet());
             }
         }
 
@@ -177,10 +179,13 @@ public class GeminiServiceImpl implements GeminiService {
                 }
             } catch (Exception e) {
                 System.err.println("Batch " + attempts.get() + " failed: " + e.getMessage());
+                e.printStackTrace();
             }
 
             if (result.size() < target) {
-                try { Thread.sleep(500); } catch (InterruptedException ignored) {}
+                try {
+                    Thread.sleep(500);
+                } catch (InterruptedException ignored) {}
             }
         }
 
@@ -345,49 +350,91 @@ public class GeminiServiceImpl implements GeminiService {
         }
     }
 
-    private QuestionType safeParseType(String s) {
-        try { return QuestionType.valueOf(s.toUpperCase()); }
-        catch (Exception e) { return QuestionType.SINGLE_CHOICE; }
+    /**
+     * Check if question is valid
+     */
+    private boolean isValid(QuestionResponseDTO q) {
+        return q != null
+                && q.getQuestionText() != null
+                && q.getQuestionText().length() > 15
+                && q.getOptions() != null
+                && !q.getOptions().isEmpty();
     }
 
-    private boolean isValid(QuestionResponseDTO q) {
-        return q != null && q.getQuestionText() != null && q.getQuestionText().length() > 15
-                && q.getOptions() != null && !q.getOptions().isEmpty();
+    /**
+     * Safe type parsing
+     */
+    private QuestionType safeParseType(String s) {
+        try {
+            return QuestionType.valueOf(s.toUpperCase());
+        } catch (Exception e) {
+            return QuestionType.SINGLE_CHOICE;
+        }
     }
+
+    /**
+     * Make key from Question entity
+     */
     private String makeQuestionKey(Question q) {
         if (q == null) return "";
         String stem = normalizeText(q.getQuestionText());
 
-        String opts = q.getOptions().stream()
+        // Safe getOptions call
+        List<String> optTexts = (q.getOptions() != null && !q.getOptions().isEmpty())
+                ? q.getOptions().stream()
                 .map(o -> normalizeText(o.getText()))
                 .sorted()
-                .collect(Collectors.joining("|"));
+                .collect(Collectors.toList())
+                : List.of();
 
+        String opts = String.join("|", optTexts);
         return stem + "||" + opts;
     }
+    /**
+     * Make key from DTO
+     */
     private String makeQuestionKey(QuestionResponseDTO q) {
         String stem = normalizeText(q.getQuestionText());
-        String opts = q.getOptions().stream()
+
+        List<String> optTexts = (q.getOptions() != null && !q.getOptions().isEmpty())
+                ? q.getOptions().stream()
                 .map(o -> normalizeText(o.getText()))
                 .sorted()
-                .collect(Collectors.joining("|"));
+                .collect(Collectors.toList())
+                : List.of();
+
+        String opts = String.join("|", optTexts);
         return stem + "||" + opts;
     }
 
+    /**
+     * Normalize text for comparison
+     */
     private String normalizeText(String s) {
-        if (s == null) return "";
+        if (s == null || s.isBlank()) return "";
         return Normalizer.normalize(s, Normalizer.Form.NFD)
-                .replaceAll("\\p{M}", "")
-                .replaceAll("[^\\p{L}\\p{N}]", " ")
-                .replaceAll("\\s+", " ")
-                .toLowerCase().trim();
+                .replaceAll("\\p{M}", "")  // Remove diacritics
+                .replaceAll("[^\\p{L}\\p{N}]", " ")  // Keep only letters and numbers
+                .replaceAll("\\s+", " ")  // Multiple spaces to single
+                .toLowerCase()
+                .trim();
     }
 
+    /**
+     * Jaccard similarity on words
+     */
     private double jaccardWords(String a, String b) {
-        Set<String> sa = new HashSet<>(Arrays.asList(a.split(" ")));
-        Set<String> sb = new HashSet<>(Arrays.asList(b.split(" ")));
-        Set<String> inter = new HashSet<>(sa); inter.retainAll(sb);
-        Set<String> union = new HashSet<>(sa); union.addAll(sb);
+        Set<String> sa = new HashSet<>(Arrays.asList(a.split("\\s+")));
+        Set<String> sb = new HashSet<>(Arrays.asList(b.split("\\s+")));
+
+        Set<String> inter = new HashSet<>(sa);
+        inter.retainAll(sb);
+
+        Set<String> union = new HashSet<>(sa);
+        union.addAll(sb);
+
         return union.isEmpty() ? 0.0 : (double) inter.size() / union.size();
     }
+
+
 }

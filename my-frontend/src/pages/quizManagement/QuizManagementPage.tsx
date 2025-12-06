@@ -316,7 +316,7 @@ const QuizManagementPage: React.FC = () => {
                   </button>
 
                   <Link
-                    to={`/quizzes/${quizId}/edit`}
+                    to={`/quiz/${quizId}/edit`}
                     style={{
                       padding: "0.6rem 1.2rem",
                       border: "2px solid var(--primary-color)",
@@ -598,7 +598,7 @@ const QuizManagementPage: React.FC = () => {
               <p>No questions yet. Add some questions to get started!</p>
               {isOwner && (
                 <Link
-                  to={`/quizzes/${quizId}/edit`}
+                  to={`/quiz/${quizId}/edit`}
                   style={{
                     color: "var(--primary-color)",
                     textDecoration: "none",

@@ -48,7 +48,7 @@ public class Question {
     @Column(nullable = false, length = 50)
     private QuestionType type;
 
-    @Column(columnDefinition = "JSONB")
+    @Column(columnDefinition = "jsonb")
     @JdbcTypeCode(SqlTypes.JSON)
     private String configJson;
 
@@ -86,7 +86,8 @@ public class Question {
     @Builder.Default
     private String difficulty = "MEDIUM";
 
-    @Column(columnDefinition = "JSONB")
+    @Column(columnDefinition = "jsonb")
+    @JdbcTypeCode(SqlTypes.JSON)
     @Builder.Default
     private String tagsJson = "[]";
 
@@ -110,7 +111,8 @@ public class Question {
     @Builder.Default
     private boolean allowMultipleCorrect = false;
 
-    @Column(columnDefinition = "JSONB")
+    @Column(columnDefinition = "jsonb")
+    @JdbcTypeCode(SqlTypes.JSON)
     @Builder.Default
     private String answerVariationsJson = "[]";
 
@@ -164,8 +166,11 @@ public class Question {
     @Builder.Default
     private boolean hasAudio = false;
 
+    // ==================== QUAN TRỌNG ====================
+    // Phải có @Builder.Default để options không bao giờ null
     @OneToMany(mappedBy = "question", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @OrderBy("orderIndex ASC")
+    @Builder.Default
     private List<Option> options = new ArrayList<>();
 
     @CreationTimestamp
@@ -173,4 +178,67 @@ public class Question {
 
     @UpdateTimestamp
     private LocalDateTime updatedAt;
+
+    // ==================== HELPER METHODS ====================
+
+    /**
+     * Ensure options is never null (safety check)
+     */
+    @PrePersist
+    @PreUpdate
+    private void ensureCollectionsNotNull() {
+        if (this.options == null) {
+            this.options = new ArrayList<>();
+        }
+    }
+
+    /**
+     * Get options safely - never returns null
+     */
+    public List<Option> getOptions() {
+        if (this.options == null) {
+            this.options = new ArrayList<>();
+        }
+        return this.options;
+    }
+
+    /**
+     * Set options safely
+     */
+    public void setOptions(List<Option> options) {
+        this.options = (options != null) ? options : new ArrayList<>();
+    }
+
+    /**
+     * Add option safely
+     */
+    public void addOption(Option option) {
+        if (this.options == null) {
+            this.options = new ArrayList<>();
+        }
+        this.options.add(option);
+    }
+
+    /**
+     * Remove option safely
+     */
+    public void removeOption(Option option) {
+        if (this.options != null) {
+            this.options.remove(option);
+        }
+    }
+
+    /**
+     * Check if has options
+     */
+    public boolean hasOptions() {
+        return this.options != null && !this.options.isEmpty();
+    }
+
+    /**
+     * Get option count
+     */
+    public int getOptionCount() {
+        return (this.options != null) ? this.options.size() : 0;
+    }
 }

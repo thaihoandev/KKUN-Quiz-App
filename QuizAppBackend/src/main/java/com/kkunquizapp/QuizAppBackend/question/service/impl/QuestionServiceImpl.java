@@ -6,7 +6,7 @@ import com.kkunquizapp.QuizAppBackend.question.dto.*;
 import com.kkunquizapp.QuizAppBackend.question.exception.QuestionNotFoundException;
 import com.kkunquizapp.QuizAppBackend.question.exception.ValidationException;
 import com.kkunquizapp.QuizAppBackend.question.model.*;
-import com.kkunquizapp.QuizAppBackend.question.model.enums.QuestionType;
+import com.kkunquizapp.QuizAppBackend.question.model.enums.*;
 import com.kkunquizapp.QuizAppBackend.question.repository.OptionRepo;
 import com.kkunquizapp.QuizAppBackend.question.repository.QuestionRepo;
 import com.kkunquizapp.QuizAppBackend.question.service.QuestionService;
@@ -59,7 +59,7 @@ public class QuestionServiceImpl implements QuestionService {
         // Parse question type
         QuestionType questionType = QuestionType.valueOf(request.getQuestionType());
 
-        // Create question
+        // Create question with initialized options list
         Question question = Question.builder()
                 .quiz(quiz)
                 .questionText(request.getQuestionText().trim())
@@ -80,6 +80,7 @@ public class QuestionServiceImpl implements QuestionService {
                 .updatedBy(userId)
                 .deleted(false)
                 .version(1)
+                .options(new ArrayList<>())  // ✅ QUAN TRỌNG: Initialize empty list
                 .build();
 
         // Handle image upload
@@ -96,7 +97,9 @@ public class QuestionServiceImpl implements QuestionService {
         log.info("Question created: {}", question.getQuestionId());
 
         // Create options
-        createOptions(question, request.getOptions(), questionType);
+        if (request.getOptions() != null && !request.getOptions().isEmpty()) {
+            createOptions(question, request.getOptions(), questionType);
+        }
 
         return mapToResponseDTO(question);
     }
@@ -543,18 +546,40 @@ public class QuestionServiceImpl implements QuestionService {
             throw new ValidationException("Options cannot be empty");
         }
 
-        for (OptionRequestDTO dto : optionDTOs) {
-            createOption(question, dto, type);
+        // Ensure question has initialized options list
+        if (question.getOptions() == null) {
+            question.setOptions(new ArrayList<>());
         }
+
+        for (OptionRequestDTO dto : optionDTOs) {
+            try {
+                Option option = createOption(question, dto, type);
+                // Safely add to list
+                if (option != null) {
+                    question.getOptions().add(option);
+                }
+            } catch (Exception e) {
+                log.error("Error creating option: {}", e.getMessage());
+                throw new ValidationException("Error creating option: " + e.getMessage());
+            }
+        }
+
+        // Save question with all options
+        questionRepository.save(question);
     }
 
     private Option createOption(Question question, OptionRequestDTO dto, QuestionType type) {
+        // ✅ Safety check: Ensure text is never null
+        if (dto.getText() == null || dto.getText().isBlank()) {
+            dto.setText("Option");
+        }
+
         Option option;
 
         switch (type) {
             case MULTIPLE_CHOICE -> {
                 MultipleChoiceOption mco = new MultipleChoiceOption();
-                mco.setText(dto.getText());
+                mco.setText(dto.getText().isBlank() ? "Option" : dto.getText());
                 mco.setCorrect(dto.isCorrect());
                 mco.setOrderIndex(dto.getOrderIndex());
                 mco.setExplanation(dto.getExplanation());
@@ -563,7 +588,7 @@ public class QuestionServiceImpl implements QuestionService {
             }
             case SINGLE_CHOICE -> {
                 SingleChoiceOption sco = new SingleChoiceOption();
-                sco.setText(dto.getText());
+                sco.setText(dto.getText().isBlank() ? "Option" : dto.getText());
                 sco.setCorrect(dto.isCorrect());
                 sco.setOrderIndex(dto.getOrderIndex());
                 sco.setExplanation(dto.getExplanation());
@@ -572,14 +597,17 @@ public class QuestionServiceImpl implements QuestionService {
             }
             case TRUE_FALSE -> {
                 TrueFalseOption tfo = new TrueFalseOption();
-                tfo.setText(dto.getText());
+                tfo.setText(dto.getText().isBlank() ? "True/False" : dto.getText());
                 tfo.setCorrect(dto.isCorrect());
                 tfo.setQuestion(question);
                 option = tfo;
             }
             case FILL_IN_THE_BLANK -> {
                 FillInTheBlankOption fbo = new FillInTheBlankOption();
-                fbo.setCorrectAnswer(dto.getCorrectAnswer());
+                String correctAns = dto.getCorrectAnswer() != null ? dto.getCorrectAnswer() : dto.getText();
+                fbo.setCorrectAnswer(correctAns.isBlank() ? "answer" : correctAns);
+                // ✅ Always set text
+                fbo.setText(correctAns.isBlank() ? "answer" : correctAns);
                 fbo.setCaseInsensitive(dto.isCaseInsensitive());
                 fbo.setAcceptedVariations(dto.getAcceptedVariations());
                 fbo.setTypoTolerance(dto.getTypoTolerance());
@@ -589,7 +617,10 @@ public class QuestionServiceImpl implements QuestionService {
             }
             case MATCHING -> {
                 MatchingOption mo = new MatchingOption();
-                mo.setLeftItem(dto.getLeftItem());
+                String leftItem = dto.getLeftItem() != null ? dto.getLeftItem() : dto.getText();
+                mo.setLeftItem(leftItem.isBlank() ? "Item" : leftItem);
+                // ✅ Set text to leftItem
+                mo.setText(leftItem.isBlank() ? "Item" : leftItem);
                 mo.setRightItem(dto.getRightItem());
                 mo.setCorrectMatchKey(dto.getCorrectMatchKey());
                 mo.setQuestion(question);
@@ -598,7 +629,10 @@ public class QuestionServiceImpl implements QuestionService {
             }
             case ORDERING -> {
                 OrderingOption oo = new OrderingOption();
-                oo.setItem(dto.getItem());
+                String item = dto.getItem() != null ? dto.getItem() : dto.getText();
+                oo.setItem(item.isBlank() ? "Step" : item);
+                // ✅ Set text to item
+                oo.setText(item.isBlank() ? "Step" : item);
                 oo.setCorrectPosition(dto.getCorrectPosition());
                 oo.setOrderIndex(dto.getCorrectPosition());
                 oo.setQuestion(question);
@@ -607,7 +641,10 @@ public class QuestionServiceImpl implements QuestionService {
             }
             case DRAG_DROP -> {
                 DragDropOption ddo = new DragDropOption();
-                ddo.setDraggableItem(dto.getDraggableItem());
+                String draggable = dto.getDraggableItem() != null ? dto.getDraggableItem() : dto.getText();
+                ddo.setDraggableItem(draggable.isBlank() ? "Item" : draggable);
+                // ✅ Set text
+                ddo.setText(draggable.isBlank() ? "Item" : draggable);
                 ddo.setDropZoneId(dto.getDropZoneId());
                 ddo.setDropZoneLabel(dto.getDropZoneLabel());
                 ddo.setDragImageUrl(dto.getDragImageUrl());
@@ -617,7 +654,10 @@ public class QuestionServiceImpl implements QuestionService {
             }
             case SHORT_ANSWER -> {
                 ShortAnswerOption sao = new ShortAnswerOption();
-                sao.setExpectedAnswer(dto.getExpectedAnswer());
+                String expectedAns = dto.getExpectedAnswer() != null ? dto.getExpectedAnswer() : dto.getText();
+                sao.setExpectedAnswer(expectedAns.isBlank() ? "answer" : expectedAns);
+                // ✅ Set text to expected answer
+                sao.setText(expectedAns.isBlank() ? "answer" : expectedAns);
                 sao.setRequiredKeywords(toJsonArray(dto.getRequiredKeywords()));
                 sao.setOptionalKeywords(toJsonArray(dto.getOptionalKeywords()));
                 sao.setCaseInsensitive(dto.isCaseInsensitive());
@@ -628,6 +668,8 @@ public class QuestionServiceImpl implements QuestionService {
             }
             case ESSAY -> {
                 EssayOption eo = new EssayOption();
+                // ✅ Set text for essay
+                eo.setText("Essay Answer");
                 eo.setMinWords(dto.getMinWords());
                 eo.setMaxWords(dto.getMaxWords());
                 eo.setSampleAnswer(dto.getSampleAnswer());
@@ -637,16 +679,22 @@ public class QuestionServiceImpl implements QuestionService {
             }
             case HOTSPOT -> {
                 HotspotOption ho = new HotspotOption();
+                String hotspotLabel = dto.getHotspotLabel() != null ? dto.getHotspotLabel() : "Hotspot";
+                // ✅ Set text
+                ho.setText(hotspotLabel.isBlank() ? "Hotspot" : hotspotLabel);
                 ho.setImageUrl(question.getImageUrl());
-                ho.setHotspotLabel(dto.getHotspotLabel());
+                ho.setHotspotLabel(hotspotLabel);
                 ho.setQuestion(question);
                 ho.setCorrect(true);
                 option = ho;
             }
             case IMAGE_SELECTION -> {
                 ImageSelectionOption iso = new ImageSelectionOption();
+                String imageLabel = dto.getImageLabel() != null ? dto.getImageLabel() : dto.getText();
+                // ✅ Set text to image label
+                iso.setText(imageLabel.isBlank() ? "Image" : imageLabel);
                 iso.setImageUrl(dto.getImageUrl());
-                iso.setImageLabel(dto.getImageLabel());
+                iso.setImageLabel(imageLabel);
                 iso.setThumbnailUrl(dto.getThumbnailUrl());
                 iso.setCorrect(dto.isCorrect());
                 iso.setQuestion(question);
@@ -654,8 +702,11 @@ public class QuestionServiceImpl implements QuestionService {
             }
             case DROPDOWN -> {
                 DropdownOption dro = new DropdownOption();
+                String displayLabel = dto.getDisplayLabel() != null ? dto.getDisplayLabel() : dto.getText();
+                // ✅ Set text to display label
+                dro.setText(displayLabel.isBlank() ? "Option" : displayLabel);
                 dro.setDropdownValue(dto.getDropdownValue());
-                dro.setDisplayLabel(dto.getDisplayLabel());
+                dro.setDisplayLabel(displayLabel);
                 dro.setPlaceholder(dto.getPlaceholder());
                 dro.setCorrect(dto.isCorrect());
                 dro.setQuestion(question);
@@ -663,18 +714,24 @@ public class QuestionServiceImpl implements QuestionService {
             }
             case MATRIX -> {
                 MatrixOption mao = new MatrixOption();
+                String cellValue = dto.getCellValue() != null ? dto.getCellValue() : dto.getText();
+                // ✅ Set text to cell value
+                mao.setText(cellValue.isBlank() ? "value" : cellValue);
                 mao.setRowId(dto.getRowId());
                 mao.setColumnId(dto.getColumnId());
                 mao.setRowLabel(dto.getRowLabel());
                 mao.setColumnLabel(dto.getColumnLabel());
-                mao.setCellValue(dto.getCellValue());
+                mao.setCellValue(cellValue);
                 mao.setCorrectCell(dto.isCorrectCell());
                 mao.setQuestion(question);
                 option = mao;
             }
             case RANKING -> {
                 RankingOption ro = new RankingOption();
-                ro.setRankableItem(dto.getRankableItem());
+                String rankItem = dto.getRankableItem() != null ? dto.getRankableItem() : dto.getText();
+                // ✅ Set text to rankable item
+                ro.setText(rankItem.isBlank() ? "Item" : rankItem);
+                ro.setRankableItem(rankItem);
                 ro.setCorrectRank(dto.getCorrectRank());
                 ro.setRankingScale(dto.getRankingScale());
                 ro.setAllowPartialCredit(dto.isAllowPartialCredit());
@@ -982,21 +1039,54 @@ public class QuestionServiceImpl implements QuestionService {
         return addQuestion(request, userId);
     }
 
-    private String toJsonArray(List<String> list) {
-        if (list == null || list.isEmpty()) return "[]";
+    private String toJsonArray(List<?> list) {
+        if (list == null || list.isEmpty()) {
+            return "[]";
+        }
         try {
-            return objectMapper.writeValueAsString(list);
+            String json = objectMapper.writeValueAsString(list);
+            return json != null && !json.isBlank() ? json : "[]";
         } catch (Exception e) {
+            log.warn("Error converting list to JSON: {}", e.getMessage());
             return "[]";
         }
     }
 
     private List<String> parseJsonList(String json) {
-        if (json == null || json.equals("[]")) return new ArrayList<>();
-        try {
-            return Arrays.asList(objectMapper.readValue(json, String[].class));
-        } catch (Exception e) {
+        if (json == null || json.isBlank() || json.equals("[]")) {
             return new ArrayList<>();
+        }
+        try {
+            String[] array = objectMapper.readValue(json, String[].class);
+            return Arrays.asList(array != null ? array : new String[0]);
+        } catch (Exception e) {
+            log.warn("Error parsing JSON list: {}", e.getMessage());
+            return new ArrayList<>();
+        }
+    }
+
+    private String toJsonObject(Object obj) {
+        if (obj == null) {
+            return "{}";
+        }
+        try {
+            String json = objectMapper.writeValueAsString(obj);
+            return json != null && !json.isBlank() ? json : "{}";
+        } catch (Exception e) {
+            log.warn("Error converting object to JSON: {}", e.getMessage());
+            return "{}";
+        }
+    }
+
+    private <T> T parseJsonObject(String json, Class<T> clazz) {
+        if (json == null || json.isBlank() || json.equals("{}")) {
+            return null;
+        }
+        try {
+            return objectMapper.readValue(json, clazz);
+        } catch (Exception e) {
+            log.warn("Error parsing JSON object: {}", e.getMessage());
+            return null;
         }
     }
 

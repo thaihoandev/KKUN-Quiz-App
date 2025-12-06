@@ -37,13 +37,24 @@ spring:
     properties:
       hibernate:
         jdbc:
+          batch_size: 20
+          fetch_size: 50
           time_zone: Asia/Ho_Chi_Minh
         format_sql: true
-        # Các dòng dưới đây là "vũ khí hạt nhân" fix lỗi PostgreSQL + Hibernate 6
+        # PostgreSQL + Hibernate 6
         globally_quoted_identifiers: true
         globally_quoted_identifiers_skip_column_definitions: true   # QUAN TRỌNG NHẤT
-        # Dòng này cũng cực kỳ hiệu quả (2 dòng này kết hợp = 100% không còn lỗi DEFAULT)
         temp.use_jdbc_metadata_defaults: false
+        order_inserts: true
+        order_updates: true
+        # Enable JDBC type mapping
+        types:
+          json: org.hibernate.type.json.JsonType
+        # PostgreSQL native handling
+        generate_statistics: true
+        dialect_native_json: true
+    show-sql: false
+    open-in-view: false
 
   mail:
     host: smtp.gmail.com

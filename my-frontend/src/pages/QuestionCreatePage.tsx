@@ -1,185 +1,100 @@
+// src/pages/QuestionCreatePage.tsx
 import React, { useEffect, useState } from "react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { Spin, Empty, message } from "antd";
-import { QuestionType } from "@/services/questionService";
-import { addQuestion } from "@/services/questionService";
+import { QuestionType, QuestionRequestDTO, addQuestion } from "@/services/questionService";
 import QuestionForm from "@/components/forms/QuestionForm";
 
-/**
- * Default question type
- */
 const DEFAULT_QUESTION_TYPE = QuestionType.SINGLE_CHOICE;
-
-/**
- * All available question types
- */
-const AVAILABLE_QUESTION_TYPES = Object.values(QuestionType);
-
-interface QuestionCreatePageState {
-  questionType: QuestionType | null;
-  loading: boolean;
-  submitting: boolean;
-}
 
 const QuestionCreatePage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { quizId } = useParams<{ quizId: string }>();
 
-  const [state, setState] = useState<QuestionCreatePageState>({
-    questionType: null,
-    loading: true,
-    submitting: false,
-  });
+  const [questionType, setQuestionType] = useState<QuestionType | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
 
-  /**
-   * Initialize question type from URL params
-   */
   useEffect(() => {
-    try {
-      const searchParams = new URLSearchParams(location.search);
-      const typeParam = searchParams.get("type");
+    const searchParams = new URLSearchParams(location.search);
+    const typeParam = searchParams.get("type");
 
-      let selectedType = DEFAULT_QUESTION_TYPE;
-
-      if (
-        typeParam &&
-        AVAILABLE_QUESTION_TYPES.includes(typeParam as QuestionType)
-      ) {
-        selectedType = typeParam as QuestionType;
-      }
-
-      setState((prev) => ({
-        ...prev,
-        questionType: selectedType,
-        loading: false,
-      }));
-    } catch (error) {
-      console.error("Error initializing question type:", error);
-      setState((prev) => ({
-        ...prev,
-        questionType: DEFAULT_QUESTION_TYPE,
-        loading: false,
-      }));
+    let selectedType = DEFAULT_QUESTION_TYPE;
+    if (typeParam && Object.values(QuestionType).includes(typeParam as QuestionType)) {
+      selectedType = typeParam as QuestionType;
     }
+
+    setQuestionType(selectedType);
+    setLoading(false);
   }, [location.search]);
 
-  /**
-   * Handle create question
-   */
-  const handleCreateQuestion = async (formData: FormData) => {
+  // ĐÚNG: Tạo payload theo chuẩn QuestionRequestDTO + image riêng
+  const handleCreateQuestion = async (
+    formData: any,
+    imageFile?: File
+  ) => {
     if (!quizId) {
-      message.error("Quiz ID not found");
+      message.error("Không tìm thấy Quiz ID");
       return;
     }
 
-    setState((prev) => ({ ...prev, submitting: true }));
+    setSubmitting(true);
 
     try {
-      // addQuestion expects FormData directly (with question JSON + optional image)
-      await addQuestion(formData as any);
+      const request: QuestionRequestDTO = {
+        quizId,
+        questionText: formData.questionText,
+        questionType: formData.questionType,
+        timeLimitSeconds: formData.timeLimitSeconds,
+        points: formData.points,
+        explanation: formData.explanation,
+        hint: formData.hint,
+        difficulty: formData.difficulty,
+        tags: formData.tags,
+        shuffleOptions: formData.shuffleOptions ?? true,
+        options: formData.options || [],
+      };
 
-      message.success("Question created successfully!");
+      await addQuestion(request, imageFile);
+
+      message.success("Tạo câu hỏi thành công!");
+      
+      // Xóa draft sau khi tạo thành công
+      localStorage.removeItem(`draft_question_${quizId}`);
 
       navigate(`/quizzes/${quizId}/edit`, {
         state: { createdQuestion: true },
       });
     } catch (error: any) {
-      console.error("Error creating question:", error);
-
-      const errorMsg =
-        error?.response?.data?.message ||
-        error?.message ||
-        "Failed to create question";
-
+      const errorMsg = error?.response?.data?.message || "Tạo câu hỏi thất bại";
       message.error(errorMsg);
     } finally {
-      setState((prev) => ({ ...prev, submitting: false }));
+      setSubmitting(false);
     }
   };
 
-  /**
-   * Handle cancel - navigate back to edit page
-   */
   const handleCancel = () => {
     navigate(`/quizzes/${quizId}/edit`);
   };
 
-  // Validation
   if (!quizId) {
-    return (
-      <Empty
-        description="Quiz ID not found"
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          justifyContent: "center",
-          alignItems: "center",
-          minHeight: "100vh",
-          color: "var(--text-light)",
-        }}
-      />
-    );
+    return <Empty description="Không tìm thấy Quiz ID" className="h-screen flex flex-col items-center justify-center" />;
   }
 
-  if (state.loading) {
-    return (
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
-          minHeight: "100vh",
-          background: "var(--background-color)",
-        }}
-      >
-        <Spin tip="Loading question type..." size="large" />
-      </div>
-    );
-  }
-
-  if (!state.questionType) {
-    return (
-      <Empty
-        description="Invalid question type"
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          justifyContent: "center",
-          alignItems: "center",
-          minHeight: "100vh",
-          color: "var(--text-light)",
-        }}
-      />
-    );
+  if (loading) {
+    return <Spin tip="Đang tải..." size="large" className="h-screen flex items-center justify-center" />;
   }
 
   return (
-    <div
-      style={{
-        background: "var(--background-color)",
-        color: "var(--text-color)",
-        minHeight: "100vh",
-        transition: "background-color 0.4s ease, color 0.4s ease",
-        padding: "2rem 1rem",
-      }}
-    >
-      <div
-        style={{
-          maxWidth: "900px",
-          margin: "0 auto",
-        }}
-      >
-        <QuestionForm
-          quizId={quizId}
-          onSave={handleCreateQuestion}
-          onCancel={handleCancel}
-          isCreateMode={true}
-          initialQuestionType={state.questionType}
-          loading={state.submitting}
-        />
-      </div>
-    </div>
+    <QuestionForm
+      quizId={quizId}
+      initialQuestionType={questionType || DEFAULT_QUESTION_TYPE}
+      isCreateMode={true}
+      loading={submitting}
+      onSave={handleCreateQuestion}
+      onCancel={handleCancel}
+    />
   );
 };
 

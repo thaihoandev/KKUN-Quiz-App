@@ -485,7 +485,7 @@ const QuizEditorPage: React.FC = () => {
         onHide={() => setShowModal(false)}
         onAddQuestion={(type) => {
           setShowModal(false);
-          navigate(`/quizzes/${quizId}/questions/create?type=${type}`);
+          navigate(`/quiz/${quizId}/questions/create?type=${type}`);
         }}
       />
 
