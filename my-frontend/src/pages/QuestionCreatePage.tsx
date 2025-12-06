@@ -63,7 +63,7 @@ const QuestionCreatePage: React.FC = () => {
       // Xóa draft sau khi tạo thành công
       localStorage.removeItem(`draft_question_${quizId}`);
 
-      navigate(`/quizzes/${quizId}/edit`, {
+      navigate(`/quiz/${quizId}/edit`, {
         state: { createdQuestion: true },
       });
     } catch (error: any) {
@@ -75,7 +75,7 @@ const QuestionCreatePage: React.FC = () => {
   };
 
   const handleCancel = () => {
-    navigate(`/quizzes/${quizId}/edit`);
+    navigate(`/quiz/${quizId}/edit`);
   };
 
   if (!quizId) {

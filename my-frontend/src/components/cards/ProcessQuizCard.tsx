@@ -159,7 +159,7 @@ const ProcessQuizCard = ({ quiz }: ProcessQuizCardProps) => {
 
         {/* Title */}
         <Link
-          to={`/quizzes/${quiz.slug || quiz.quizId}`}
+          to={`/quiz/${quiz.quizId}`}
           className="text-decoration-none mb-3"
           style={{
             display: "block",
@@ -238,7 +238,7 @@ const ProcessQuizCard = ({ quiz }: ProcessQuizCardProps) => {
           </button>
 
           <Link
-            to={`/quizzes/${quiz.slug || quiz.quizId}`}
+            to={`/quiz/${quiz.slug || quiz.quizId}`}
             className="btn flex-fill fw-bold"
             style={{
               background: "var(--surface-alt)",

@@ -18,7 +18,7 @@ const QuizDropdown: React.FC<{quizId: string}> = ({quizId}) => {
                 <li>
                     <button
                         className="dropdown-item"
-                        onClick={() => navigate(`/quizzes/${quizId}`)}
+                        onClick={() => navigate(`/quiz/${quizId}`)}
                     >
                         View Details
                     </button>
@@ -26,7 +26,7 @@ const QuizDropdown: React.FC<{quizId: string}> = ({quizId}) => {
                 <li>
                     <button
                         className="dropdown-item"
-                        onClick={() => navigate(`/quizzes/share/${quizId}`)}
+                        onClick={() => navigate(`/quiz/share/${quizId}`)}
                     >
                         Share Quiz
                     </button>
@@ -37,7 +37,7 @@ const QuizDropdown: React.FC<{quizId: string}> = ({quizId}) => {
                 <li>
                     <button
                         className="dropdown-item text-danger"
-                        onClick={() => navigate(`/quizzes/delete/${quizId}`)}
+                        onClick={() => navigate(`/quiz/delete/${quizId}`)}
                     >
                         Delete Quiz
                     </button>

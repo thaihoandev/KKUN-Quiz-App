@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 
 import {
   getQuizById,
+  getQuizBySlug,
   publishQuiz,
   QuizDetailResponse,
 } from "@/services/quizService";
@@ -11,6 +12,7 @@ import { getQuestionsByQuiz as getQuestionsByQuizPaged } from "@/services/questi
 import { QuestionResponseDTO } from "@/services/questionService";
 import { useAuthStore } from "@/store/authStore";
 import QuestionList from "@/components/layouts/question/QuestionList";
+import { useQuizIdFromParams } from "@/hooks/useQuizIdFromParams";
 
 interface QuizPageState {
   quiz: QuizDetailResponse | undefined;
@@ -22,8 +24,14 @@ interface QuizPageState {
 }
 
 const QuizManagementPage: React.FC = () => {
-  const { quizId } = useParams<{ quizId: string }>();
+  const { param } = useParams();
   const navigate = useNavigate();
+
+  const isUUID = (value: string) => {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+  };
+
+  const [quizId, setQuizId] = useState<string | null>(null);
 
   const [state, setState] = useState<QuizPageState>({
     quiz: undefined,
@@ -34,60 +42,70 @@ const QuizManagementPage: React.FC = () => {
     total: 0,
   });
 
-  // ✅ Tách page/size ra khỏi state chính để tránh re-render loop
+  // Paging state
   const [page, setPage] = useState(0);
   const [size, setSize] = useState(10);
 
+  // ---------------- USER -------------------
   const user = useAuthStore((s) => s.user);
   const currentUserId = (user as any)?.userId || (user as any)?.id;
 
   const isOwner =
     state.quiz?.isOwner ?? (state.quiz?.creator?.userId === currentUserId);
 
-  /**
-   * Fetch quiz details - chỉ chạy 1 lần khi mount
-   */
+  // ========================================================
+  // 1️⃣ Resolve PARAM → quizId (UUID) or slug
+  // ========================================================
   useEffect(() => {
-    if (!quizId) return;
+    if (!param) {
+      notification.error({ message: "Quiz not found" });
+      navigate("/not-found", { replace: true });
+      return;
+    }
 
-    const fetchQuizInfo = async () => {
+    const resolveQuiz = async () => {
       try {
-        setState((prev) => ({ ...prev, loading: true }));
-        const quiz = await getQuizById(quizId);
-        setState((prev) => ({ ...prev, quiz }));
-      } catch (error) {
-        console.error("Error fetching quiz info:", error);
-        notification.error({
-          message: "Error",
-          description: "Unable to load quiz information.",
-        });
-      } finally {
-        setState((prev) => ({ ...prev, loading: false }));
+        setState((s) => ({ ...s, loading: true }));
+
+        let quiz;
+
+        if (isUUID(param)) {
+          // Fetch by ID
+          quiz = await getQuizById(param);
+        } else {
+          // Fetch by slug
+          quiz = await getQuizBySlug(param);
+        }
+
+        setQuizId(quiz.quizId);           // lưu ID thật
+        setState((s) => ({ ...s, quiz, loading: false }));
+      } catch (err) {
+        console.error(err);
+        notification.error({ message: "Quiz not found" });
+        navigate("/not-found", { replace: true });
       }
     };
 
-    fetchQuizInfo();
-  }, [quizId]); // ✅ Chỉ phụ thuộc vào quizId
+    resolveQuiz();
+  }, [param, navigate]);
 
-  /**
-   * Fetch paginated questions - chạy khi page/size thay đổi
-   */
+  // ========================================================
+  // 2️⃣ Fetch questions — chạy khi quizId/page/size ready
+  // ========================================================
   useEffect(() => {
     if (!quizId) return;
 
     const fetchQuestions = async () => {
       try {
         setState((prev) => ({ ...prev, loading: true }));
-        const response = await getQuestionsByQuizPaged(
-          quizId,
-          page,
-          size
-        );
+
+        const response = await getQuestionsByQuizPaged(quizId, page, size);
+
         setState((prev) => ({
           ...prev,
           questions: response.content ?? [],
           total: response.totalElements ?? 0,
-          loading: false, // ✅ Set loading false ngay khi có data
+          loading: false,
         }));
       } catch (error) {
         console.error("Error fetching questions:", error);
@@ -95,27 +113,28 @@ const QuizManagementPage: React.FC = () => {
           message: "Error",
           description: "Unable to load the question list.",
         });
-        setState((prev) => ({ ...prev, loading: false })); // ✅ Set loading false khi error
+        setState((prev) => ({ ...prev, loading: false }));
       }
     };
 
     fetchQuestions();
-  }, [quizId, page, size]); // ✅ Dependency là primitive values, không gây re-render loop
+  }, [quizId, page, size]);
 
-  /**
-   * Handle publish quiz
-   */
+  // ========================================================
+  // 3️⃣ Publish handler
+  // ========================================================
   const handlePublish = async () => {
     if (!quizId) return;
 
     setState((prev) => ({ ...prev, publishing: true }));
     try {
       await publishQuiz(quizId);
+
       notification.success({
         message: "Success",
         description: "The quiz has been published successfully!",
       });
-      
+
       // Refresh quiz info
       const quiz = await getQuizById(quizId);
       setState((prev) => ({ ...prev, quiz }));
@@ -128,6 +147,7 @@ const QuizManagementPage: React.FC = () => {
       setState((prev) => ({ ...prev, publishing: false }));
     }
   };
+
 
   /**
    * Handle page change

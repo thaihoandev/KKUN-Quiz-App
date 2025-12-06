@@ -88,7 +88,7 @@ const QuestionEditorCard: React.FC<QuestionEditorCardProps> = ({
    * Handle edit question
    */
   const handleEdit = () => {
-    navigate(`/quizzes/${quizId}/questions/${question.questionId}/edit`, {
+    navigate(`/quiz/${quizId}/questions/${question.questionId}/edit`, {
       state: { quizId, question },
     });
   };

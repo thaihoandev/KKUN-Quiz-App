@@ -60,7 +60,7 @@ const QuizCreateModal: React.FC<QuizCreateModalProps> = ({ open, onClose, profil
         createdQuiz = await createQuiz(quizMeta);
       // }
 
-      navigate(`/quizzes/${createdQuiz.quizId}`);
+      navigate(`/quiz/${createdQuiz.quizId}`);
       setLoading(false);
       onClose();
     } catch (err) {

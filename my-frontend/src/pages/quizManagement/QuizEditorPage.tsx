@@ -428,7 +428,7 @@ const QuizEditorPage: React.FC = () => {
       }}
     >
       <QuestionEditorHeader
-        onBack={() => navigate(`/quizzes/${quizId}`)}
+        onBack={() => navigate(`/quiz/${quizId}`)}
         onPublish={handlePublish}
         publishing={state.publishing}
       />
