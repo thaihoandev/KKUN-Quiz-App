@@ -9,7 +9,9 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UpdateTimestamp;
+import org.hibernate.type.SqlTypes;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -50,6 +52,7 @@ public class Game {
     private GameStatus gameStatus = GameStatus.WAITING;
 
     @Column(columnDefinition = "JSONB")
+    @JdbcTypeCode(SqlTypes.JSON)
     private String settingsJson;
 
     @Column(nullable = false)

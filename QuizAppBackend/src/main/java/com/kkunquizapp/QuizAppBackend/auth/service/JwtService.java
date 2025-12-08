@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import java.security.interfaces.RSAPublicKey;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -101,6 +102,38 @@ public class JwtService {
             return userInfo;
         } catch (Exception e) {
             throw new IllegalArgumentException("Error decoding JWT: " + e.getMessage(), e);
+        }
+    }
+    public boolean isTokenValid(String token) {
+        try {
+            SignedJWT signedJWT = SignedJWT.parse(token);
+
+            if (!signedJWT.verify(new com.nimbusds.jose.crypto.RSASSAVerifier(publicKey))) {
+                return false;
+            }
+
+            Date exp = signedJWT.getJWTClaimsSet().getExpirationTime();
+            if (exp == null || exp.before(new Date())) {
+                return false;
+            }
+
+            String userId = signedJWT.getJWTClaimsSet().getStringClaim("userId");
+            return userId != null && !userId.isBlank();
+
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public String extractUserId(String token) {
+        try {
+            SignedJWT signedJWT = SignedJWT.parse(token);
+            if (!signedJWT.verify(new com.nimbusds.jose.crypto.RSASSAVerifier(publicKey))) {
+                throw new IllegalArgumentException("Invalid signature");
+            }
+            return signedJWT.getJWTClaimsSet().getStringClaim("userId");
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to extract userId from token", e);
         }
     }
 }

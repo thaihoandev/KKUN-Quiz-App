@@ -1,210 +1,389 @@
+// src/pages/JoinGamePage.tsx
 "use client";
 
-import { joinGame } from "@/services/gameService";
-import { getCookie } from "@/utils/handleCookie";
 import React, { useEffect, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { toast } from "react-toastify";
+import {
+  joinGameAuthenticated,
+  joinGameAnonymous,
+  getSavedParticipantId,
+  saveParticipantSession,
+  clearParticipantSession,
+} from "@/services/gameService";
+import { useAuthStore } from "@/store/authStore";
+import { webSocketService } from "@/services/webSocketService";
 
-const JoinGamePage: React.FC = () => {
+// ==================== HOOK ====================
+
+function useJoinGameLogic() {
   const { pinCode: pinFromParam } = useParams<{ pinCode?: string }>();
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
 
   const [pinCode, setPinCode] = useState<string>("");
   const [nickname, setNickname] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [isJoining, setIsJoining] = useState<boolean>(false);
-  const navigate = useNavigate();
 
-  // Prefill PIN từ param hoặc query (?pin=)
+  // Get PIN from URL or localStorage
   useEffect(() => {
     const pinFromQuery = searchParams.get("pin") || "";
-    setPinCode(pinFromParam || pinFromQuery || "");
+    const pinFromStorage = localStorage.getItem("currentPinCode") || "";
+    const finalPin = pinFromParam || pinFromQuery || pinFromStorage || "";
+
+    if (finalPin) {
+      setPinCode(finalPin);
+    }
   }, [pinFromParam, searchParams]);
 
-  // Prefill nickname từ localStorage
+  // Restore saved nickname
   useEffect(() => {
-    const savedName = localStorage.getItem("nickname") || "";
-    setNickname(savedName);
+    const saved = localStorage.getItem("nickname") || "";
+    if (saved) {
+      setNickname(saved);
+    }
   }, []);
 
-  // Nếu đã có session -> đi thẳng WaitingRoom
+  // Check for existing session - redirect if already in a game
   useEffect(() => {
-    const existingPlayer = localStorage.getItem("playerSession");
-    const existingGameId = localStorage.getItem("gameId");
-    if (existingPlayer && existingGameId) {
-      navigate(`/game-session/${existingGameId}`, { replace: true });
+    const savedParticipantId = getSavedParticipantId();
+    const savedGameId = localStorage.getItem("currentGameId");
+
+    if (savedParticipantId && savedGameId) {
+      console.log("Existing session detected, redirecting to game...", savedGameId);
+      navigate(`/game-session/${savedGameId}`, { replace: true });
     }
   }, [navigate]);
 
+  /**
+   * Join game - Player only (not host)
+   * Host creates game via QuizSubCard → goes directly to WaitingRoomSessionPage
+   */
   const handleJoinGame = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
     const trimmedPin = pinCode.trim();
-    const trimmedName = nickname.trim();
+    const trimmedNickname = nickname.trim();
 
+    // Validation
     if (!trimmedPin) {
-      setError("Vui lòng nhập hoặc mở link mời có chứa PIN.");
+      setError("Please enter a room code");
       return;
     }
-    if (!trimmedName) {
-      setError("Vui lòng nhập nickname.");
+
+    if (trimmedPin.length !== 6) {
+      setError("Room code must be exactly 6 digits");
       return;
     }
+
+    if (!trimmedNickname) {
+      setError("Please enter a nickname");
+      return;
+    }
+
+    if (trimmedNickname.length > 20) {
+      setError("Nickname must be 20 characters or less");
+      return;
+    }
+
+    setIsJoining(true);
 
     try {
-      setIsJoining(true);
-      const token = getCookie("accessToken");
-      const player = await joinGame(trimmedPin, trimmedName, token || undefined);
+      const token = useAuthStore.getState().accessToken;
+      let participant;
 
-      // Lưu session cho rejoin
-      if (player?.playerId) {
-        localStorage.setItem("playerSession", player.playerId);
-        localStorage.setItem("gameId", player.gameId);
-        localStorage.setItem("nickname", player.nickname || trimmedName);
+      // Join as authenticated user or anonymous
+      if (token) {
+        console.log("Joining as authenticated player...");
+        participant = await joinGameAuthenticated(trimmedPin, {
+          nickname: trimmedNickname,
+        });
+      } else {
+        console.log("Joining as anonymous player...");
+        participant = await joinGameAnonymous(trimmedPin, {
+          nickname: trimmedNickname,
+        });
       }
 
-      navigate(`/game-session/${player.gameId}`, {
+      // CRITICAL: Validate response
+      if (
+        !participant ||
+        !participant.participantId ||
+        !participant.gameId
+      ) {
+        console.error("Invalid participant response:", participant);
+        throw new Error("Invalid server response. Please try again.");
+      }
+
+      // Save session
+      saveParticipantSession(participant.participantId, participant.isAnonymous);
+      localStorage.setItem("currentGameId", participant.gameId);
+      localStorage.setItem("currentPinCode", trimmedPin);
+      localStorage.setItem("nickname", participant.nickname || trimmedNickname);
+
+      console.log("Successfully joined game:", {
+        gameId: participant.gameId,
+        participantId: participant.participantId,
+        isHost: false,
+        isAnonymous: participant.isAnonymous,
+      });
+
+      // Setup WebSocket connection
+      webSocketService.joinGameRoom(participant.gameId);
+
+      toast.success(`Joined game! Room: ${trimmedPin}`);
+
+      // Navigate to waiting room as PLAYER (not host)
+      navigate(`/game-session/${participant.gameId}`, {
         replace: true,
         state: {
-          gameData: { gameId: player.gameId, pinCode: trimmedPin },
-          quizTitle: "Quiz Game",
-          nickname: player.nickname,
-          token,
+          participantId: participant.participantId,
+          gameId: participant.gameId,
+          nickname: participant.nickname || trimmedNickname,
+          pinCode: trimmedPin,
+          isHost: false, // ← IMPORTANT: Player is NOT host
+          isAnonymous: participant.isAnonymous,
+          joinedAt: new Date().toISOString(),
         },
       });
-    } catch (err) {
-      console.error("Error joining game:", err);
-      setError(err instanceof Error ? err.message : "Failed to join game");
+    } catch (err: any) {
+      console.error("Failed to join game:", err);
+
+      const errorMsg =
+        err.response?.data?.message ||
+        err.message ||
+        "Failed to join room. Please check the code and try again.";
+
+      setError(errorMsg);
+      toast.error(errorMsg);
+
+      // Clear invalid session
+      clearParticipantSession();
+      localStorage.removeItem("currentGameId");
     } finally {
       setIsJoining(false);
     }
   };
 
-  const showPinField = !pinCode; // Ẩn ô PIN nếu đã có trong URL/query
+  return {
+    pinCode,
+    setPinCode,
+    nickname,
+    setNickname,
+    error,
+    setError,
+    isJoining,
+    handleJoinGame,
+  };
+}
+
+// ==================== COMPONENT ====================
+
+/**
+ * JoinGamePage - For PLAYERS to join an existing game
+ *
+ * Flow:
+ * 1. Player gets room code (from PIN or QR)
+ * 2. Player enters nickname
+ * 3. Player joins game as PARTICIPANT (not host)
+ * 4. Redirected to WaitingRoomSessionPage (player view)
+ *
+ * Note: Host does NOT use this page
+ * Host flow: QuizSubCard → createGame → WaitingRoomSessionPage (host view)
+ */
+const JoinGamePage: React.FC = () => {
+  const {
+    pinCode,
+    setPinCode,
+    nickname,
+    setNickname,
+    error,
+    isJoining,
+    handleJoinGame,
+  } = useJoinGameLogic();
+
+  const navigate = useNavigate();
+
+  const showPinInput = !pinCode;
 
   return (
     <div
       className="min-vh-100 d-flex align-items-center justify-content-center px-3"
       style={{
-        background: "linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)",
+        background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
       }}
     >
       <div className="w-100" style={{ maxWidth: 520 }}>
+        {/* Card */}
         <div className="card border-0 shadow-lg rounded-4 overflow-hidden">
           {/* Header */}
           <div
-            className="text-center text-white py-4"
+            className="text-center text-white py-5"
             style={{
               background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
             }}
           >
-            <h2 className="fw-bold mb-1">
-              <i className="bx bx-joystick me-2"></i>Join Game
-            </h2>
-            <p className="mb-0 opacity-75">
-              {showPinField
-                ? "Nhập PIN & nickname để tham gia"
-                : "Chỉ cần nhập nickname để tham gia"}
+            <h1 className="display-5 fw-bold mb-2">
+              <i className="bx bx-joystick-alt me-3"></i>
+              KKun Quiz
+            </h1>
+            <p className="lead mb-0 opacity-90">
+              {showPinInput
+                ? "Enter room code to join a game"
+                : "Choose your nickname and join!"}
             </p>
           </div>
 
           {/* Body */}
           <div className="card-body p-4 p-md-5">
-            <form onSubmit={handleJoinGame} className="needs-validation" noValidate>
-              {/* Ô PIN: CHỈ hiển thị khi thiếu PIN */}
-              {showPinField && (
-                <div className="mb-3">
-                  <label htmlFor="pinCode" className="form-label">
-                    Game PIN
+            <form
+              onSubmit={handleJoinGame}
+              className="needs-validation"
+              noValidate
+            >
+              {/* PIN Code Input - only show if not provided */}
+              {showPinInput && (
+                <div className="mb-4">
+                  <label htmlFor="pinCode" className="form-label fw-semibold">
+                    <i className="bx bx-key me-2"></i>
+                    Room Code
                   </label>
                   <input
                     type="text"
-                    className="form-control form-control-lg rounded-3"
+                    className="form-control form-control-lg text-center rounded-4"
                     id="pinCode"
-                    placeholder="Nhập mã PIN"
+                    placeholder="123456"
                     value={pinCode}
-                    onChange={(e) => setPinCode(e.target.value)}
+                    onChange={(e) => {
+                      // Only allow digits, max 6
+                      const value = e.target.value
+                        .replace(/\D/g, "")
+                        .slice(0, 6);
+                      setPinCode(value);
+                    }}
+                    inputMode="numeric"
+                    maxLength={6}
                     required
+                    disabled={isJoining}
+                    style={{
+                      fontSize: "2rem",
+                      letterSpacing: "8px",
+                      fontWeight: 600,
+                    }}
                   />
-                  <div className="form-text">
-                    Bạn cũng có thể mở link mời có sẵn PIN để bỏ qua bước này.
+                  <div className="form-text text-center mt-2">
+                    <i className="bx bx-info-circle me-1"></i>
+                    Ask your friend or scan the QR code to get the room code
                   </div>
                 </div>
               )}
 
-              {/* Nickname */}
+              {/* Nickname Input */}
               <div className="mb-4">
-                <label htmlFor="nickname" className="form-label">
-                  Nickname
+                <label htmlFor="nickname" className="form-label fw-semibold">
+                  <i className="bx bx-user me-2"></i>
+                  Your Nickname
                 </label>
                 <input
                   type="text"
-                  className="form-control form-control-lg rounded-3"
+                  className="form-control form-control-lg rounded-4"
                   id="nickname"
-                  placeholder="Nhập nickname của bạn"
+                  placeholder="E.g. ProGamer123"
                   value={nickname}
-                  onChange={(e) => setNickname(e.target.value)}
+                  onChange={(e) => setNickname(e.target.value.slice(0, 20))}
+                  maxLength={20}
                   required
+                  disabled={isJoining}
                 />
+                <div className="form-text">
+                  {nickname.length}/20 characters. We'll remember it next time!
+                </div>
               </div>
 
-              {/* Error */}
+              {/* Error Alert */}
               {error && (
-                <div className="alert alert-danger rounded-3" role="alert">
-                  <i className="bx bx-error-circle me-2"></i>
-                  {error}
+                <div
+                  className="alert alert-danger d-flex align-items-center rounded-4 mb-4"
+                  role="alert"
+                >
+                  <i className="bx bx-error-circle fs-5 me-2 flex-shrink-0"></i>
+                  <div>{error}</div>
                 </div>
               )}
 
-              {/* Actions */}
+              {/* Buttons */}
               <div className="d-grid gap-3">
+                {/* Join Button */}
                 <button
                   type="submit"
-                  className="btn btn-primary btn-lg rounded-3"
-                  disabled={isJoining}
+                  className="btn btn-lg rounded-4 text-white fw-bold"
+                  style={{
+                    background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+                    padding: "1rem",
+                    fontSize: "1.1rem",
+                    opacity: isJoining || nickname.length === 0 ? 0.7 : 1,
+                  }}
+                  disabled={isJoining || nickname.length === 0}
+                  title={
+                    nickname.length === 0
+                      ? "Please enter a nickname"
+                      : "Join the game room"
+                  }
                 >
                   {isJoining ? (
                     <>
-                      <span className="spinner-border spinner-border-sm me-2" />
-                      Joining...
+                      <span
+                        className="spinner-border spinner-border-sm me-2"
+                        role="status"
+                        aria-hidden="true"
+                      ></span>
+                      Joining room...
                     </>
                   ) : (
                     <>
-                      <i className="bx bx-log-in me-2"></i>
+                      <i
+                        className="bx bx-log-in-circle me-2"
+                        style={{ fontSize: "1.4rem" }}
+                      ></i>
                       Join Game
                     </>
                   )}
                 </button>
 
+                {/* Back Button */}
                 <button
                   type="button"
-                  className="btn btn-outline-secondary rounded-3"
-                  onClick={() => navigate(-1)}
+                  className="btn btn-lg btn-outline-secondary rounded-4 fw-bold"
+                  onClick={() => navigate("/")}
                   disabled={isJoining}
+                  title="Go back to home"
                 >
-                  <i className="bx bx-arrow-back me-2"></i>
-                  Quay lại
+                  <i className="bx bx-home me-2"></i>
+                  Back to Home
                 </button>
               </div>
             </form>
           </div>
 
-          {/* Footer hint (không lộ PIN) */}
-          {!showPinField && (
-            <div className="px-4 pb-4">
-              <div className="alert alert-info mb-0 rounded-3">
-                <i className="bx bx-info-circle me-2"></i>
-                Bạn đang tham gia một phòng — chỉ cần nhập nickname rồi bấm{" "}
-                <strong>Join Game</strong>.
-              </div>
+          {/* Footer hint */}
+          {!showPinInput && (
+            <div className="bg-light px-4 py-3 text-center border-top">
+              <small className="text-muted d-flex align-items-center justify-content-center gap-2">
+                <i className="bx bx-check-shield"></i>
+                Joining room <strong>{pinCode}</strong> as a player
+              </small>
             </div>
           )}
         </div>
 
-        {/* CTA nhỏ dưới cùng */}
-        <div className="text-center text-white-50 mt-3">
-          <small>Tip: Lưu nickname của bạn, lần sau vào sẽ nhanh hơn.</small>
+        {/* Bottom tip */}
+        <div className="text-center text-white mt-4 opacity-75">
+          <small>
+            <i className="bx bx-bulb me-1"></i>
+            Tip: Keep your nickname to remember your score!
+          </small>
         </div>
       </div>
     </div>

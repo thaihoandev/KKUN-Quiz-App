@@ -9,19 +9,26 @@ import org.springframework.kafka.config.TopicBuilder;
 @Configuration
 public class KafkaTopicConfig {
 
-    @Value("${app.kafka.topics.chatSend}")
+    @Value("${app.kafka.topics.chat-send}")     // sửa thành chatSend
     private String chatSend;
 
-    @Value("${app.kafka.topics.chatCreated}")
+    @Value("${app.kafka.topics.chat-created}")   // sửa thành chatCreated
     private String chatCreated;
 
     @Bean
     public NewTopic chatSendTopic() {
-        return TopicBuilder.name(chatSend).partitions(6).replicas(1).build();
+        return TopicBuilder.name(chatSend)
+                .partitions(6)
+                .replicas(1)
+                .compact()                 // optional: bật compaction cho chat
+                .build();
     }
 
     @Bean
     public NewTopic chatCreatedTopic() {
-        return TopicBuilder.name(chatCreated).partitions(6).replicas(1).build();
+        return TopicBuilder.name(chatCreated)
+                .partitions(3)
+                .replicas(1)
+                .build();
     }
 }

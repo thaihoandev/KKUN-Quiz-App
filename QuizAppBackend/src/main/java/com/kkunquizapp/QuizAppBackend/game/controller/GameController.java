@@ -11,7 +11,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -22,228 +21,234 @@ import java.util.List;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/api/v1/games")
+@RequestMapping("/api/games")
 @RequiredArgsConstructor
 @Slf4j
-@Tag(name = "Game Management", description = "Real-time multiplayer quiz game APIs (like Kahoot)")
+@Tag(name = "Game Management", description = "Real-time multiplayer quiz game (Kahoot-style)")
 public class GameController {
 
     private final GameService gameService;
 
-    // ===================== HOST ACTIONS (yêu cầu đăng nhập) =====================
+    // ===================== HOST ACTIONS =====================
 
     @PostMapping("/create")
-    @Operation(summary = "Tạo game mới từ quiz", description = "Chỉ host mới được tạo game")
+    @Operation(summary = "Tạo game mới từ quiz")
     public ResponseEntity<GameResponseDTO> createGame(
             @Valid @RequestBody GameCreateRequest request,
-            @AuthenticationPrincipal UserPrincipal currentUser) {
+            @AuthenticationPrincipal UserPrincipal host) {
 
-        log.info("Host {} creating new game from quizId: {}", currentUser.getUserId(), request.getQuizId());
-        GameResponseDTO game = gameService.createGame(request, currentUser.getUserId());
+        log.info("Host {} creating game for quiz {}", host.getUserId(), request.getQuizId());
+        GameResponseDTO game = gameService.createGame(request, host.getUserId());
         return ResponseEntity.status(HttpStatus.CREATED).body(game);
     }
 
     @PostMapping("/{gameId}/start")
-    @Operation(summary = "Bắt đầu game", description = "Host bấm Start → countdown 3s")
-    public ResponseEntity<ApiResponseDTO> startGame(
+    @Operation(summary = "Bắt đầu game (countdown 3s)")
+    public ApiResponseDTO startGame(
             @PathVariable UUID gameId,
-            @AuthenticationPrincipal UserPrincipal currentUser) {
+            @AuthenticationPrincipal UserPrincipal host) {
 
-        log.info("Host {} starting game {}", currentUser.getUserId(), gameId);
-        gameService.startGame(gameId, currentUser.getUserId());
-        return ResponseEntity.ok(new ApiResponseDTO(true, "Game started"));
+        log.info("Host {} starting game {}", host.getUserId(), gameId);
+        gameService.startGame(gameId, host.getUserId());
+        return ApiResponseDTO.success("Game starting in 3 seconds...");
     }
 
     @PostMapping("/{gameId}/pause")
     @Operation(summary = "Tạm dừng game")
-    public ResponseEntity<ApiResponseDTO> pauseGame(
+    public ApiResponseDTO pauseGame(
             @PathVariable UUID gameId,
-            @AuthenticationPrincipal UserPrincipal currentUser) {
+            @AuthenticationPrincipal UserPrincipal host) {
 
-        log.info("Host {} pausing game {}", currentUser.getUserId(), gameId);
-        gameService.pauseGame(gameId, currentUser.getUserId());
-        return ResponseEntity.ok(new ApiResponseDTO(true, "Game paused"));
+        log.info("Host {} pausing game {}", host.getUserId(), gameId);
+        gameService.pauseGame(gameId, host.getUserId());
+        return ApiResponseDTO.success("Game paused");
     }
 
     @PostMapping("/{gameId}/resume")
-    @Operation(summary = "Tiếp tục game sau khi pause")
-    public ResponseEntity<ApiResponseDTO> resumeGame(
+    @Operation(summary = "Tiếp tục game")
+    public ApiResponseDTO resumeGame(
             @PathVariable UUID gameId,
-            @AuthenticationPrincipal UserPrincipal currentUser) {
+            @AuthenticationPrincipal UserPrincipal host) {
 
-        log.info("Host {} resuming game {}", currentUser.getUserId(), gameId);
-        gameService.resumeGame(gameId, currentUser.getUserId());
-        return ResponseEntity.ok(new ApiResponseDTO(true, "Game resumed"));
+        log.info("Host {} resuming game {}", host.getUserId(), gameId);
+        gameService.resumeGame(gameId, host.getUserId());
+        return ApiResponseDTO.success("Game resumed");
     }
 
     @PostMapping("/{gameId}/next-question")
-    @Operation(summary = "Chuyển sang câu hỏi tiếp theo")
+    @Operation(summary = "Chuyển sang câu hỏi tiếp theo (host bấm)")
     public ResponseEntity<QuestionResponseDTO> nextQuestion(
             @PathVariable UUID gameId,
-            @AuthenticationPrincipal UserPrincipal currentUser) {
+            @AuthenticationPrincipal UserPrincipal host) {
 
-        log.info("Host {} moving to next question in game {}", currentUser.getUserId(), gameId);
-        QuestionResponseDTO question = gameService.moveToNextQuestion(gameId, currentUser.getUserId());
+        log.info("Host {} moving to next question in game {}", host.getUserId(), gameId);
+        QuestionResponseDTO question = gameService.moveToNextQuestion(gameId, host.getUserId());
         return ResponseEntity.ok(question);
     }
 
     @PostMapping("/{gameId}/end")
-    @Operation(summary = "Kết thúc game", description = "Host bấm End Game → hiện bảng xếp hạng cuối")
-    public ResponseEntity<ApiResponseDTO> endGame(
+    @Operation(summary = "Kết thúc game → hiện bảng xếp hạng cuối")
+    public ApiResponseDTO endGame(
             @PathVariable UUID gameId,
-            @AuthenticationPrincipal UserPrincipal currentUser) {
+            @AuthenticationPrincipal UserPrincipal host) {
 
-        log.info("Host {} ending game {}", currentUser.getUserId(), gameId);
-        gameService.endGame(gameId, currentUser.getUserId());
-        return ResponseEntity.ok(new ApiResponseDTO(true, "Game ended"));
+        log.info("Host {} ending game {}", host.getUserId(), gameId);
+        gameService.endGame(gameId, host.getUserId());
+        return ApiResponseDTO.success("Game ended. Final leaderboard sent.");
     }
 
     @PostMapping("/{gameId}/cancel")
-    @Operation(summary = "Hủy game", description = "Khi chưa bắt đầu hoặc muốn hủy")
-    public ResponseEntity<ApiResponseDTO> cancelGame(
+    @Operation(summary = "Hủy game (chưa bắt đầu hoặc lỗi)")
+    public ApiResponseDTO cancelGame(
             @PathVariable UUID gameId,
-            @AuthenticationPrincipal UserPrincipal currentUser) {
+            @AuthenticationPrincipal UserPrincipal host) {
 
-        log.info("Host {} cancelling game {}", currentUser.getUserId(), gameId);
-        gameService.cancelGame(gameId, currentUser.getUserId());
-        return ResponseEntity.ok(new ApiResponseDTO(true, "Game cancelled"));
+        log.info("Host {} cancelling game {}", host.getUserId(), gameId);
+        gameService.cancelGame(gameId, host.getUserId());
+        return ApiResponseDTO.success("Game cancelled");
     }
 
     @PostMapping("/{gameId}/kick/{participantId}")
-    @Operation(summary = "Kick người chơi khỏi phòng")
-    public ResponseEntity<ApiResponseDTO> kickParticipant(
+    @Operation(summary = "Kick người chơi")
+    public ApiResponseDTO kickParticipant(
             @PathVariable UUID gameId,
             @PathVariable UUID participantId,
-            @RequestParam(required = false) String reason,
-            @AuthenticationPrincipal UserPrincipal currentUser) {
+            @RequestParam(defaultValue = "Kicked by host") String reason,
+            @AuthenticationPrincipal UserPrincipal host) {
 
-        log.info("Host {} kicking participant {} from game {}", currentUser.getUserId(), participantId, gameId);
-        gameService.kickParticipant(gameId, participantId, currentUser.getUserId(), reason != null ? reason : "Kicked by host");
-        return ResponseEntity.ok(new ApiResponseDTO(true, "Player kicked"));
+        log.info("Host {} kicking participant {} from game {}", host.getUserId(), participantId, gameId);
+        gameService.kickParticipant(gameId, participantId, host.getUserId(), reason);
+        return ApiResponseDTO.success("Player kicked");
     }
 
-    // ===================== PLAYER ACTIONS (có thể guest hoặc đăng nhập) =====================
+    // ===================== PLAYER ACTIONS =====================
 
     @PostMapping("/join")
-    @Operation(summary = "Tham gia game bằng PIN (đã đăng nhập)", description = "Người chơi có tài khoản")
-    public ResponseEntity<GameParticipantDTO> joinGameAuthenticated(
+    @Operation(summary = "Tham gia game (đã đăng nhập)")
+    public GameParticipantDTO joinGame(
             @RequestParam String pinCode,
             @Valid @RequestBody JoinGameRequest request,
-            @AuthenticationPrincipal UserPrincipal currentUser) {
+            @AuthenticationPrincipal UserPrincipal user) {
 
-        log.info("User {} joining game with PIN: {}", currentUser.getUserId(), pinCode);
-        GameParticipantDTO participant = gameService.joinGame(pinCode, request, currentUser.getUserId());
-        return ResponseEntity.ok(participant);
+        log.info("User {} joining game with PIN {}", user.getUserId(), pinCode);
+        return gameService.joinGame(pinCode, request, user.getUserId());
     }
 
     @PostMapping("/join-anonymous")
-    @Operation(summary = "Tham gia game ẩn danh", description = "Không cần đăng nhập, trả về guestToken")
-    public ResponseEntity<GameParticipantDTO> joinGameAnonymous(
+    @Operation(summary = "Tham gia ẩn danh (không cần login)")
+    public GameParticipantDTO joinGameAnonymous(
             @RequestParam String pinCode,
             @Valid @RequestBody JoinGameRequest request) {
 
-        log.info("Anonymous player joining with PIN: {}", pinCode);
-        GameParticipantDTO participant = gameService.joinGameAnonymous(pinCode, request);
-        return ResponseEntity.ok(participant);
+        log.info("Anonymous user joining game with PIN {}", pinCode);
+        return gameService.joinGameAnonymous(pinCode, request);
     }
 
     @PostMapping("/{gameId}/answer")
-    @Operation(summary = "Nộp câu trả lời", description = "Cả guest và user đều dùng được")
-    public ResponseEntity<AnswerResultDTO> submitAnswer(
+    @Operation(summary = "Nộp câu trả lời (cả user và guest)")
+    public AnswerResultDTO submitAnswer(
             @PathVariable UUID gameId,
-            @RequestHeader("X-Participant-Id") UUID participantId, // FE gửi qua header
+            @RequestHeader("X-Participant-Id") UUID participantId,
             @Valid @RequestBody SubmitAnswerRequest request) {
 
-        log.debug("Participant {} submitting answer in game {}", participantId, gameId);
-        AnswerResultDTO result = gameService.submitAnswer(gameId, participantId, request);
-        return ResponseEntity.ok(result);
+        log.debug("Participant {} submitting answer for game {}", participantId, gameId);
+        return gameService.submitAnswer(gameId, participantId, request);
     }
 
     @PostMapping("/{gameId}/skip")
     @Operation(summary = "Bỏ qua câu hỏi")
-    public ResponseEntity<ApiResponseDTO> skipQuestion(
+    public ApiResponseDTO skipQuestion(
             @PathVariable UUID gameId,
             @RequestHeader("X-Participant-Id") UUID participantId) {
 
         log.debug("Participant {} skipping question in game {}", participantId, gameId);
         gameService.skipQuestion(gameId, participantId);
-        return ResponseEntity.ok(new ApiResponseDTO(true, "Question skipped"));
+        return ApiResponseDTO.success("Question skipped");
     }
 
     @PostMapping("/{gameId}/leave")
     @Operation(summary = "Rời phòng chơi")
-    public ResponseEntity<ApiResponseDTO> leaveGame(
+    public ApiResponseDTO leaveGame(
             @PathVariable UUID gameId,
             @RequestHeader("X-Participant-Id") UUID participantId) {
 
         log.info("Participant {} leaving game {}", participantId, gameId);
         gameService.leaveGame(gameId, participantId);
-        return ResponseEntity.ok(new ApiResponseDTO(true, "Left game"));
+        return ApiResponseDTO.success("Left game successfully");
     }
 
-    // ===================== PUBLIC INFO ENDPOINTS =====================
+    // ===================== PUBLIC ENDPOINTS =====================
 
     @GetMapping("/pin/{pinCode}")
-    @Operation(summary = "Lấy thông tin game bằng PIN", description = "Dùng cho màn hình chờ tham gia")
-    public ResponseEntity<GameResponseDTO> getGameByPin(@PathVariable String pinCode) {
-        log.info("Fetching game info by PIN: {}", pinCode);
-        GameResponseDTO game = gameService.getGameByPin(pinCode);
-        return ResponseEntity.ok(game);
+    @Operation(summary = "Lấy thông tin game bằng PIN (màn hình chờ)")
+    public GameResponseDTO getGameByPin(@PathVariable String pinCode) {
+        log.debug("Fetching game info by PIN: {}", pinCode);
+        return gameService.getGameByPin(pinCode);
     }
 
-
     @GetMapping("/{gameId}")
-    @Operation(summary = "Lấy chi tiết game (host & player đều xem được)")
-    public ResponseEntity<GameDetailDTO> getGameDetails(
+    @Operation(summary = "Chi tiết game (host + player)")
+    public GameDetailDTO getGameDetails(
             @PathVariable UUID gameId,
-            @AuthenticationPrincipal UserPrincipal currentUser) {
+            @AuthenticationPrincipal UserPrincipal user) {
 
-        UUID userId = currentUser != null ? currentUser.getUserId() : null;
-        GameDetailDTO detail = gameService.getGameDetails(gameId, userId);
-        return ResponseEntity.ok(detail);
+        UUID userId = user != null ? user.getUserId() : null;
+        log.debug("Fetching game details for gameId: {}", gameId);
+        return gameService.getGameDetails(gameId, userId);
     }
 
     @GetMapping("/{gameId}/participants")
-    @Operation(summary = "Lấy danh sách người chơi trong phòng")
-    public ResponseEntity<List<GameParticipantDTO>> getParticipants(@PathVariable UUID gameId) {
-        List<GameParticipantDTO> participants = gameService.getParticipants(gameId);
-        return ResponseEntity.ok(participants);
+    @Operation(summary = "Danh sách người chơi hiện tại")
+    public List<GameParticipantDTO> getParticipants(@PathVariable UUID gameId) {
+        log.debug("Fetching participants for game {}", gameId);
+        return gameService.getParticipants(gameId);
     }
 
     @GetMapping("/{gameId}/leaderboard")
     @Operation(summary = "Bảng xếp hạng realtime")
-    public ResponseEntity<List<LeaderboardEntryDTO>> getLeaderboard(@PathVariable UUID gameId) {
-        List<LeaderboardEntryDTO> leaderboard = gameService.getLeaderboard(gameId);
-        return ResponseEntity.ok(leaderboard);
+    public List<LeaderboardEntryDTO> getLeaderboard(@PathVariable UUID gameId) {
+        log.debug("Fetching leaderboard for game {}", gameId);
+        return gameService.getLeaderboard(gameId);
     }
 
     @GetMapping("/{gameId}/final-leaderboard")
-    @Operation(summary = "Bảng xếp hạng cuối cùng sau khi end game")
-    public ResponseEntity<List<LeaderboardEntryDTO>> getFinalLeaderboard(@PathVariable UUID gameId) {
-        List<LeaderboardEntryDTO> leaderboard = gameService.getFinalLeaderboard(gameId);
-        return ResponseEntity.ok(leaderboard);
+    @Operation(summary = "Bảng xếp hạng cuối cùng")
+    public List<LeaderboardEntryDTO> getFinalLeaderboard(@PathVariable UUID gameId) {
+        log.debug("Fetching final leaderboard for game {}", gameId);
+        return gameService.getFinalLeaderboard(gameId);
     }
 
     @GetMapping("/my-games")
-    @Operation(summary = "Lịch sử game host đã tạo")
-    public ResponseEntity<Page<GameResponseDTO>> getMyGames(
-            @AuthenticationPrincipal UserPrincipal currentUser,
+    @Operation(summary = "Lịch sử các game đã tạo")
+    public Page<GameResponseDTO> getMyGames(
+            @AuthenticationPrincipal UserPrincipal user,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
 
-        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
-        Page<GameResponseDTO> games = gameService.getMyGames(currentUser.getUserId(), pageable);
-        return ResponseEntity.ok(games);
+        log.debug("Fetching games for user {}, page: {}, size: {}", user.getUserId(), page, size);
+        var pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
+        return gameService.getMyGames(user.getUserId(), pageable);
     }
 
     @GetMapping("/{gameId}/statistics")
-    @Operation(summary = "Thống kê chi tiết game (cho host)")
-    public ResponseEntity<GameStatisticsDTO> getGameStatistics(
+    @Operation(summary = "Thống kê chi tiết game")
+    public GameStatisticsDTO getStatistics(
             @PathVariable UUID gameId,
-            @AuthenticationPrincipal UserPrincipal currentUser) {
+            @AuthenticationPrincipal UserPrincipal host) {
 
-        log.info("Host {} viewing statistics for game {}", currentUser.getUserId(), gameId);
-        GameStatisticsDTO stats = gameService.getGameStatistics(gameId);
-        return ResponseEntity.ok(stats);
+        log.debug("Fetching statistics for game {}", gameId);
+        return gameService.getGameStatistics(gameId);
+    }
+
+    // ===================== USER STATISTICS =====================
+
+    @GetMapping("/user/{userId}/quiz/{quizId}/stats")
+    @Operation(summary = "Lấy thống kê của user với quiz cụ thể")
+    public UserQuizStatsDTO getUserStatistics(
+            @PathVariable UUID userId,
+            @PathVariable UUID quizId) {
+
+        log.debug("Fetching user {} statistics for quiz {}", userId, quizId);
+        return gameService.getUserStatistics(userId, quizId);
     }
 }

@@ -28,7 +28,7 @@ public class MessageCreatedBroadcaster {
      * Lưu ý: /user/... cần Principal.getName() == userId (string) ở handshake.
      */
     @KafkaListener(
-            topics = "${app.kafka.topics.chatCreated}",
+            topics = "${app.kafka.topics.chat-created}",
             groupId = "chat-broadcaster" // có thể đưa vào cấu hình
             // containerFactory = "kafkaJsonListenerContainerFactory" // nếu bạn dùng factory custom
     )

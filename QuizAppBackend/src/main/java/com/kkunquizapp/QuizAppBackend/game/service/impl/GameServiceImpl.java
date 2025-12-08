@@ -1,7 +1,6 @@
-
-// ==================== GAME SERVICE IMPLEMENTATION ====================
 package com.kkunquizapp.QuizAppBackend.game.service.impl;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kkunquizapp.QuizAppBackend.game.dto.*;
 import com.kkunquizapp.QuizAppBackend.game.event.GameEvent;
@@ -24,24 +23,45 @@ import com.kkunquizapp.QuizAppBackend.user.model.User;
 import com.kkunquizapp.QuizAppBackend.user.repository.UserRepo;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.scheduling.TaskScheduler;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.*;
-        import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
+/**
+ * Game Service Implementation - Production Ready
+ *
+ * Features:
+ * - Thread-safe game operations using TaskScheduler
+ * - Redis caching with proper serialization
+ * - Kafka event streaming for real-time updates
+ * - Distributed locking for idempotency
+ * - Comprehensive error handling
+ * - Transaction management
+ * - Participant access validation (FIXED)
+ * - Player count tracking - total + active (FIXED)
+ * - Auto end game when no players (FIXED)
+ */
 @Service
 @RequiredArgsConstructor
 @Transactional(rollbackFor = Exception.class)
 @Slf4j
 public class GameServiceImpl implements GameService {
+
+    // ==================== DEPENDENCIES ====================
 
     private final GameRepo gameRepository;
     private final GameParticipantRepo participantRepository;
@@ -52,18 +72,28 @@ public class GameServiceImpl implements GameService {
     private final UserRepo userRepository;
     private final QuizService quizService;
     private final GameMapper gameMapper;
-    private final ObjectMapper objectMapper;
 
-    // Redis for real-time caching
+    @Qualifier("redisObjectMapper")
+    private final ObjectMapper redisObjectMapper;
+
     private final RedisTemplate<String, Object> redisTemplate;
-
-    // Kafka for event streaming
     private final KafkaTemplate<String, Object> kafkaTemplate;
+    private final TaskScheduler taskScheduler;
+
+    // ==================== CONSTANTS ====================
 
     private static final String GAME_CACHE_PREFIX = "game:";
+    private static final String GAME_PIN_PREFIX = "game:pin:";
     private static final String LEADERBOARD_CACHE_PREFIX = "leaderboard:";
     private static final String PARTICIPANTS_CACHE_PREFIX = "participants:";
-    private static final long CACHE_TTL_SECONDS = 300; // 5 minutes
+    private static final String ANSWER_LOCK_PREFIX = "answer:lock:";
+
+    private static final long CACHE_TTL_SECONDS = 300;
+    private static final long LEADERBOARD_TTL_SECONDS = 5;
+    private static final long PARTICIPANTS_TTL_SECONDS = 60;
+
+    @Value("${app.kafka.topics.game-events}")
+    private String KAFKA_TOPIC;
 
     // ==================== CREATE GAME ====================
 
@@ -71,7 +101,6 @@ public class GameServiceImpl implements GameService {
     public GameResponseDTO createGame(GameCreateRequest request, UUID hostId) {
         log.info("Creating game for quiz: {} by host: {}", request.getQuizId(), hostId);
 
-        // Validate quiz
         Quiz quiz = quizRepository.findByQuizIdAndDeletedFalse(request.getQuizId())
                 .orElseThrow(() -> new GameException("Quiz not found"));
 
@@ -79,20 +108,16 @@ public class GameServiceImpl implements GameService {
             throw new GameException("Cannot create game for unpublished quiz");
         }
 
-        // Validate host
         User host = userRepository.findById(hostId)
                 .orElseThrow(() -> new GameException("Host not found"));
 
-        // Generate unique PIN
-        String pinCode = generateUniquePinCode();
-
-        // Get questions
         List<Question> questions = questionRepository.findByQuizQuizIdAndDeletedFalseOrderByOrderIndexAsc(quiz.getQuizId());
         if (questions.isEmpty()) {
             throw new GameException("Quiz has no questions");
         }
 
-        // Create game
+        String pinCode = generateUniquePinCode();
+
         Game game = Game.builder()
                 .quiz(quiz)
                 .host(host)
@@ -112,38 +137,43 @@ public class GameServiceImpl implements GameService {
                 .build();
 
         game = gameRepository.save(game);
-        log.info("Game created successfully: {} with PIN: {}", game.getGameId(), pinCode);
+        log.info("Game created: {} with PIN: {}", game.getGameId(), pinCode);
 
-        // Cache game in Redis
         cacheGame(game);
 
-        // Send Kafka event
-        publishGameEvent(game.getGameId(), "GAME_CREATED", hostId, null);
+        publishGameEvent(game.getGameId(), "GAME_CREATED", hostId, Map.of(
+                "pinCode", pinCode,
+                "quizTitle", quiz.getTitle(),
+                "totalQuestions", questions.size()
+        ));
 
-        // Increment quiz play count
         quizService.incrementPlayCount(quiz.getQuizId());
 
         return gameMapper.toResponseDTO(game);
     }
 
+    // ==================== JOIN GAME ====================
+
     @Override
     public GameParticipantDTO joinGame(String pinCode, JoinGameRequest request, UUID userId) {
         log.info("User {} joining game with PIN: {}", userId, pinCode);
 
-        Game game = getGameFromCacheOrDB(pinCode);
+        Game game = getGameByPinWithValidation(pinCode);
         validateGameJoinable(game);
 
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new GameException("User not found"));
 
-        // Check if already joined
         Optional<GameParticipant> existing = participantRepository.findByGameAndUser(game, user);
         if (existing.isPresent()) {
-            log.warn("User {} already joined game {}", userId, game.getGameId());
-            return gameMapper.toParticipantDTO(existing.get());
+            GameParticipant participant = existing.get();
+            if (participant.getStatus() == ParticipantStatus.LEFT) {
+                participant.setStatus(ParticipantStatus.JOINED);
+                participantRepository.save(participant);
+            }
+            return gameMapper.toParticipantDTO(participant);
         }
 
-        // Create participant
         GameParticipant participant = GameParticipant.builder()
                 .game(game)
                 .user(user)
@@ -155,21 +185,14 @@ public class GameServiceImpl implements GameService {
                 .build();
 
         participant = participantRepository.save(participant);
-        log.info("User {} joined game {} as participant {}", userId, game.getGameId(), participant.getParticipantId());
+        log.info("User {} joined game {}", userId, game.getGameId());
 
-        // Update game player count
-        game.incrementPlayerCount();
-        game.setActivePlayerCount(game.getActivePlayerCount() + 1);
-        gameRepository.save(game);
+        updatePlayerCount(game, 1);
 
-        // Update cache
-        cacheGame(game);
-        invalidateParticipantsCache(game.getGameId());
-
-        // Broadcast join event
         publishGameEvent(game.getGameId(), "PARTICIPANT_JOINED", userId, Map.of(
                 "participantId", participant.getParticipantId(),
                 "nickname", participant.getNickname(),
+                "isAnonymous", false,
                 "playerCount", game.getPlayerCount()
         ));
 
@@ -180,22 +203,24 @@ public class GameServiceImpl implements GameService {
     public GameParticipantDTO joinGameAnonymous(String pinCode, JoinGameRequest request) {
         log.info("Anonymous user joining game with PIN: {}", pinCode);
 
-        Game game = getGameFromCacheOrDB(pinCode);
+        Game game = getGameByPinWithValidation(pinCode);
         validateGameJoinable(game);
 
         if (!game.isAllowAnonymous()) {
             throw new GameException("Anonymous players not allowed in this game");
         }
 
-        // Generate guest token
+        if (request.getNickname() == null || request.getNickname().trim().isEmpty()) {
+            throw new GameException("Nickname is required for anonymous players");
+        }
+
         String guestToken = UUID.randomUUID().toString();
         LocalDateTime guestExpiry = LocalDateTime.now().plusDays(7);
 
-        // Create anonymous participant
         GameParticipant participant = GameParticipant.builder()
                 .game(game)
                 .user(null)
-                .nickname(request.getNickname())
+                .nickname(request.getNickname().trim())
                 .isAnonymous(true)
                 .guestToken(guestToken)
                 .guestExpiresAt(guestExpiry)
@@ -205,18 +230,10 @@ public class GameServiceImpl implements GameService {
                 .build();
 
         participant = participantRepository.save(participant);
-        log.info("Anonymous user joined game {} with guest token {}", game.getGameId(), guestToken);
+        log.info("Anonymous user joined game {}", game.getGameId());
 
-        // Update game player count
-        game.incrementPlayerCount();
-        game.setActivePlayerCount(game.getActivePlayerCount() + 1);
-        gameRepository.save(game);
+        updatePlayerCount(game, 1);
 
-        // Update cache
-        cacheGame(game);
-        invalidateParticipantsCache(game.getGameId());
-
-        // Broadcast join event
         publishGameEvent(game.getGameId(), "PARTICIPANT_JOINED", null, Map.of(
                 "participantId", participant.getParticipantId(),
                 "nickname", participant.getNickname(),
@@ -233,7 +250,7 @@ public class GameServiceImpl implements GameService {
     public void startGame(UUID gameId, UUID hostId) {
         log.info("Starting game: {} by host: {}", gameId, hostId);
 
-        Game game = findGameEntityById(gameId);
+        Game game = getGameByIdWithCache(gameId);
         validateHost(game, hostId);
 
         if (game.getGameStatus() != GameStatus.WAITING) {
@@ -244,50 +261,65 @@ public class GameServiceImpl implements GameService {
             throw new GameException("Cannot start game with no players");
         }
 
-        // Start game
-        game.startGame();
         game.setGameStatus(GameStatus.STARTING);
         gameRepository.save(game);
-
-        // Update cache
         cacheGame(game);
 
-        // Broadcast start event (countdown)
         publishGameEvent(gameId, "GAME_STARTING", hostId, Map.of(
                 "countdown", 3,
                 "totalQuestions", game.getTotalQuestions()
         ));
 
-        log.info("Game {} started with {} players", gameId, game.getPlayerCount());
-
-        // Schedule actual game start after countdown
-        scheduleGameStart(game);
+        taskScheduler.schedule(
+                () -> actuallyStartGame(gameId, hostId),
+                Instant.now().plusSeconds(3)
+        );
     }
 
-    private void scheduleGameStart(Game game) {
-        // In production, use @Scheduled or Spring Task Scheduler
-        new Thread(() -> {
-            try {
-                Thread.sleep(3000); // 3 second countdown
+    @Transactional
+    public void actuallyStartGame(UUID gameId, UUID hostId) {
+        try {
+            log.info("Actually starting game: {}", gameId);
 
-                game.setGameStatus(GameStatus.IN_PROGRESS);
-                gameRepository.save(game);
-                cacheGame(game);
+            Game game = gameRepository.findById(gameId)
+                    .orElseThrow(() -> new GameNotFoundException("Game not found: " + gameId));
 
-                // Move to first question
-                moveToNextQuestion(game.getGameId(), game.getHost().getUserId());
-
-            } catch (Exception e) {
-                log.error("Error starting game: {}", e.getMessage());
+            if (game.getGameStatus() != GameStatus.STARTING) {
+                log.warn("Game {} status changed, abort start", gameId);
+                return;
             }
-        }).start();
+
+            game.startGame();
+            gameRepository.save(game);
+            cacheGame(game);
+
+            publishGameEvent(gameId, "GAME_STARTED", hostId, Map.of(
+                    "totalQuestions", game.getTotalQuestions()
+            ));
+
+            moveToNextQuestion(gameId, hostId);
+
+        } catch (Exception e) {
+            log.error("Failed to start game {}: {}", gameId, e.getMessage(), e);
+            try {
+                Game game = gameRepository.findById(gameId).orElse(null);
+                if (game != null && game.getGameStatus() == GameStatus.STARTING) {
+                    game.setGameStatus(GameStatus.WAITING);
+                    gameRepository.save(game);
+                    cacheGame(game);
+                    publishGameEvent(gameId, "GAME_START_FAILED", hostId, Map.of("error", e.getMessage()));
+                }
+            } catch (Exception ex) {
+                log.error("Failed to rollback: {}", ex.getMessage());
+            }
+        }
     }
 
     @Override
     public void pauseGame(UUID gameId, UUID hostId) {
         log.info("Pausing game: {} by host: {}", gameId, hostId);
 
-        Game game = findGameEntityById(gameId);
+        Game game = getGameByIdWithCache(gameId);
         validateHost(game, hostId);
 
         if (game.getGameStatus() != GameStatus.IN_PROGRESS) {
@@ -305,7 +337,7 @@ public class GameServiceImpl implements GameService {
     public void resumeGame(UUID gameId, UUID hostId) {
         log.info("Resuming game: {} by host: {}", gameId, hostId);
 
-        Game game = findGameEntityById(gameId);
+        Game game = getGameByIdWithCache(gameId);
         validateHost(game, hostId);
 
         if (game.getGameStatus() != GameStatus.PAUSED) {
@@ -323,26 +355,22 @@ public class GameServiceImpl implements GameService {
     public void endGame(UUID gameId, UUID hostId) {
         log.info("Ending game: {} by host: {}", gameId, hostId);
 
-        Game game = findGameEntityById(gameId);
+        Game game = getGameByIdWithCache(gameId);
         validateHost(game, hostId);
 
         if (game.getGameStatus() == GameStatus.FINISHED || game.getGameStatus() == GameStatus.CANCELLED) {
             throw new GameException("Game already ended");
         }
 
-        // Calculate final statistics
         calculateFinalStatistics(game);
 
-        // End game
         game.endGame();
         gameRepository.save(game);
         cacheGame(game);
 
-        // Update quiz statistics
         quizService.incrementCompletionCount(game.getQuiz().getQuizId());
         quizService.updateAverageScore(game.getQuiz().getQuizId(), game.getAverageScore());
 
-        // Generate final leaderboard
         List<LeaderboardEntryDTO> leaderboard = getFinalLeaderboard(gameId);
 
         publishGameEvent(gameId, "GAME_ENDED", hostId, Map.of(
@@ -351,14 +379,14 @@ public class GameServiceImpl implements GameService {
                 "averageScore", game.getAverageScore()
         ));
 
-        log.info("Game {} ended successfully", gameId);
+        log.info("Game {} ended with {} players", gameId, game.getPlayerCount());
     }
 
     @Override
     public void cancelGame(UUID gameId, UUID hostId) {
         log.info("Cancelling game: {} by host: {}", gameId, hostId);
 
-        Game game = findGameEntityById(gameId);
+        Game game = getGameByIdWithCache(gameId);
         validateHost(game, hostId);
 
         game.setGameStatus(GameStatus.CANCELLED);
@@ -366,7 +394,7 @@ public class GameServiceImpl implements GameService {
         gameRepository.save(game);
         cacheGame(game);
 
-        publishGameEvent(gameId, "GAME_CANCELLED", hostId, null);
+        publishGameEvent(gameId, "GAME_CANCELLED", hostId, Map.of("reason", "Cancelled by host"));
     }
 
     // ==================== QUESTION FLOW ====================
@@ -375,33 +403,30 @@ public class GameServiceImpl implements GameService {
     public QuestionResponseDTO moveToNextQuestion(UUID gameId, UUID hostId) {
         log.info("Moving to next question in game: {}", gameId);
 
-        Game game = findGameEntityById(gameId);
+        Game game = getGameByIdWithCache(gameId);
         validateHost(game, hostId);
 
         if (game.getGameStatus() != GameStatus.IN_PROGRESS) {
             throw new GameException("Game must be in progress");
         }
 
-        // Check if all questions answered
         if (game.getCurrentQuestionIndex() >= game.getTotalQuestions() - 1) {
             log.info("All questions answered, ending game {}", gameId);
             endGame(gameId, hostId);
             throw new GameException("No more questions");
         }
 
-        // Get questions
         List<Question> questions = getGameQuestions(game);
 
-        // Move to next
         game.moveToNextQuestion();
         Question currentQuestion = questions.get(game.getCurrentQuestionIndex());
         game.setCurrentQuestionId(currentQuestion.getQuestionId());
         gameRepository.save(game);
         cacheGame(game);
 
-        log.info("Game {} moved to question {}/{}", gameId, game.getCurrentQuestionIndex() + 1, game.getTotalQuestions());
+        log.info("Game {} moved to question {}/{}", gameId,
+                game.getCurrentQuestionIndex() + 1, game.getTotalQuestions());
 
-        // Broadcast question
         broadcastQuestion(gameId);
 
         return gameMapper.toQuestionDTO(currentQuestion);
@@ -409,11 +434,10 @@ public class GameServiceImpl implements GameService {
 
     @Override
     public void broadcastQuestion(UUID gameId) {
-        Game game = findGameEntityById(gameId);
+        Game game = getGameByIdWithCache(gameId);
         Question question = questionRepository.findById(game.getCurrentQuestionId())
                 .orElseThrow(() -> new GameException("Current question not found"));
 
-        // Hide correct answers
         QuestionResponseDTO questionDTO = gameMapper.toQuestionDTOWithoutAnswers(question);
 
         publishGameEvent(gameId, "QUESTION_STARTED", null, Map.of(
@@ -423,37 +447,50 @@ public class GameServiceImpl implements GameService {
                 "timeLimit", question.getTimeLimitSeconds()
         ));
 
-        // Schedule question end
-        scheduleQuestionEnd(game, question.getTimeLimitSeconds());
-    }
-
-    private void scheduleQuestionEnd(Game game, int timeLimitSeconds) {
-        new Thread(() -> {
-            try {
-                Thread.sleep(timeLimitSeconds * 1000L);
-                endQuestion(game.getGameId());
-            } catch (Exception e) {
-                log.error("Error ending question: {}", e.getMessage());
-            }
-        }).start();
+        taskScheduler.schedule(
+                () -> endQuestion(gameId),
+                Instant.now().plusSeconds(question.getTimeLimitSeconds())
+        );
     }
 
     @Override
+    @Transactional
     public void endQuestion(UUID gameId) {
         log.info("Ending current question for game: {}", gameId);
 
-        Game game = findGameEntityById(gameId);
+        try {
+            Game game = gameRepository.findById(gameId)
+                    .orElseThrow(() -> new GameNotFoundException("Game not found: " + gameId));
 
-        // Calculate and broadcast leaderboard
-        List<LeaderboardEntryDTO> leaderboard = getLeaderboard(gameId);
+            if (game.getGameStatus() != GameStatus.IN_PROGRESS) {
+                log.warn("Game {} not in progress, skip ending question", gameId);
+                return;
+            }
 
-        publishGameEvent(gameId, "QUESTION_ENDED", null, Map.of(
-                "leaderboard", leaderboard,
-                "questionNumber", game.getCurrentQuestionIndex() + 1
-        ));
+            // FIXED: Handle last question
+            if (game.getCurrentQuestionIndex() >= game.getTotalQuestions() - 1) {
+                log.info("Last question ended, auto-ending game {}", gameId);
+                endGame(gameId, game.getHost().getUserId());
+                return;
+            }
 
-        // Cache leaderboard
-        cacheLeaderboard(gameId, leaderboard);
+            List<LeaderboardEntryDTO> leaderboard = getLeaderboard(gameId);
+
+            Question currentQuestion = questionRepository.findById(game.getCurrentQuestionId())
+                    .orElse(null);
+
+            publishGameEvent(gameId, "QUESTION_ENDED", null, Map.of(
+                    "leaderboard", leaderboard,
+                    "questionNumber", game.getCurrentQuestionIndex() + 1,
+                    "correctAnswer", currentQuestion != null ?
+                            gameMapper.toQuestionDTO(currentQuestion) : null
+            ));
+
+            cacheLeaderboard(gameId, leaderboard);
+
+        } catch (Exception e) {
+            log.error("Failed to end question for game {}: {}", gameId, e.getMessage(), e);
+        }
     }
 
     // ==================== ANSWER SUBMISSION ====================
@@ -462,7 +499,25 @@ public class GameServiceImpl implements GameService {
     public AnswerResultDTO submitAnswer(UUID gameId, UUID participantId, SubmitAnswerRequest request) {
         log.debug("Participant {} submitting answer for game {}", participantId, gameId);
 
-        Game game = findGameEntityById(gameId);
+        String lockKey = ANSWER_LOCK_PREFIX + participantId + ":" + gameId;
+        Boolean locked = redisTemplate.opsForValue().setIfAbsent(
+                lockKey, "locked", 10, TimeUnit.SECONDS
+        );
+
+        if (Boolean.FALSE.equals(locked)) {
+            throw new GameException("Answer submission in progress");
+        }
+
+        try {
+            return doSubmitAnswer(gameId, participantId, request);
+        } finally {
+            redisTemplate.delete(lockKey);
+        }
+    }
+
+    private AnswerResultDTO doSubmitAnswer(UUID gameId, UUID participantId, SubmitAnswerRequest request) {
+        Game game = getGameByIdWithCache(gameId);
+
         if (game.getGameStatus() != GameStatus.IN_PROGRESS) {
             throw new GameException("Game is not in progress");
         }
@@ -470,65 +525,68 @@ public class GameServiceImpl implements GameService {
         GameParticipant participant = participantRepository.findById(participantId)
                 .orElseThrow(() -> new GameException("Participant not found"));
 
+        // FIXED: Validate participant access
+        validateParticipantAccess(game, participant);
+
         Question question = questionRepository.findById(game.getCurrentQuestionId())
                 .orElseThrow(() -> new GameException("Current question not found"));
 
-        // Check if already answered
-        boolean alreadyAnswered = answerRepository.existsByGameAndParticipantAndQuestion(game, participant, question);
+        boolean alreadyAnswered = answerRepository.existsByGameAndParticipantAndQuestion(
+                game, participant, question
+        );
         if (alreadyAnswered) {
             throw new GameException("Already answered this question");
         }
 
-        // Calculate response time
         long responseTime = Duration.between(game.getQuestionStartTime(), LocalDateTime.now()).toMillis();
+        boolean isTimeout = responseTime > (question.getTimeLimitSeconds() * 1000L);
 
-        // Grade answer
         AnswerGradingResult grading = gradeAnswer(question, request.getSubmittedAnswer());
 
-        // Calculate points (bonus for speed)
-        int points = calculatePoints(grading.isCorrect(), question.getPoints(), responseTime, question.getTimeLimitSeconds());
+        int points = isTimeout ? 0 : calculatePoints(
+                grading.correct(),
+                question.getPoints(),
+                responseTime,
+                question.getTimeLimitSeconds()
+        );
 
-        // Save answer
         UserAnswer answer = UserAnswer.builder()
                 .game(game)
                 .participant(participant)
                 .question(question)
                 .submittedAnswerJson(toJsonString(request.getSubmittedAnswer()))
                 .submittedAnswerText(String.valueOf(request.getSubmittedAnswer()))
-                .correct(grading.isCorrect())
+                .correct(grading.correct() && !isTimeout)
                 .pointsEarned(points)
                 .maxPoints(question.getPoints())
                 .responseTimeMs(responseTime)
                 .isSkipped(false)
+                .isTimeout(isTimeout)
                 .clientSubmittedAt(request.getSubmittedAt())
                 .explanation(question.getExplanation())
                 .build();
 
         answer = answerRepository.save(answer);
 
-        // Update participant stats
+        // FIXED: Record participant stats properly
+        recordParticipantStats(participant, answer);
         participant.updateScore(points);
-        if (grading.isCorrect()) {
-            participant.recordCorrectAnswer(responseTime);
-        } else {
-            participant.recordIncorrectAnswer(responseTime);
-        }
         participantRepository.save(participant);
 
-        // Invalidate leaderboard cache
         invalidateLeaderboardCache(gameId);
 
-        // Build result
         AnswerResultDTO result = AnswerResultDTO.builder()
-                .correct(grading.isCorrect())
+                .correct(grading.correct() && !isTimeout)
                 .pointsEarned(points)
                 .responseTimeMs(responseTime)
                 .currentScore(participant.getScore())
-                .correctAnswer(grading.getCorrectAnswer())
+                .correctAnswer(grading.correctAnswer())
                 .explanation(question.getExplanation())
                 .build();
 
-        log.debug("Answer processed: correct={}, points={}", grading.isCorrect(), points);
+        log.debug("Answer processed: correct={}, points={}, timeout={}",
+                grading.correct(), points, isTimeout);
+
         return result;
     }
 
@@ -536,14 +594,22 @@ public class GameServiceImpl implements GameService {
     public void skipQuestion(UUID gameId, UUID participantId) {
         log.debug("Participant {} skipping question in game {}", participantId, gameId);
 
-        Game game = findGameEntityById(gameId);
+        Game game = getGameByIdWithCache(gameId);
         GameParticipant participant = participantRepository.findById(participantId)
                 .orElseThrow(() -> new GameException("Participant not found"));
+
+        validateParticipantAccess(game, participant);
 
         Question question = questionRepository.findById(game.getCurrentQuestionId())
                 .orElseThrow(() -> new GameException("Current question not found"));
 
-        // Save skip
+        boolean alreadyAnswered = answerRepository.existsByGameAndParticipantAndQuestion(
+                game, participant, question
+        );
+        if (alreadyAnswered) {
+            throw new GameException("Already answered this question");
+        }
+
         UserAnswer answer = UserAnswer.builder()
                 .game(game)
                 .participant(participant)
@@ -558,9 +624,10 @@ public class GameServiceImpl implements GameService {
 
         answerRepository.save(answer);
 
-        // Update participant
         participant.recordSkip();
         participantRepository.save(participant);
+
+        log.debug("Question skipped by participant {}", participantId);
     }
 
     // ==================== PARTICIPANT MANAGEMENT ====================
@@ -569,24 +636,35 @@ public class GameServiceImpl implements GameService {
     public void kickParticipant(UUID gameId, UUID participantId, UUID hostId, String reason) {
         log.info("Kicking participant {} from game {}", participantId, gameId);
 
-        Game game = findGameEntityById(gameId);
+        Game game = getGameByIdWithCache(gameId);
         validateHost(game, hostId);
 
         GameParticipant participant = participantRepository.findById(participantId)
                 .orElseThrow(() -> new GameException("Participant not found"));
 
+        validateParticipantAccess(game, participant);
+
+        // FIXED: Update active player count
+        boolean wasActive = participant.isActive();
+
         participant.kick(reason);
         participantRepository.save(participant);
 
-        // Update game count
-        game.setActivePlayerCount(game.getActivePlayerCount() - 1);
-        gameRepository.save(game);
-        cacheGame(game);
+        updatePlayerCount(game, -1);
+
+        if (wasActive && game.getGameStatus() == GameStatus.IN_PROGRESS) {
+            game.setActivePlayerCount(Math.max(0, game.getActivePlayerCount() - 1));
+            gameRepository.save(game);
+            cacheGame(game);
+        }
+
+        checkAndAutoEndGameIfNeeded(game);
 
         publishGameEvent(gameId, "PARTICIPANT_KICKED", hostId, Map.of(
                 "participantId", participantId,
                 "nickname", participant.getNickname(),
-                "reason", reason
+                "reason", reason,
+                "playerCount", game.getPlayerCount()
         ));
     }
 
@@ -594,35 +672,54 @@ public class GameServiceImpl implements GameService {
     public void leaveGame(UUID gameId, UUID participantId) {
         log.info("Participant {} leaving game {}", participantId, gameId);
 
-        Game game = findGameEntityById(gameId);
+        Game game = getGameByIdWithCache(gameId);
         GameParticipant participant = participantRepository.findById(participantId)
                 .orElseThrow(() -> new GameException("Participant not found"));
+
+        validateParticipantAccess(game, participant);
+
+        // FIXED: Update active player count
+        boolean wasActive = participant.isActive();
 
         participant.leave();
         participantRepository.save(participant);
 
-        // Update game count
-        game.setActivePlayerCount(game.getActivePlayerCount() - 1);
-        gameRepository.save(game);
-        cacheGame(game);
+        updatePlayerCount(game, -1);
 
-        publishGameEvent(gameId, "PARTICIPANT_LEFT", participant.getUser() != null ? participant.getUser().getUserId() : null, Map.of(
-                "participantId", participantId,
-                "nickname", participant.getNickname()
-        ));
+        if (wasActive && game.getGameStatus() == GameStatus.IN_PROGRESS) {
+            game.setActivePlayerCount(Math.max(0, game.getActivePlayerCount() - 1));
+            gameRepository.save(game);
+            cacheGame(game);
+        }
+
+        checkAndAutoEndGameIfNeeded(game);
+
+        publishGameEvent(gameId, "PARTICIPANT_LEFT",
+                participant.getUser() != null ? participant.getUser().getUserId() : null,
+                Map.of(
+                        "participantId", participantId,
+                        "nickname", participant.getNickname(),
+                        "playerCount", game.getPlayerCount()
+                )
+        );
     }
 
     @Override
     public List<GameParticipantDTO> getParticipants(UUID gameId) {
-        // Try cache first
         String cacheKey = PARTICIPANTS_CACHE_PREFIX + gameId;
-        List<GameParticipantDTO> cached = (List<GameParticipantDTO>) redisTemplate.opsForValue().get(cacheKey);
+        Object cached = redisTemplate.opsForValue().get(cacheKey);
+
         if (cached != null) {
-            return cached;
+            try {
+                String json = (String) cached;
+                return redisObjectMapper.readValue(json,
+                        redisObjectMapper.getTypeFactory().constructCollectionType(List.class, GameParticipantDTO.class));
+            } catch (Exception e) {
+                log.warn("Failed to deserialize cached participants: {}", e.getMessage());
+            }
         }
 
-        // Get from DB
-        Game game = findGameEntityById(gameId);
+        Game game = getGameByIdWithCache(gameId);
         List<GameParticipant> participants = participantRepository.findByGameAndStatusIn(
                 game,
                 List.of(ParticipantStatus.JOINED, ParticipantStatus.READY, ParticipantStatus.PLAYING)
@@ -632,8 +729,12 @@ public class GameServiceImpl implements GameService {
                 .map(gameMapper::toParticipantDTO)
                 .collect(Collectors.toList());
 
-        // Cache for 1 minute
-        redisTemplate.opsForValue().set(cacheKey, result, 60, TimeUnit.SECONDS);
+        try {
+            String json = redisObjectMapper.writeValueAsString(result);
+            redisTemplate.opsForValue().set(cacheKey, json, PARTICIPANTS_TTL_SECONDS, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            log.warn("Failed to cache participants: {}", e.getMessage());
+        }
 
         return result;
     }
@@ -642,15 +743,20 @@ public class GameServiceImpl implements GameService {
 
     @Override
     public List<LeaderboardEntryDTO> getLeaderboard(UUID gameId) {
-        // Try cache first
         String cacheKey = LEADERBOARD_CACHE_PREFIX + gameId;
-        List<LeaderboardEntryDTO> cached = (List<LeaderboardEntryDTO>) redisTemplate.opsForValue().get(cacheKey);
+        Object cached = redisTemplate.opsForValue().get(cacheKey);
+
         if (cached != null) {
-            return cached;
+            try {
+                String json = (String) cached;
+                return redisObjectMapper.readValue(json,
+                        redisObjectMapper.getTypeFactory().constructCollectionType(List.class, LeaderboardEntryDTO.class));
+            } catch (Exception e) {
+                log.warn("Failed to deserialize cached leaderboard: {}", e.getMessage());
+            }
         }
 
-        // Calculate from DB
-        Game game = findGameEntityById(gameId);
+        Game game = getGameByIdWithCache(gameId);
         List<GameParticipant> participants = participantRepository.findByGameOrderByScoreDescTotalTimeMsAsc(game);
 
         List<LeaderboardEntryDTO> leaderboard = new ArrayList<>();
@@ -668,8 +774,7 @@ public class GameServiceImpl implements GameService {
                     .build());
         }
 
-        // Cache for 5 seconds during active game
-        redisTemplate.opsForValue().set(cacheKey, leaderboard, 5, TimeUnit.SECONDS);
+        cacheLeaderboard(gameId, leaderboard);
 
         return leaderboard;
     }
@@ -678,8 +783,7 @@ public class GameServiceImpl implements GameService {
     public List<LeaderboardEntryDTO> getFinalLeaderboard(UUID gameId) {
         List<LeaderboardEntryDTO> leaderboard = getLeaderboard(gameId);
 
-        // Update final ranks in DB
-        Game game = findGameEntityById(gameId);
+        Game game = getGameByIdWithCache(gameId);
         List<GameParticipant> participants = participantRepository.findByGameOrderByScoreDescTotalTimeMsAsc(game);
 
         int rank = 1;
@@ -696,31 +800,31 @@ public class GameServiceImpl implements GameService {
 
     @Override
     public GameResponseDTO getGameByPin(String pinCode) {
-        Game game = getGameFromCacheOrDB(pinCode);
+        Game game = getGameByPinWithValidation(pinCode);
         return gameMapper.toResponseDTO(game);
     }
 
-    // 1. Dùng trong backend → trả về entity thật
+    @Override
     public Game findGameEntityById(UUID gameId) {
         return gameRepository.findById(gameId)
                 .orElseThrow(() -> new GameNotFoundException("Game not found: " + gameId));
     }
 
-    // 2. Dùng cho API response → trả về DTO
+    @Override
     public GameResponseDTO getGameById(UUID gameId) {
-        Game game = findGameEntityById(gameId);
+        Game game = getGameByIdWithCache(gameId);
         return gameMapper.toResponseDTO(game);
     }
 
     @Override
+    @Cacheable(value = "gameDetails", key = "#gameId + '-' + (#userId != null ? #userId : 'null')")
     public GameDetailDTO getGameDetails(UUID gameId, UUID userId) {
-        Game game = gameRepository.findById(gameId)
-                .orElseThrow(() -> new GameException("Game not found"));
+        Game game = getGameByIdWithCache(gameId);
 
         boolean isHost = game.getHost().getUserId().equals(userId);
         GameParticipant participant = null;
 
-        if (!isHost) {
+        if (!isHost && userId != null) {
             participant = participantRepository.findByGameAndUser_UserId(game, userId)
                     .orElse(null);
         }
@@ -738,7 +842,7 @@ public class GameServiceImpl implements GameService {
 
     @Override
     public GameStatisticsDTO getGameStatistics(UUID gameId) {
-        Game game = findGameEntityById(gameId);
+        Game game = getGameByIdWithCache(gameId);
         List<GameParticipant> participants = participantRepository.findByGame(game);
 
         int totalAnswers = answerRepository.countByGame(game);
@@ -764,36 +868,73 @@ public class GameServiceImpl implements GameService {
         return gameMapper.toStatsDTO(stats);
     }
 
-    // ==================== HELPER METHODS ====================
+    // ==================== CACHE OPERATIONS ====================
 
-    private Game getGameFromCacheOrDB(String pinCode) {
-        // Try cache first
-        String cacheKey = GAME_CACHE_PREFIX + "pin:" + pinCode;
-        Game cached = (Game) redisTemplate.opsForValue().get(cacheKey);
+    private Game getGameByPinWithValidation(String pinCode) {
+        String cacheKey = GAME_PIN_PREFIX + pinCode;
+        Object cached = redisTemplate.opsForValue().get(cacheKey);
+
         if (cached != null) {
-            return cached;
+            try {
+                String json = (String) cached;
+                return redisObjectMapper.readValue(json, Game.class);
+            } catch (Exception e) {
+                log.warn("Failed to deserialize cached game: {}", e.getMessage());
+            }
         }
 
-        // Get from DB
         Game game = gameRepository.findByPinCode(pinCode)
                 .orElseThrow(() -> new GameException("Game not found with PIN: " + pinCode));
 
-        // Cache for 5 minutes
+        cacheGame(game);
+        return game;
+    }
+
+    // ADDED: Cache game by ID
+    private Game getGameByIdWithCache(UUID gameId) {
+        String cacheKey = GAME_CACHE_PREFIX + gameId;
+        Object cached = redisTemplate.opsForValue().get(cacheKey);
+
+        if (cached != null) {
+            try {
+                String json = (String) cached;
+                return redisObjectMapper.readValue(json, Game.class);
+            } catch (Exception e) {
+                log.warn("Failed to deserialize cached game: {}", e.getMessage());
+            }
+        }
+
+        Game game = gameRepository.findById(gameId)
+                .orElseThrow(() -> new GameNotFoundException("Game not found: " + gameId));
+
         cacheGame(game);
         return game;
     }
 
     private void cacheGame(Game game) {
-        String cacheKey = GAME_CACHE_PREFIX + game.getGameId();
-        String pinCacheKey = GAME_CACHE_PREFIX + "pin:" + game.getPinCode();
+        try {
+            String json = redisObjectMapper.writeValueAsString(game);
 
-        redisTemplate.opsForValue().set(cacheKey, game, CACHE_TTL_SECONDS, TimeUnit.SECONDS);
-        redisTemplate.opsForValue().set(pinCacheKey, game, CACHE_TTL_SECONDS, TimeUnit.SECONDS);
+            String idKey = GAME_CACHE_PREFIX + game.getGameId();
+            String pinKey = GAME_PIN_PREFIX + game.getPinCode();
+
+            redisTemplate.opsForValue().set(idKey, json, CACHE_TTL_SECONDS, TimeUnit.SECONDS);
+            redisTemplate.opsForValue().set(pinKey, json, CACHE_TTL_SECONDS, TimeUnit.SECONDS);
+
+            log.debug("Cached game {} with TTL {}s", game.getGameId(), CACHE_TTL_SECONDS);
+        } catch (JsonProcessingException e) {
+            log.error("Failed to cache game {}: {}", game.getGameId(), e.getMessage());
+        }
     }
 
     private void cacheLeaderboard(UUID gameId, List<LeaderboardEntryDTO> leaderboard) {
-        String cacheKey = LEADERBOARD_CACHE_PREFIX + gameId;
-        redisTemplate.opsForValue().set(cacheKey, leaderboard, 5, TimeUnit.SECONDS);
+        try {
+            String json = redisObjectMapper.writeValueAsString(leaderboard);
+            String cacheKey = LEADERBOARD_CACHE_PREFIX + gameId;
+            redisTemplate.opsForValue().set(cacheKey, json, LEADERBOARD_TTL_SECONDS, TimeUnit.SECONDS);
+        } catch (JsonProcessingException e) {
+            log.error("Failed to cache leaderboard: {}", e.getMessage());
+        }
     }
 
     private void invalidateLeaderboardCache(UUID gameId) {
@@ -806,33 +947,89 @@ public class GameServiceImpl implements GameService {
         redisTemplate.delete(cacheKey);
     }
 
+    // ==================== KAFKA EVENTS ====================
+
     private void publishGameEvent(UUID gameId, String eventType, UUID userId, Map<String, Object> data) {
         GameEvent event = GameEvent.builder()
                 .gameId(gameId)
                 .eventType(eventType)
                 .userId(userId)
                 .data(data)
-                .timestamp(LocalDateTime.now()) // có thể bỏ nếu dùng @Builder.Default
+                .timestamp(LocalDateTime.now())
                 .build();
 
         try {
-            kafkaTemplate.send("game-events", gameId.toString(), event);
-            log.debug("Published event: {} for game: {} by user: {}", eventType, gameId, userId);
+            kafkaTemplate.send(KAFKA_TOPIC, gameId.toString(), event);
+            log.debug("Published event: {} for game: {}", eventType, gameId);
         } catch (Exception e) {
             log.error("Failed to publish game event: {} for game: {}", eventType, gameId, e);
+        }
+    }
+
+    // ==================== HELPER METHODS ====================
+
+    /**
+     * ADDED: Validate participant has access to this game
+     * Checks if participant is kicked, left, or belongs to game
+     */
+    private void validateParticipantAccess(Game game, GameParticipant participant) {
+        if (!participant.getGame().getGameId().equals(game.getGameId())) {
+            throw new GameException("Participant does not belong to this game");
+        }
+        if (participant.isKicked()) {
+            throw new GameException("You have been kicked from this game");
+        }
+        if (participant.getStatus() == ParticipantStatus.LEFT) {
+            throw new GameException("You have left this game");
+        }
+    }
+
+    /**
+     * ADDED: Record participant statistics after answering
+     * Updates score, correctCount, streak tracking, etc.
+     */
+    private void recordParticipantStats(GameParticipant participant, UserAnswer answer) {
+        if (answer.isCorrect() && !answer.isTimeout() && !answer.isSkipped()) {
+            participant.recordCorrectAnswer(answer.getResponseTimeMs());
+        } else if (!answer.isSkipped()) {
+            participant.recordIncorrectAnswer(answer.getResponseTimeMs());
+        } else {
+            participant.recordSkip();
+        }
+    }
+
+    /**
+     * ADDED: Auto-end game if all players have left/kicked
+     */
+    private void checkAndAutoEndGameIfNeeded(Game game) {
+        if (game.getGameStatus() == GameStatus.IN_PROGRESS) {
+            if (game.getActivePlayerCount() <= 0) {
+                log.warn("No more active players in game {}, auto-ending", game.getGameId());
+                game.setGameStatus(GameStatus.FINISHED);
+                game.setEndedAt(LocalDateTime.now());
+                gameRepository.save(game);
+                cacheGame(game);
+
+                publishGameEvent(game.getGameId(), "GAME_AUTO_ENDED", game.getHost().getUserId(),
+                        Map.of("reason", "No active players remaining"));
+            }
         }
     }
 
     private String generateUniquePinCode() {
         String pin;
         int attempts = 0;
+        Random random = new Random();
+
         do {
-            pin = String.format("%06d", new Random().nextInt(1000000));
+            pin = String.format("%06d", random.nextInt(1000000));
             attempts++;
+
             if (attempts > 10) {
                 throw new GameException("Unable to generate unique PIN code");
             }
         } while (gameRepository.existsByPinCode(pin));
+
         return pin;
     }
 
@@ -851,8 +1048,17 @@ public class GameServiceImpl implements GameService {
         }
     }
 
+    private void updatePlayerCount(Game game, int delta) {
+        game.setPlayerCount(game.getPlayerCount() + delta);
+        game.setActivePlayerCount(Math.max(0, game.getActivePlayerCount() + delta));
+        gameRepository.save(game);
+        cacheGame(game);
+        invalidateParticipantsCache(game.getGameId());
+    }
+
     private List<Question> getGameQuestions(Game game) {
-        List<Question> questions = questionRepository.findByQuizQuizIdAndDeletedFalseOrderByOrderIndexAsc(game.getQuiz().getQuizId());
+        List<Question> questions = questionRepository
+                .findByQuizQuizIdAndDeletedFalseOrderByOrderIndexAsc(game.getQuiz().getQuizId());
 
         if (game.isRandomizeQuestions()) {
             Collections.shuffle(questions);
@@ -861,45 +1067,86 @@ public class GameServiceImpl implements GameService {
         return questions;
     }
 
+    // ==================== GRADING LOGIC ====================
+
     private AnswerGradingResult gradeAnswer(Question question, Object submittedAnswer) {
-        // Implement grading logic based on question type
-        // This is a simplified version
+        try {
+            return switch (question.getType()) {
+                case SINGLE_CHOICE -> gradeSingleChoice(question, submittedAnswer);
+                case MULTIPLE_CHOICE -> gradeMultipleChoice(question, submittedAnswer);
+                case TRUE_FALSE -> gradeTrueFalse(question, submittedAnswer);
+                case FILL_IN_THE_BLANK -> gradeFillInBlank(question, submittedAnswer);
+                default -> new AnswerGradingResult(false, "Unsupported question type");
+            };
+        } catch (Exception e) {
+            log.error("Grading error for question {}: {}", question.getQuestionId(), e.getMessage(), e);
+            return new AnswerGradingResult(false, "Grading failed");
+        }
+    }
 
-        boolean isCorrect = false;
-        String correctAnswer = "";
+    private AnswerGradingResult gradeSingleChoice(Question question, Object answer) {
+        UUID selectedId;
 
-        switch (question.getType()) {
-            case SINGLE_CHOICE, MULTIPLE_CHOICE -> {
-                // Check if selected options are correct
-                List<UUID> selectedIds = (List<UUID>) submittedAnswer;
-                List<UUID> correctIds = question.getOptions().stream()
-                        .filter(opt -> opt.isCorrect())
-                        .map(opt -> opt.getOptionId())
-                        .collect(Collectors.toList());
-
-                isCorrect = new HashSet<>(selectedIds).equals(new HashSet<>(correctIds));
-                correctAnswer = correctIds.toString();
-            }
-            case TRUE_FALSE -> {
-                boolean submitted = (boolean) submittedAnswer;
-                boolean correct = question.getOptions().get(0).isCorrect();
-                isCorrect = submitted == correct;
-                correctAnswer = String.valueOf(correct);
-            }
-            case FILL_IN_THE_BLANK -> {
-                String submitted = ((String) submittedAnswer).trim().toLowerCase();
-                String correct = question.getOptions().get(0).getText().trim().toLowerCase();
-                isCorrect = submitted.equals(correct);
-                correctAnswer = correct;
-            }
-            default -> {
-                // For complex types, implement specific grading logic
-                isCorrect = false;
-                correctAnswer = "See explanation";
-            }
+        if (answer instanceof String) {
+            selectedId = UUID.fromString((String) answer);
+        } else if (answer instanceof UUID) {
+            selectedId = (UUID) answer;
+        } else {
+            throw new IllegalArgumentException("Invalid answer type: " + answer.getClass());
         }
 
-        return new AnswerGradingResult(isCorrect, correctAnswer);
+        List<UUID> correctIds = question.getOptions().stream()
+                .filter(opt -> opt.isCorrect())
+                .map(opt -> opt.getOptionId())
+                .toList();
+
+        boolean isCorrect = correctIds.contains(selectedId);
+        return new AnswerGradingResult(isCorrect, correctIds.toString());
+    }
+
+    private AnswerGradingResult gradeMultipleChoice(Question question, Object answer) {
+        List<UUID> selectedIds;
+
+        if (answer instanceof List<?>) {
+            selectedIds = ((List<?>) answer).stream()
+                    .map(id -> id instanceof String ? UUID.fromString((String) id) : (UUID) id)
+                    .toList();
+        } else {
+            throw new IllegalArgumentException("Invalid answer type for multiple choice");
+        }
+
+        List<UUID> correctIds = question.getOptions().stream()
+                .filter(opt -> opt.isCorrect())
+                .map(opt -> opt.getOptionId())
+                .toList();
+
+        boolean isCorrect = new HashSet<>(selectedIds).equals(new HashSet<>(correctIds));
+        return new AnswerGradingResult(isCorrect, correctIds.toString());
+    }
+
+    private AnswerGradingResult gradeTrueFalse(Question question, Object answer) {
+        boolean submitted;
+
+        if (answer instanceof Boolean) {
+            submitted = (Boolean) answer;
+        } else if (answer instanceof String) {
+            submitted = Boolean.parseBoolean((String) answer);
+        } else {
+            throw new IllegalArgumentException("Invalid answer type for true/false");
+        }
+
+        boolean correct = question.getOptions().get(0).isCorrect();
+        boolean isCorrect = submitted == correct;
+
+        return new AnswerGradingResult(isCorrect, String.valueOf(correct));
+    }
+
+    private AnswerGradingResult gradeFillInBlank(Question question, Object answer) {
+        String submitted = ((String) answer).trim().toLowerCase();
+        String correct = question.getOptions().get(0).getText().trim().toLowerCase();
+
+        boolean isCorrect = submitted.equals(correct);
+        return new AnswerGradingResult(isCorrect, correct);
     }
 
     private int calculatePoints(boolean isCorrect, int basePoints, long responseTimeMs, int timeLimitSeconds) {
@@ -907,11 +1154,9 @@ public class GameServiceImpl implements GameService {
             return 0;
         }
 
-        // Base points
         int points = basePoints;
-
-        // Speed bonus (up to 20% extra for answering in first 25% of time)
         long timeLimitMs = timeLimitSeconds * 1000L;
+
         if (responseTimeMs < timeLimitMs * 0.25) {
             points = (int) (points * 1.2);
         } else if (responseTimeMs < timeLimitMs * 0.5) {
@@ -921,14 +1166,17 @@ public class GameServiceImpl implements GameService {
         return points;
     }
 
+    // ==================== STATISTICS ====================
+
     private void calculateFinalStatistics(Game game) {
         List<GameParticipant> participants = participantRepository.findByGame(game);
 
         if (participants.isEmpty()) {
+            game.setAverageScore(0.0);
+            game.setCompletedPlayerCount(0);
             return;
         }
 
-        // Calculate average score
         double avgScore = participants.stream()
                 .mapToInt(GameParticipant::getScore)
                 .average()
@@ -939,7 +1187,6 @@ public class GameServiceImpl implements GameService {
                 .filter(p -> p.getStatus() == ParticipantStatus.COMPLETED)
                 .count());
 
-        // Update user statistics
         for (GameParticipant participant : participants) {
             if (participant.getUser() != null) {
                 updateUserStatistics(participant);
@@ -967,6 +1214,12 @@ public class GameServiceImpl implements GameService {
             stats.setHighestScore(participant.getScore());
         }
 
+        if (participant.getFinalRank() != null) {
+            if (stats.getBestRank() == null || participant.getFinalRank() < stats.getBestRank()) {
+                stats.setBestRank(participant.getFinalRank());
+            }
+        }
+
         stats.updateAccuracy();
         stats.updateAverageScore();
 
@@ -986,29 +1239,14 @@ public class GameServiceImpl implements GameService {
 
     private String toJsonString(Object obj) {
         try {
-            return objectMapper.writeValueAsString(obj);
+            return redisObjectMapper.writeValueAsString(obj);
         } catch (Exception e) {
             log.error("Error converting to JSON: {}", e.getMessage());
             return "{}";
         }
     }
 
-    // Inner class for grading result
-    private static class AnswerGradingResult {
-        private final boolean correct;
-        private final String correctAnswer;
+    // ==================== INNER CLASS ====================
 
-        public AnswerGradingResult(boolean correct, String correctAnswer) {
-            this.correct = correct;
-            this.correctAnswer = correctAnswer;
-        }
-
-        public boolean isCorrect() {
-            return correct;
-        }
-
-        public String getCorrectAnswer() {
-            return correctAnswer;
-        }
-    }
+    private record AnswerGradingResult(boolean correct, String correctAnswer) {}
 }

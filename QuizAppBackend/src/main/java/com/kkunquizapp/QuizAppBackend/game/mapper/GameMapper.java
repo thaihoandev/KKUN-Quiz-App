@@ -25,6 +25,7 @@ public interface GameMapper {
     @Mapping(target = "quiz", source = "game")
     @Mapping(target = "host", source = "game.host")
     @Mapping(target = "currentParticipant", source = "participant")
+    @Mapping(target = "isHost", source = "isHost")
     GameDetailDTO toDetailDTO(Game game, boolean isHost, GameParticipant participant);
 
     @Mapping(target = "quizId", source = "quiz.quizId")

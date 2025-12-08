@@ -1,20 +1,21 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import SockJS from "sockjs-client";
-import { Client } from "@stomp/stompjs";
 import { toast } from "react-toastify";
-import { useAuth } from "@/hooks/useAuth";
-import { submitAnswer, fetchLeaderboard, fetchGameDetails } from "@/services/gameService";
 import {
-  GameResponseDTO,
-  PlayerResponseDTO,
+  getGameDetails,
+  getSavedParticipantId,
+  clearParticipantSession,
+} from "@/services/gameService";
+import type {
+  GameDetailDTO,
   QuestionResponseDTO,
+  AnswerResultDTO,
   LeaderboardEntryDTO,
-} from "@/interfaces";
-import styles from "./GamePlayPage.module.css";
-import { WifiOutlined, DisconnectOutlined } from "@ant-design/icons";
+  GameEventPayload,
+} from "@/types/game";
+
 import unknownAvatar from "@/assets/img/avatars/unknown.jpg";
 import avatar1 from "@/assets/img/avatars/1.png";
 import avatar2 from "@/assets/img/avatars/2.png";
@@ -31,785 +32,365 @@ import avatar12 from "@/assets/img/avatars/12.png";
 import avatar13 from "@/assets/img/avatars/13.png";
 import avatar14 from "@/assets/img/avatars/14.png";
 import avatar15 from "@/assets/img/avatars/15.png";
+import { webSocketService } from "@/services/webSocketService";
+import { OptionButton } from "@/components/layouts/question/OptionButton";
 
-// Avatar list
-const AVATAR_LIST = [
-  avatar1,
-  avatar2,
-  avatar3,
-  avatar4,
-  avatar5,
-  avatar6,
-  avatar7,
-  avatar8,
-  avatar9,
-  avatar10,
-  avatar11,
-  avatar12,
-  avatar13,
-  avatar14,
-  avatar15,
+const AVATAR_POOL = [
+  avatar1, avatar2, avatar3, avatar4, avatar5,
+  avatar6, avatar7, avatar8, avatar9, avatar10,
+  avatar11, avatar12, avatar13, avatar14, avatar15,
 ];
-
-interface Option {
-  optionId: string;
-  optionText: string;
-  correct: boolean;
-  correctAnswer?: string; // For FILL_IN_THE_BLANK
-}
-
-interface ExtendedQuestionResponseDTO extends QuestionResponseDTO {
-  imageUrl?: string;
-  options: Option[];
-}
-
-interface ExtendedPlayerResponseDTO extends PlayerResponseDTO {
-  avatar?: string;
-}
 
 const GamePlayPage: React.FC = () => {
   const { gameId } = useParams<{ gameId: string }>();
   const navigate = useNavigate();
-  const WS_ENDPOINT = import.meta.env.VITE_WS_URL || "http://localhost:8080/ws";
-  const { user } = useAuth();
 
-  const [currentQuestion, setCurrentQuestion] = useState<ExtendedQuestionResponseDTO | null>(null);
-  const [pendingQuestion, setPendingQuestion] = useState<ExtendedQuestionResponseDTO | null>(null);
-  const [pendingLeaderboard, setPendingLeaderboard] = useState<ExtendedPlayerResponseDTO[] | null>(null);
-  const [selectedOptionIds, setSelectedOptionIds] = useState<string[]>([]);
-  const [fillInAnswer, setFillInAnswer] = useState<string>("");
-  const [timeLeft, setTimeLeft] = useState<number>(0);
-  const [imageUrl, setImageUrl] = useState<string>("");
-  const [leaderboard, setLeaderboard] = useState<ExtendedPlayerResponseDTO[]>([]);
-  const [stompClient, setStompClient] = useState<Client | null>(null);
-  const [wsConnected, setWsConnected] = useState<boolean>(false);
+  const participantId = useMemo(() => getSavedParticipantId(), []);
+  const [game, setGame] = useState<GameDetailDTO | null>(null);
+  const [question, setQuestion] = useState<QuestionResponseDTO | null>(null);
+  const [timeLeft, setTimeLeft] = useState(0);
+  const [selectedOptions, setSelectedOptions] = useState<string[]>([]);
+  const [fillAnswer, setFillAnswer] = useState("");
+  const [hasAnswered, setHasAnswered] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showAnswer, setShowAnswer] = useState(false);
+  const [pendingQuestion, setPendingQuestion] = useState<QuestionResponseDTO | null>(null);
+  const [pendingLeaderboard, setPendingLeaderboard] = useState<LeaderboardEntryDTO[] | null>(null);
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntryDTO[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
-  const [hasAnswered, setHasAnswered] = useState<boolean>(false);
-  const [hostId, setHostId] = useState<string | null>(null);
-  const [players, setPlayers] = useState<ExtendedPlayerResponseDTO[]>([]);
-  const [gameEnded, setGameEnded] = useState<boolean>(false);
-  const [showCorrectAnswer, setShowCorrectAnswer] = useState<boolean>(false);
-  const [isShowingCorrectAnswer, setIsShowingCorrectAnswer] = useState<boolean>(false);
-  const [usedAvatars, setUsedAvatars] = useState<Set<string>>(new Set());
-  const [canProceed, setCanProceed] = useState<boolean>(false); // ✅ chỉ bật WS & gameplay khi qua guard
 
-  const playersRef = useRef<ExtendedPlayerResponseDTO[]>([]);
-  useEffect(() => {
-    playersRef.current = players;
-  }, [players]);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const isHost = game?.isHost === true;
 
-  const currentQuestionRef = useRef<ExtendedQuestionResponseDTO | null>(null);
-  useEffect(() => {
-    currentQuestionRef.current = currentQuestion;
-  }, [currentQuestion]);
+  // Avatar giống hệt Waiting Room
+  const participantsWithAvatar = useMemo(() => {
+    const used = new Set<string>();
+    return leaderboard.map((p) => {
+      let avatar = unknownAvatar;
+      if (p.isAnonymous) {
+        const available = AVATAR_POOL.filter(a => !used.has(a));
+        avatar = available.length > 0
+          ? available[Math.floor(Math.random() * available.length)]
+          : unknownAvatar;
+        used.add(avatar);
+      }
+      return { ...p, avatar };
+    });
+  }, [leaderboard]);
 
-  const isHost = useMemo(() => {
-    return user?.userId !== undefined && hostId !== null && user.userId === hostId;
-  }, [user, hostId]);
-
-  const assignRandomAvatar = (): string => {
-    const availableAvatars = AVATAR_LIST.filter((avatar) => !usedAvatars.has(avatar.toString()));
-    if (availableAvatars.length === 0) {
-      setUsedAvatars(new Set());
-      return (AVATAR_LIST[Math.floor(Math.random() * AVATAR_LIST.length)] || unknownAvatar).toString();
-    }
-    const randomAvatar = availableAvatars[Math.floor(Math.random() * availableAvatars.length)] || unknownAvatar;
-    setUsedAvatars((prev) => new Set(prev).add(randomAvatar.toString()));
-    return randomAvatar.toString();
-  };
-
-  // ===== 1) Initial fetch + DEEP-LINK GUARD =====
+  // === Load game ban đầu + bảo vệ truy cập ===
   useEffect(() => {
     if (!gameId) {
-      setError("No game ID provided");
-      toast.error("No game ID provided");
+      navigate("/", { replace: true });
       return;
     }
 
-    let cancelled = false;
+    if (!participantId) {
+      toast.error("Bạn chưa tham gia phòng chơi");
+      navigate(`/join-game`, { replace: true });
+      return;
+    }
 
-    (async () => {
+    const load = async () => {
       try {
-        const gameDetails = await fetchGameDetails(gameId);
-        if (cancelled) return;
+        const data = await getGameDetails(gameId);
+        setGame(data);
 
-        setHostId(gameDetails.game.hostId);
-
-        // — Guard theo status
-        if (gameDetails.game.status === "WAITING") {
+        if (data.gameStatus !== "IN_PROGRESS") {
           navigate(`/game-session/${gameId}`, { replace: true });
           return;
         }
-        if (gameDetails.game.status === "COMPLETED" || gameDetails.game.status === "CANCELED") {
-          setGameEnded(true);
-          localStorage.removeItem("playerSession");
-          localStorage.removeItem("gameId");
-          toast.info(
-            gameDetails.game.status === "CANCELED" ? "The game has been canceled by the host." : "The game has finished."
-          );
-          navigate("/", { replace: true });
-          return;
-        }
 
-        // — Guard theo session (người chơi)
-        const isCurrentUserHost = user?.userId && gameDetails.game.hostId ? user.userId === gameDetails.game.hostId : false;
-        const sessionId = localStorage.getItem("playerSession");
-        const isInThisGame = sessionId ? gameDetails.players.some((p) => p.playerId === sessionId) : false;
-
-        if (!isCurrentUserHost && (!sessionId || !isInThisGame)) {
-          // Chưa join hợp lệ → về trang join-game kèm PIN
-          navigate(`/join-game/${gameDetails.game.pinCode}`, {
-            replace: true,
-            state: { from: "game-play", gameId: gameDetails.game.gameId },
-          });
-          return;
-        }
-
-        // — Nếu qua guard: hydrate dữ liệu ban đầu
-        setPlayers(
-          gameDetails.players.map((p) => ({
-            ...p,
-            avatar: assignRandomAvatar(),
-          }))
-        );
-
-        const initialLeaderboard = await fetchLeaderboard(gameId);
-        if (cancelled) return;
-
-        setLeaderboard(
-          initialLeaderboard.map((p) => ({
-            ...p,
-            avatar: assignRandomAvatar(),
-          }))
-        );
-
-        setCanProceed(true); // ✅ Cho phép setup WS & render gameplay
-      } catch {
-        if (!cancelled) {
-          toast.error("Failed to load game details");
-          setError("Failed to load game details");
-        }
+        setIsLoading(false);
+      } catch (err: any) {
+        setError(err.message || "Không thể tải trò chơi");
+        setIsLoading(false);
       }
-    })();
-
-    return () => {
-      cancelled = true;
     };
-  }, [gameId, navigate, user?.userId]);
 
-  // ===== 2) WebSocket subscriptions (chỉ khi canProceed) =====
+    load();
+  }, [gameId, participantId, navigate]);
+
+  // === WebSocket: Khớp 100% với backend hiện tại của bạn ===
   useEffect(() => {
-    if (!gameId || !canProceed) return;
+    if (!gameId || isLoading || !participantId) return;
 
-    const client = new Client({
-      webSocketFactory: () => new SockJS(WS_ENDPOINT),
-      reconnectDelay: 5000,
-      heartbeatIncoming: 4000,
-      heartbeatOutgoing: 4000,
-    });
+    // 1. Join room chính để nhận các event cơ bản
+    webSocketService.joinGameRoom(gameId);
 
-    client.onConnect = () => {
-      setWsConnected(true);
-      setError(null);
+    // 2. Subscribe riêng các topic theo backend
+    webSocketService.subscribeToGameStarted(gameId);     // GAME_STARTED
+    webSocketService.subscribeToQuestions(gameId);       // QUESTION_STARTED
+    webSocketService.subscribeToLeaderboard(gameId);     // QUESTION_ENDED + leaderboard
+    if (participantId && !isHost) {
+      webSocketService.subscribeToKickNotifications(gameId, participantId);
+    }
+    // 3. Lắng nghe tất cả event (vì backend gửi nhiều nơi)
+    const handleGameEvent = (event: GameEventPayload) => {
+      console.log("GamePlay received event:", event.eventType);
 
-      if (!isHost) {
-        client.subscribe(`/topic/game/${gameId}/question`, (msg) => {
-          try {
-            const question: ExtendedQuestionResponseDTO = JSON.parse(msg.body);
-            if (isShowingCorrectAnswer) {
-              setPendingQuestion(question);
+      switch (event.eventType) {
+        case "GAME_STARTED":
+          // Đã được xử lý ở Waiting Room → không cần làm gì thêm
+          break;
+
+        case "QUESTION_STARTED":
+          if (event.data?.question) {
+            if (showAnswer) {
+              setPendingQuestion(event.data.question);
             } else {
-              setCurrentQuestion(question);
-              setImageUrl(question.imageUrl || "");
-              setTimeLeft(question.timeLimit || 5);
-              setSelectedOptionIds([]);
-              setFillInAnswer("");
+              setQuestion(event.data.question);
+              setTimeLeft(event.data.question.timeLimitSeconds || 15);
+              setSelectedOptions([]);
+              setFillAnswer("");
               setHasAnswered(false);
-              setIsSubmitting(false);
-              setShowCorrectAnswer(false);
+              setShowAnswer(false);
             }
-          } catch {
-            toast.error("Failed to load question");
           }
-        });
+          break;
+
+        case "QUESTION_ENDED":
+          setShowAnswer(true);
+          if (event.data?.leaderboard) {
+            if (showAnswer) {
+              setPendingLeaderboard(event.data.leaderboard);
+            } else {
+              setLeaderboard(event.data.leaderboard);
+            }
+          }
+          break;
+
+        case "GAME_ENDED":
+        case "GAME_CANCELLED":
+          clearParticipantSession();
+          toast.success("Trò chơi đã kết thúc!");
+          navigate("/", { replace: true });
+          break;
       }
-
-      client.subscribe(`/topic/game/${gameId}/leaderboard`, (msg) => {
-        try {
-          const entries: LeaderboardEntryDTO[] = JSON.parse(msg.body);
-          const updated = entries.map((e) => {
-            const p = playersRef.current.find((pl) => pl.playerId === e.playerId);
-            return {
-              playerId: e.playerId,
-              nickname: p?.nickname ?? "Unknown",
-              gameId: e.gameId,
-              score: e.totalScore,
-              inGame: p?.inGame ?? true,
-              isAnonymous: p?.isAnonymous ?? true,
-              avatar: p?.avatar ?? assignRandomAvatar(),
-            } as ExtendedPlayerResponseDTO;
-          });
-          if (isShowingCorrectAnswer) {
-            setPendingLeaderboard(updated);
-          } else {
-            setLeaderboard(updated);
-            if (!isHost) {
-              setCurrentQuestion(null);
-              setPendingQuestion(null);
-            }
-          }
-        } catch {
-          toast.error("Failed to load leaderboard");
-        }
-      });
-
-      client.subscribe(`/topic/game/${gameId}/status`, (msg) => {
-        try {
-          const status: GameResponseDTO = JSON.parse(msg.body);
-
-          if (status.status === "WAITING") {
-            // Nếu host lỡ mở gameplay trước, quay lại waiting
-            navigate(`/game-session/${gameId}`, { replace: true });
-            return;
-          }
-
-          if (status.status === "IN_PROGRESS") {
-            // đảm bảo người chơi ở trang gameplay
-            return;
-          }
-
-          if (status.status === "COMPLETED" || status.status === "CANCELED") {
-            setGameEnded(true);
-            localStorage.removeItem("playerSession");
-            localStorage.removeItem("gameId");
-          }
-        } catch {
-          toast.error("Failed to process game status");
-        }
-      });
-
-      client.subscribe(`/topic/game/${gameId}/correct-answer`, (msg) => {
-        try {
-          const payload = JSON.parse(msg.body) as {
-            questionId: string;
-            correctOptions: Option[];
-          };
-
-          if (currentQuestionRef.current?.questionId === payload.questionId) {
-            setCurrentQuestion((prev) => {
-              if (!prev || prev.questionId !== payload.questionId) return prev;
-              const updatedOptions = prev.options.map((opt) => {
-                const correctOpt = payload.correctOptions.find((c) => c.optionId === opt.optionId);
-                return {
-                  ...opt,
-                  correct: correctOpt?.correct ?? opt.correct,
-                  correctAnswer: correctOpt?.correctAnswer ?? opt.correctAnswer,
-                };
-              });
-              return { ...prev, options: updatedOptions };
-            });
-
-            setShowCorrectAnswer(true);
-            setIsShowingCorrectAnswer(true);
-            setTimeout(() => {
-              setShowCorrectAnswer(false);
-              setIsShowingCorrectAnswer(false);
-              setCurrentQuestion(null);
-              if (pendingQuestion) {
-                setCurrentQuestion(pendingQuestion);
-                setImageUrl(pendingQuestion.imageUrl || "");
-                setTimeLeft(pendingQuestion.timeLimit || 5);
-                setSelectedOptionIds([]);
-                setFillInAnswer("");
-                setHasAnswered(false);
-                setIsSubmitting(false);
-                setShowCorrectAnswer(false);
-                setPendingQuestion(null);
-              }
-              if (pendingLeaderboard) {
-                setLeaderboard(pendingLeaderboard);
-                setPendingLeaderboard(null);
-              }
-            }, 2000);
-          }
-        } catch (e) {
-          console.error("[DEBUG] correct-answer handler error:", e);
-          toast.error("Failed to load correct answer");
-        }
-      });
     };
 
-    client.onStompError = () => {
-      setWsConnected(false);
-      setError("Real-time connection error.");
-      toast.error("Real-time connection error.");
-    };
-    client.onWebSocketError = () => {
-      setWsConnected(false);
-      setError("Failed to establish real-time connection.");
-      toast.error("Failed to establish real-time connection.");
-    };
-    client.onDisconnect = () => {
-      setWsConnected(false);
+    webSocketService.onGameEvent(handleGameEvent);
+
+    // 4. Kết quả trả lời riêng (private queue)
+    const handleAnswerResult = (result: AnswerResultDTO) => {
+      setHasAnswered(true);
+      if (result.correct) {
+        toast.success(`Đúng rồi! +${result.pointsEarned} điểm`);
+      } else {
+        toast.error("Sai rồi!");
+      }
     };
 
-    client.activate();
-    setStompClient(client);
+    webSocketService.onAnswerResult(handleAnswerResult);
+
+    // 5. Bị kick
+    const handleKicked = () => {
+      toast.error("Bạn đã bị loại khỏi phòng!");
+      clearParticipantSession();
+      navigate("/", { replace: true });
+    };
+
+    webSocketService.onKicked(handleKicked);
 
     return () => {
-      if (client.active) client.deactivate();
-      setWsConnected(false);
-      setStompClient(null);
+      webSocketService.leaveGameRoom(gameId);
+      webSocketService.unsubscribeFromAllGameTopics(gameId);
     };
-  }, [WS_ENDPOINT, gameId, canProceed, isHost, isShowingCorrectAnswer, navigate, pendingLeaderboard, pendingQuestion]);
+  }, [gameId, isLoading, participantId, showAnswer, navigate]);
 
-  // ===== 3) Polling fallback (chỉ khi canProceed & WS chưa kết nối) =====
+  // === Timer đếm ngược ===
   useEffect(() => {
-    if (!gameId || !canProceed || wsConnected) return;
-    const interval = setInterval(async () => {
-      try {
-        const data = await fetchLeaderboard(gameId);
-        setLeaderboard(
-          data.map((p) => ({
-            ...p,
-            avatar: assignRandomAvatar(),
-          }))
-        );
-      } catch {
-        toast.error("Failed to fetch leaderboard");
-      }
-    }, 10000);
-    return () => clearInterval(interval);
-  }, [gameId, canProceed, wsConnected]);
+    if (!question || hasAnswered || timeLeft <= 0) return;
 
-  // ===== 4) Local timers cho câu hỏi =====
-  useEffect(() => {
-    if (currentQuestion && !isHost) {
-      const startTime = Date.now();
-      const timeLimit = currentQuestion.timeLimit || 5;
-      const endTime = startTime + timeLimit * 1000;
+    timerRef.current = setInterval(() => {
+      setTimeLeft(prev => (prev <= 1 ? 0 : prev - 1));
+    }, 1000);
 
-      const timer = setInterval(() => {
-        const now = Date.now();
-        const timeLeftMs = endTime - now;
-        const timeLeftSec = Math.max(0, Math.ceil(timeLeftMs / 1000));
-        setTimeLeft(timeLeftSec);
-        if (timeLeftSec <= 0) {
-          clearInterval(timer);
-          setIsShowingCorrectAnswer(true);
-        }
-      }, 100);
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [question, hasAnswered, timeLeft]);
 
-      return () => clearInterval(timer);
-    }
-  }, [currentQuestion, isHost]);
+  // === Gửi đáp án ===
+  const sendAnswer = () => {
+    if (!gameId || !participantId || !question || hasAnswered || isSubmitting) return;
+    setIsSubmitting(true);
 
-  // ===== Handlers =====
-  const handleMultipleChoiceSelect = async (optionId: string) => {
-    if (hasAnswered || timeLeft === 0 || isHost) return;
-    let newSelectedOptionIds: string[] = [];
-    if (currentQuestion?.questionType === "MULTIPLE_CHOICE") {
-      newSelectedOptionIds = selectedOptionIds.includes(optionId)
-        ? selectedOptionIds.filter((id) => id !== optionId)
-        : [...selectedOptionIds, optionId];
+    let answer: any = null;
+
+    if (question.type === "FILL_IN_THE_BLANK") {
+      answer = fillAnswer.trim();
+    } else if (question.type === "MULTIPLE_CHOICE") {
+      answer = selectedOptions;
     } else {
-      newSelectedOptionIds = [optionId];
+      answer = selectedOptions[0] || null;
     }
-    setSelectedOptionIds(newSelectedOptionIds);
 
-    // Auto-submit for MULTIPLE_CHOICE/SINGLE_CHOICE
-    if (!gameId || !currentQuestion || newSelectedOptionIds.length === 0 || isSubmitting || hasAnswered) return;
-    setIsSubmitting(true);
-    try {
-      const playerId = localStorage.getItem("playerSession");
-      if (!playerId) throw new Error("Player session not found");
-      const res = await submitAnswer(gameId, {
-        playerId,
-        questionId: currentQuestion.questionId,
-        selectedOptionIds: newSelectedOptionIds,
-        answerStr: "",
-      });
-      setHasAnswered(true);
-      toast.success(res.message);
-    } catch (err) {
-      toast.error(`Failed to submit answer: ${err instanceof Error ? err.message : "Unknown error"}`);
-    } finally {
-      setIsSubmitting(false);
+    webSocketService.submitAnswer(gameId, participantId, answer);
+    setIsSubmitting(false);
+  };
+
+  const toggleOption = (optionId: string) => {
+    if (hasAnswered || timeLeft === 0) return;
+
+    if (question?.type === "MULTIPLE_CHOICE") {
+      setSelectedOptions(prev =>
+        prev.includes(optionId)
+          ? prev.filter(id => id !== optionId)
+          : [...prev, optionId]
+      );
+    } else {
+      setSelectedOptions([optionId]);
+      sendAnswer();
     }
   };
 
-  const handleFillInInput = (val: string) => {
-    if (hasAnswered || timeLeft === 0 || isHost) return;
-    setFillInAnswer(val);
-  };
-
-  const handleFillInSubmit = async () => {
-    if (hasAnswered || timeLeft === 0 || isHost || !currentQuestion || !gameId || !fillInAnswer.trim()) return;
-    setIsSubmitting(true);
-    try {
-      const playerId = localStorage.getItem("playerSession");
-      if (!playerId) throw new Error("Player session not found");
-      const res = await submitAnswer(gameId, {
-        playerId,
-        questionId: currentQuestion.questionId,
-        selectedOptionIds: [],
-        answerStr: fillInAnswer.trim(),
-      });
-      setHasAnswered(true);
-      toast.success(res.message);
-    } catch (err) {
-      toast.error(`Failed to submit answer: ${err instanceof Error ? err.message : "Unknown error"}`);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const getRankIcon = (index: number) => {
-    switch (index) {
-      case 0:
-        return <i className="bx bx-trophy text-warning" style={{ fontSize: "1.5rem" }}></i>;
-      case 1:
-        return <i className="bx bx-medal text-gray-400" style={{ fontSize: "1.5rem" }}></i>;
-      case 2:
-        return <i className="bx bx-medal text-orange-600" style={{ fontSize: "1.5rem" }}></i>;
-      default:
-        return <span className="font-bold">#{index + 1}</span>;
-    }
-  };
-
-  const getRankBackground = (index: number) => {
-    switch (index) {
-      case 0:
-        return styles.rankGold;
-      case 1:
-        return styles.rankSilver;
-      case 2:
-        return styles.rankBronze;
-      default:
-        return styles.rankDefault;
-    }
-  };
-
-  // ===== Renders =====
-  if (error) {
+  // === Render ===
+  if (isLoading || error || !game) {
     return (
-      <div className={`min-vh-100 d-flex justify-content-center align-items-center ${styles.errorContainer}`}>
-        <div className="card shadow-lg rounded-4 p-5 text-center w-100" style={{ maxWidth: "400px" }}>
-          <i className="bx bx-error-circle text-danger mb-3" style={{ fontSize: "4rem" }}></i>
-          <h4 className="text-dark fw-bold mb-3">An Error Occurred</h4>
-          <p className="text-muted mb-4">{error}</p>
-          <div className="d-flex gap-3 justify-content-center">
-            <button className="btn btn-primary rounded-pill px-4 py-2" onClick={() => navigate(-1)}>
-              <i className="bx bx-refresh me-2"></i>
-              Try Again
-            </button>
-            <button className="btn btn-outline-secondary rounded-pill px-4 py-2" onClick={() => navigate("/")}>
-              <i className="bx bx-home me-2"></i>
-              Home
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (gameEnded) {
-    return (
-      <div className={`min-vh-100 d-flex justify-content-center align-items-center ${styles.gameOverContainer}`}>
-        <div className="card shadow-lg rounded-4 p-4 text-center w-100" style={{ maxWidth: "600px" }}>
-          <div
-            className="position-relative"
-            style={{
-              background: "linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)",
-              padding: "2rem 1rem",
-              borderRadius: "15px 15px 0 0",
-            }}
-          >
-            <h2 className="mb-0 text-white fw-bold">🎉 Game Complete! 🎉</h2>
-            <p className="mb-0 text-white opacity-75">Final Leaderboard</p>
-          </div>
-          <div className="card-body p-4">
-            {leaderboard
-              .slice()
-              .sort((a, b) => b.score - a.score)
-              .map((player, index) => (
-                <div
-                  key={player.playerId}
-                  className={`card mb-2 ${getRankBackground(index)} text-white p-3 d-flex justify-content-between align-items-center ${styles.leaderboardItem}`}
-                >
-                  <div className="d-flex align-items-center">
-                    <img
-                      src={player.avatar || unknownAvatar}
-                      alt={player.nickname}
-                      className="rounded-circle border border-light border-2 me-3"
-                      width="48"
-                      height="48"
-                      style={{ objectFit: "cover" }}
-                      onError={(e) => {
-                        const target = e.target as HTMLImageElement;
-                        if (target.src !== unknownAvatar) target.src = unknownAvatar;
-                      }}
-                    />
-                    <span className="me-3">{getRankIcon(index)}</span>
-                    <span className="fw-bold">{player.nickname}</span>
-                  </div>
-                  <span className="badge bg-light text-dark p-2">{player.score} pts</span>
-                </div>
-              ))}
-          </div>
-          <div className="card-footer p-3">
-            <button className="btn btn-primary rounded-pill px-4 py-2 w-100" onClick={() => navigate("/")}>
-              <i className="bx bx-home me-2"></i>
-              Back to Home
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Nếu chưa qua guard xong thì đừng render gameplay (tránh flicker)
-  if (!canProceed) {
-    return (
-      <div className={`min-vh-100 d-flex justify-content-center align-items-center ${styles.container}`}>
-        <div className="text-center p-4">
-          <div className="spinner-border mb-3" role="status" />
-          <p className="text-muted mb-0">Preparing game...</p>
+      <div className="min-vh-100 d-flex align-items-center justify-content-center bg-gradient-primary">
+        <div className="text-center text-white">
+          {error ? (
+            <>
+              <i className="bx bx-error-circle display-1 mb-3" />
+              <h4>{error}</h4>
+              <button className="btn btn-light mt-3" onClick={() => navigate("/")}>
+                Về trang chủ
+              </button>
+            </>
+          ) : (
+            <>
+              <div className="spinner-border mb-3" style={{ width: "3rem", height: "3rem" }} />
+              <h4>Đang kết nối trò chơi...</h4>
+            </>
+          )}
         </div>
       </div>
     );
   }
 
   return (
-    <div className={`min-vh-100 py-4 w-100 ${styles.container}`}>
-      <div className="container">
+    <div className="min-vh-100" style={{ background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)" }}>
+      <div className="container py-4">
         <div className="row justify-content-center">
-          <div className="col-lg-11 col-xl-10">
+          <div className="col-xl-10">
             <div className="card border-0 shadow-lg rounded-4 overflow-hidden">
-              <div
-                className="position-relative"
-                style={{
-                  background: "linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)",
-                  padding: "2rem 1rem",
-                }}
-              >
-                <div className="text-center text-white">
-                  <h1 className="mb-2 fw-bold" style={{ fontSize: "2.2rem" }}>
-                    <i className="bx bx-game me-3"></i>
-                    Quiz Game
-                  </h1>
-                  <div className="d-flex justify-content-center align-items-center gap-2">
-                    <span className="opacity-75" style={{ fontSize: "1.1rem" }}>
-                      {isHost ? "🎯 Host View" : "👤 Player View"}
-                    </span>
-                    <span className={`badge ${wsConnected ? "bg-success" : "bg-danger"} py-2 px-3 rounded-pill`}>
-                      {wsConnected ? <WifiOutlined /> : <DisconnectOutlined />}
-                      {wsConnected ? " Connected" : " Offline"}
-                    </span>
-                  </div>
+              {/* Header */}
+              <div className="text-white text-center py-4" style={{ background: "linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)" }}>
+                <h1 className="display-6 fw-bold mb-1">{game.quiz.title}</h1>
+                <div className="d-flex justify-content-center gap-3 flex-wrap">
+                  <span className="badge bg-white text-primary px-3 py-2">
+                    Câu {game.currentQuestionIndex + 1} / {game.totalQuestions}
+                  </span>
+                  <span className={`badge px-3 py-2 ${timeLeft <= 5 ? "bg-danger" : "bg-success"}`}>
+                    {timeLeft}s
+                  </span>
                 </div>
               </div>
+
               <div className="card-body p-4 p-md-5">
-                {isHost ? (
-                  leaderboard.length > 0 ? (
-                    <div>
-                      <h3 className="mb-4 fw-bold text-dark d-flex align-items-center" style={{ fontSize: "1.8rem" }}>
-                        <i className="bx bx-bar-chart-alt-2 me-2 text-primary"></i>
-                        Live Leaderboard
-                      </h3>
-                      <div className="row g-3">
-                        {leaderboard
-                          .slice()
-                          .sort((a, b) => b.score - a.score)
-                          .map((player, index) => (
-                            <div key={player.playerId} className="col-md-6 col-lg-4">
-                              <div
-                                className={`card border-0 rounded-3 p-3 h-100 ${getRankBackground(index)} text-white ${styles.leaderboardItem}`}
-                              >
+                {/* Câu hỏi đang diễn ra */}
+                {question && !showAnswer && (
+                  <div className="text-center mb-5">
+                    <h2 className="display-5 fw-bold text-dark mb-4">{question.questionText}</h2>
+
+                    {question.imageUrl && (
+                      <img
+                        src={question.imageUrl}
+                        alt="Question"
+                        className="img-fluid rounded-3 shadow-sm mb-4"
+                        style={{ maxHeight: "300px" }}
+                      />
+                    )}
+
+                    <div className="progress mb-5" style={{ height: "20px" }}>
+                      <div
+                        className="progress-bar progress-bar-striped progress-bar-animated bg-danger"
+                        style={{ width: `${(timeLeft / (question.timeLimitSeconds || 15)) * 100}%` }}
+                      />
+                    </div>
+
+                    {/* Đáp án */}
+                    {question.type === "FILL_IN_THE_BLANK" ? (
+                      <div className="d-flex justify-content-center gap-3">
+                        <input
+                          type="text"
+                          className="form-control form-control-lg rounded-pill text-center"
+                          style={{ maxWidth: "500px" }}
+                          placeholder="Nhập đáp án..."
+                          value={fillAnswer}
+                          onChange={(e) => setFillAnswer(e.target.value)}
+                          onKeyDown={(e) => e.key === "Enter" && sendAnswer()}
+                          disabled={hasAnswered}
+                        />
+                        <button
+                          className="btn btn-primary btn-lg rounded-pill px-5"
+                          onClick={sendAnswer}
+                          disabled={hasAnswered || !fillAnswer.trim()}
+                        >
+                          Gửi
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="row g-3 justify-content-center">
+                        {question.options.map((opt) => (
+                          <div key={opt.optionId} className="col-md-6">
+                            <OptionButton
+                              option={opt}
+                              isSelected={selectedOptions.includes(opt.optionId)}
+                              onClick={() => toggleOption(opt.optionId)}
+                              disabled={hasAnswered}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Bảng xếp hạng sau mỗi câu */}
+                {showAnswer && (
+                  <div className="text-center">
+                    <h3 className="fw-bold mb-5 text-primary">
+                      {pendingQuestion ? "Câu tiếp theo..." : "Đáp án đã hiện!"}
+                    </h3>
+
+                    {pendingLeaderboard && (
+                      <div className="row g-4 justify-content-center">
+                        {pendingLeaderboard.slice(0, 10).map((entry, i) => {
+                          const player = participantsWithAvatar.find(p => p.participantId === entry.participantId);
+                          return (
+                            <div key={entry.participantId} className="col-md-6 col-lg-4">
+                              <div className={`card h-100 border-0 shadow-sm rounded-4 p-3 ${i < 3 ? "border-warning border-3" : ""}`}>
                                 <div className="d-flex align-items-center">
+                                  <div className="me-3 fs-3 fw-bold">#{i + 1}</div>
                                   <img
-                                    src={player.avatar || unknownAvatar}
-                                    alt={player.nickname}
-                                    className="rounded-circle border border-light border-2 me-3"
-                                    width="48"
-                                    height="48"
-                                    style={{ objectFit: "cover" }}
-                                    onError={(e) => {
-                                      const target = e.target as HTMLImageElement;
-                                      if (target.src !== unknownAvatar) target.src = unknownAvatar;
-                                    }}
+                                    src={player?.avatar || unknownAvatar}
+                                    alt={entry.nickname}
+                                    className="rounded-circle me-3"
+                                    width={56}
+                                    height={56}
                                   />
-                                  <span className="me-3">{getRankIcon(index)}</span>
-                                  <div>
-                                    <h5 className="mb-1 fw-bold">{player.nickname}</h5>
-                                    <span className="badge bg-light text-dark p-2">{player.score} pts</span>
+                                  <div className="text-start">
+                                    <h6 className="mb-0 fw-bold text-truncate">{entry.nickname}</h6>
+                                    <div className="badge bg-success fs-6">{entry.score} điểm</div>
                                   </div>
                                 </div>
                               </div>
                             </div>
-                          ))}
-                      </div>
-                      <p className="text-center mt-4 text-muted">📡 Monitoring game progress...</p>
-                    </div>
-                  ) : (
-                    <div
-                      className="text-center py-5 rounded-3"
-                      style={{
-                        background: "linear-gradient(135deg, #f8f9ff 0%, #e3f2fd 100%)",
-                        border: "2px dashed #2196f3",
-                      }}
-                    >
-                      <i className="bx bx-bar-chart-alt-2 text-primary mb-3" style={{ fontSize: "4rem" }}></i>
-                      <h5 className="text-primary fw-bold mb-2">No Leaderboard Data Yet</h5>
-                      <p className="text-muted mb-0">Waiting for players to submit answers...</p>
-                    </div>
-                  )
-                ) : (
-                  <>
-                    {currentQuestion ? (
-                      <div>
-                        {imageUrl && (
-                          <div className="text-center mb-4">
-                            <img
-                              src={imageUrl}
-                              alt="Question image"
-                              className="rounded-3 shadow-sm"
-                              style={{ maxWidth: "100%", maxHeight: "300px", objectFit: "contain" }}
-                              onError={(e) => {
-                                const target = e.target as HTMLImageElement;
-                                target.style.display = "none";
-                              }}
-                            />
-                          </div>
-                        )}
-                        <h3 className="text-center mb-3 fw-bold text-dark" style={{ fontSize: "1.8rem" }}>
-                          {currentQuestion.questionText}
-                        </h3>
-                        <p className="text-center mb-4">
-                          <strong>
-                            <i className="bx bx-time me-2"></i>
-                            Time left: {timeLeft} seconds
-                          </strong>
-                        </p>
-                        <div className="progress mb-4">
-                          <div
-                            className="progress-bar progress-bar-striped progress-bar-animated"
-                            role="progressbar"
-                            style={{ width: `${(timeLeft / (currentQuestion.timeLimit || 5)) * 100}%` }}
-                            aria-valuenow={timeLeft}
-                            aria-valuemin={0}
-                            aria-valuemax={currentQuestion.timeLimit || 5}
-                          ></div>
-                        </div>
-                        {currentQuestion.questionType === "FILL_IN_THE_BLANK" ? (
-                          <div className="d-flex gap-3 align-items-center">
-                            <input
-                              type="text"
-                              className={`form-control mb-3 rounded-pill px-4 py-2 ${
-                                showCorrectAnswer &&
-                                currentQuestion.options.some((opt) => opt.correctAnswer === fillInAnswer.trim())
-                                  ? styles.correctInput
-                                  : showCorrectAnswer && fillInAnswer.trim()
-                                  ? styles.wrongInput
-                                  : ""
-                              }`}
-                              value={fillInAnswer}
-                              onChange={(e) => handleFillInInput(e.target.value)}
-                              disabled={timeLeft === 0 || hasAnswered || isSubmitting}
-                              placeholder="Type your answer here..."
-                            />
-                            <button
-                              className="btn btn-primary rounded-pill px-4 py-2"
-                              onClick={handleFillInSubmit}
-                              disabled={timeLeft === 0 || hasAnswered || isSubmitting || !fillInAnswer.trim()}
-                            >
-                              Submit
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="row g-3">
-                            {currentQuestion.options.map((opt) => (
-                              <div key={opt.optionId} className="col-md-6">
-                                <button
-                                  className={`btn w-100 rounded-pill px-4 py-2 ${
-                                    showCorrectAnswer
-                                      ? opt.correct
-                                        ? `${styles.correctAnswer} btn-success`
-                                        : selectedOptionIds.includes(opt.optionId)
-                                        ? `${styles.wrongAnswer} btn-danger`
-                                        : "btn-outline-primary"
-                                      : selectedOptionIds.includes(opt.optionId)
-                                      ? "btn-primary"
-                                      : "btn-outline-primary"
-                                  }`}
-                                  onClick={() => handleMultipleChoiceSelect(opt.optionId)}
-                                  disabled={timeLeft === 0 || hasAnswered || isSubmitting}
-                                >
-                                  {opt.optionText}
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    ) : leaderboard.length > 0 ? (
-                      <div>
-                        <h3 className="mb-4 fw-bold text-dark d-flex align-items-center" style={{ fontSize: "1.8rem" }}>
-                          <i className="bx bx-bar-chart-alt-2 me-2 text-primary"></i>
-                          Current Standings
-                        </h3>
-                        <div className="row g-3">
-                          {leaderboard
-                            .slice()
-                            .sort((a, b) => b.score - a.score)
-                            .map((player, index) => (
-                              <div key={player.playerId} className="col-md-6 col-lg-4">
-                                <div
-                                  className={`card border-0 rounded-3 p-3 h-100 ${getRankBackground(index)} text-white ${styles.leaderboardItem}`}
-                                >
-                                  <div className="d-flex align-items-center">
-                                    <img
-                                      src={player.avatar || unknownAvatar}
-                                      alt={player.nickname}
-                                      className="rounded-circle border border-light border-2 me-3"
-                                      width="48"
-                                      height="48"
-                                      style={{ objectFit: "cover" }}
-                                      onError={(e) => {
-                                        const target = e.target as HTMLImageElement;
-                                        if (target.src !== unknownAvatar) target.src = unknownAvatar;
-                                      }}
-                                    />
-                                    <span className="me-3">{getRankIcon(index)}</span>
-                                    <div>
-                                      <h5 className="mb-1 fw-bold">{player.nickname}</h5>
-                                      <span className="badge bg-light text-dark p-2">{player.score} pts</span>
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                            ))}
-                        </div>
-                        <p className="text-center mt-4 text-muted">
-                          <i className="bx bx-time me-2"></i>
-                          Waiting for the next question...
-                        </p>
-                      </div>
-                    ) : (
-                      <div
-                        className="text-center py-5 rounded-3"
-                        style={{
-                          background: "linear-gradient(135deg, #f8f9ff 0%, #e3f2fd 100%)",
-                          border: "2px dashed #2196f3",
-                        }}
-                      >
-                        <i className="bx bx-hourglass text-primary mb-3" style={{ fontSize: "4rem" }}></i>
-                        <h5 className="text-primary fw-bold mb-2">Waiting for the First Question</h5>
-                        <p className="text-muted mb-0">Get ready, the game will start soon!</p>
+                          );
+                        })}
                       </div>
                     )}
-                  </>
+
+                    {pendingQuestion && (
+                      <div className="mt-5">
+                        <div className="spinner-border text-primary" style={{ width: "4rem", height: "4rem" }} />
+                        <p className="mt-3 fs-4 fw-bold">Chuẩn bị câu hỏi tiếp theo...</p>
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             </div>

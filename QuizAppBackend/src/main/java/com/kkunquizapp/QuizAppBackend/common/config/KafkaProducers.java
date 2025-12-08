@@ -1,6 +1,5 @@
 package com.kkunquizapp.QuizAppBackend.common.config;
 
-
 import com.kkunquizapp.QuizAppBackend.common.dto.ChatMessageCommand;
 import com.kkunquizapp.QuizAppBackend.common.dto.MessageCreatedEventPayload;
 import lombok.RequiredArgsConstructor;
@@ -12,19 +11,19 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class KafkaProducers {
 
-    private final KafkaTemplate<String, Object> kafka;
+    private final KafkaTemplate<String, Object> kafkaTemplate;
 
-    @Value("${app.kafka.topics.chatSend}")
-    private String chatSend;
+    @Value("${app.kafka.topics.chat-send}")
+    private String chatSendTopic;
 
-    @Value("${app.kafka.topics.chatCreated}")
-    private String chatCreated;
+    @Value("${app.kafka.topics.chat-created}")
+    private String chatCreatedTopic;
 
     public void publishSend(ChatMessageCommand cmd) {
-        kafka.send(chatSend, cmd.conversationId().toString(), cmd);
+        kafkaTemplate.send(chatSendTopic, cmd.conversationId().toString(), cmd);
     }
 
     public void publishCreated(MessageCreatedEventPayload evt) {
-        kafka.send(chatCreated, evt.conversationId().toString(), evt);
+        kafkaTemplate.send(chatCreatedTopic, evt.conversationId().toString(), evt);
     }
 }

@@ -1,9 +1,11 @@
+// src/components/quiz/ProcessQuizCard.tsx
 import { useState, useEffect } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { createGame } from "@/services/gameService"; // Đã sửa đúng import
 import { handleApiError } from "@/utils/apiErrorHandler";
-import { createGameSession } from "@/services/gameService";
-import { useNavigate, Link } from "react-router-dom";
 import unknownAvatar from "@/assets/img/avatars/unknown.jpg";
-import { QuizSummaryDto } from "@/services/quizService";
+import type { QuizSummaryDto } from "@/services/quizService";
+import type { GameCreateRequest } from "@/types/game";
 
 interface ProcessQuizCardProps {
   quiz: QuizSummaryDto;
@@ -14,7 +16,7 @@ const ProcessQuizCard = ({ quiz }: ProcessQuizCardProps) => {
   const [isDark, setIsDark] = useState(false);
   const navigate = useNavigate();
 
-  // Detect dark/light mode
+  // Detect dark mode
   useEffect(() => {
     const checkDarkMode = () => {
       setIsDark(document.body.classList.contains("dark-mode"));
@@ -25,7 +27,7 @@ const ProcessQuizCard = ({ quiz }: ProcessQuizCardProps) => {
     return () => observer.disconnect();
   }, []);
 
-  // Category color mapping (có thể mở rộng sau)
+  // Category color mapping
   const getCategoryColor = (category: string = "General") => {
     const colors: Record<string, string> = {
       Technology: "#60a5fa",
@@ -42,33 +44,56 @@ const ProcessQuizCard = ({ quiz }: ProcessQuizCardProps) => {
 
   // Safe values
   const displayTitle = quiz.title || "Untitled Quiz";
-  const displayDescription =
-    quiz.description || "Test your knowledge with this exciting quiz!";
+  const displayDescription = quiz.description || "Test your knowledge with this exciting quiz!";
   const displayCreatorName = quiz.creator?.name || "Anonymous";
   const displayCreatorId = quiz.creator?.userId || "";
-  const displayAvatar = unknownAvatar; // Backend hiện tại không trả avatar → fallback
+  const displayAvatar = quiz.creator?.avatar || unknownAvatar;
   const displayDuration = quiz.estimatedMinutes
     ? `${quiz.estimatedMinutes} min${quiz.estimatedMinutes > 1 ? "s" : ""}`
     : "Flexible time";
-  const categoryColor = getCategoryColor(); // Có thể mở rộng bằng tag sau
 
-  // Tính điểm khuyến nghị (nếu backend chưa có recommendationScore, tự ước lượng)
+  const categoryColor = getCategoryColor(quiz.difficulty);
+
+  // Tính điểm khuyến nghị
   const recommendationScore =
     quiz.averageScore !== undefined && quiz.averageScore > 0
       ? quiz.averageScore.toFixed(1)
-      : ((quiz.completionCount || 0) / Math.max(quiz.startCount || 1, 1)) * 10;
+      : quiz.startCount && quiz.startCount > 0
+      ? ((quiz.completionCount || 0) / quiz.startCount) * 10
+      : 0;
 
   const playerCount = quiz.startCount || 0;
 
+  // Bắt đầu game (host tạo game mới)
   const handleStartQuiz = async () => {
+    if (isStarting) return;
+
     setIsStarting(true);
     try {
-      const response = await createGameSession(quiz.quizId);
-      navigate(`/game-session/${response.gameId}`, {
-        state: { quizTitle: quiz.title },
+      const createRequest: GameCreateRequest = {
+        quizId: quiz.quizId,
+        maxPlayers: 200,
+        allowAnonymous: true,
+        showLeaderboard: true,
+        randomizeQuestions: false,
+        randomizeOptions: false,
+      };
+
+      // Gọi đúng API từ backend mới
+      const gameResponse = await createGame(createRequest);
+
+      // Chuyển hướng đến màn hình host (hoặc lobby nếu muốn)
+      navigate(`/game-session/${gameResponse.gameId}`, {
+        state: {
+          pinCode: gameResponse.pinCode,
+          quizTitle: quiz.title,
+          isHost: true,
+        },
+        replace: true,
       });
-    } catch (error) {
-      handleApiError(error, "Không thể bắt đầu quiz");
+    } catch (error: any) {
+      handleApiError(error, "Không thể tạo phòng chơi");
+      console.error("Failed to create game:", error);
     } finally {
       setIsStarting(false);
     }
@@ -84,7 +109,8 @@ const ProcessQuizCard = ({ quiz }: ProcessQuizCardProps) => {
       }}
       onMouseEnter={(e) => {
         e.currentTarget.style.transform = "translateY(-8px)";
-        e.currentTarget.style.boxShadow = "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)";
+        e.currentTarget.style.boxShadow =
+          "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)";
         e.currentTarget.style.borderColor = "var(--primary-color)";
       }}
       onMouseLeave={(e) => {
@@ -129,9 +155,7 @@ const ProcessQuizCard = ({ quiz }: ProcessQuizCardProps) => {
             >
               {displayCreatorName}
             </Link>
-            <div style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
-              Creator
-            </div>
+            <div style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Creator</div>
           </div>
         </div>
 
@@ -145,7 +169,7 @@ const ProcessQuizCard = ({ quiz }: ProcessQuizCardProps) => {
               color: categoryColor,
             }}
           >
-            {quiz.difficulty || "General"}
+            {quiz.difficulty|| "General"}
           </span>
 
           <div className="d-flex align-items-center gap-1 fw-semibold">
@@ -159,7 +183,7 @@ const ProcessQuizCard = ({ quiz }: ProcessQuizCardProps) => {
 
         {/* Title */}
         <Link
-          to={`/quiz/${quiz.quizId}`}
+          to={`/quiz/${quiz.slug || quiz.quizId}`}
           className="text-decoration-none mb-3"
           style={{
             display: "block",
@@ -167,7 +191,7 @@ const ProcessQuizCard = ({ quiz }: ProcessQuizCardProps) => {
             fontWeight: 700,
             color: "var(--text-color)",
             lineHeight: 1.3,
-            transition: "color 0.CurrentTarget25s",
+            transition: "color 0.25s",
           }}
           onMouseEnter={(e) => (e.currentTarget.style.color = "var(--primary-color)")}
           onMouseLeave={(e) => (e.currentTarget.style.color = "var(--text-color)")}
@@ -194,7 +218,7 @@ const ProcessQuizCard = ({ quiz }: ProcessQuizCardProps) => {
         <div className="d-flex align-items-center gap-4 mb-4 text-muted" style={{ fontSize: "0.9rem" }}>
           <div className="d-flex align-items-center gap-1">
             <i className="bx bx-book-open"></i>
-            <span>{quiz.totalQuestions} questions</span>
+            <span>{quiz.totalQuestions || 0} questions</span>
           </div>
           <div className="d-flex align-items-center gap-1">
             <i className="bx bx-time-five"></i>
@@ -204,8 +228,9 @@ const ProcessQuizCard = ({ quiz }: ProcessQuizCardProps) => {
 
         {/* Action Buttons */}
         <div className="d-flex gap-3 mt-auto">
+          {/* Start Quiz Button */}
           <button
-            className="btn flex-fill fw-bold text-white"
+            className="btn flex-fill fw-bold text-white position-relative"
             style={{
               background: "var(--gradient-primary)",
               padding: "0.75rem",
@@ -221,35 +246,30 @@ const ProcessQuizCard = ({ quiz }: ProcessQuizCardProps) => {
             }}
             onClick={handleStartQuiz}
             disabled={isStarting}
-            onMouseEnter={(e) => !isStarting && (e.currentTarget.style.transform = "translateY(-2px)")}
-            onMouseLeave={(e) => (e.currentTarget.style.transform = "translateY(0)")}
           >
             {isStarting ? (
               <>
-                <span className="spinner-border spinner-border-sm"></span>
-                Starting...
+                <span className="spinner-border spinner-border-sm me-2"></span>
+                Creating Room...
               </>
             ) : (
               <>
                 <i className="bx bx-play-circle" style={{ fontSize: "1.3rem" }}></i>
-                Start Quiz
+                Host Game
               </>
             )}
           </button>
 
+          {/* View Details Button */}
           <Link
             to={`/quiz/${quiz.slug || quiz.quizId}`}
-            className="btn flex-fill fw-bold"
+            className="btn flex-fill fw-bold d-flex align-items-center justify-content-center gap-2"
             style={{
               background: "var(--surface-alt)",
               color: "var(--primary-color)",
               border: "2px solid var(--border-color)",
               borderRadius: "12px",
               padding: "0.75rem",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: "8px",
               textDecoration: "none",
             }}
             onMouseEnter={(e) => {
