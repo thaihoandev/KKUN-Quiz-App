@@ -131,11 +131,23 @@ const WaitingRoomSessionPage = () => {
           console.log("🔌 [HOST - WAITING] Connection:", connected);
         },
       });
-    } else {
+        } else {
       unsubscribeRef.current = setupParticipantListeners(
         gameId,
         participantId!,
         {
+          // === THÊM MỚI: Xử lý khi có người join/leave/kick ===
+          onGameEvent: (event) => {
+            if (
+              ["PARTICIPANT_JOINED", "PARTICIPANT_LEFT", "PARTICIPANT_KICKED"].includes(
+                event.eventType
+              )
+            ) {
+              loadParticipants();
+            }
+          },
+          // ====================================================
+
           onParticipants: (participantsList) => {
             setParticipants(participantsList || []);
             setLastUpdate(Date.now());

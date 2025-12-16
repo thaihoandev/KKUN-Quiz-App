@@ -612,6 +612,7 @@ export interface ParticipantListenerCallbacks {
     onGameStatistics?: (stats: GameStatisticsDTO) => void;
     onKicked?: (notification: any) => void;
     onConnectionChange?: (connected: boolean) => void;
+    onGameEvent?: (event: GameEvent) => void;
 }
 
 // ✅ NOTE: Import GameEvent from this file

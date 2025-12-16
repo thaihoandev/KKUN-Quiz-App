@@ -608,6 +608,7 @@ export const setupHostListeners = (
             requestCurrentQuestion(gameId, "host");
             requestGameDetails(gameId, "host");
             requestLeaderboard(gameId, "host");
+            requestParticipants(gameId, "host");
         }
         callbacks.onConnectionChange?.(connected);
     };
@@ -667,6 +668,8 @@ export const setupParticipantListeners = (
         unsubs.push(webSocketService.onStatistics(callbacks.onGameStatistics));
     callbacks.onKicked &&
         unsubs.push(webSocketService.onKicked(callbacks.onKicked));
+    callbacks.onGameEvent &&
+        unsubs.push(webSocketService.onGameEvent(callbacks.onGameEvent));
 
     // ✅ BỔ SUNG: Catch-up khi reconnect
     const handleReconnect = (connected: boolean) => {
@@ -677,6 +680,7 @@ export const setupParticipantListeners = (
             requestCurrentQuestion(gameId, participantId);
             requestGameDetails(gameId, participantId);
             requestLeaderboard(gameId, participantId);
+            requestParticipants(gameId, participantId);
         }
         callbacks.onConnectionChange?.(connected);
     };
