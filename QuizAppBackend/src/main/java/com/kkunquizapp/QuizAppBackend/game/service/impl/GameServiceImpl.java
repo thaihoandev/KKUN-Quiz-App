@@ -13,8 +13,9 @@ import com.kkunquizapp.QuizAppBackend.game.repository.GameParticipantRepo;
 import com.kkunquizapp.QuizAppBackend.game.repository.GameRepo;
 import com.kkunquizapp.QuizAppBackend.game.repository.UserAnswerRepo;
 import com.kkunquizapp.QuizAppBackend.game.repository.UserQuizStatisticsRepo;
+import com.kkunquizapp.QuizAppBackend.game.service.GameScheduler;
 import com.kkunquizapp.QuizAppBackend.game.service.GameService;
-import com.kkunquizapp.QuizAppBackend.question.model.Question;
+import com.kkunquizapp.QuizAppBackend.question.model.*;
 import com.kkunquizapp.QuizAppBackend.question.repository.QuestionRepo;
 import com.kkunquizapp.QuizAppBackend.quiz.model.Quiz;
 import com.kkunquizapp.QuizAppBackend.quiz.repository.QuizRepo;
@@ -23,6 +24,7 @@ import com.kkunquizapp.QuizAppBackend.user.model.User;
 import com.kkunquizapp.QuizAppBackend.user.repository.UserRepo;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.hibernate.Hibernate;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.annotation.Cacheable;
@@ -41,20 +43,6 @@ import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
-/**
- * Game Service Implementation - Production Ready
- *
- * Features:
- * - Thread-safe game operations using TaskScheduler
- * - Redis caching with proper serialization
- * - Kafka event streaming for real-time updates
- * - Distributed locking for idempotency
- * - Comprehensive error handling
- * - Transaction management
- * - Participant access validation (FIXED)
- * - Player count tracking - total + active (FIXED)
- * - Auto end game when no players (FIXED)
- */
 @Service
 @RequiredArgsConstructor
 @Transactional(rollbackFor = Exception.class)
@@ -82,13 +70,12 @@ public class GameServiceImpl implements GameService {
 
     // ==================== CONSTANTS ====================
 
-    private static final String GAME_CACHE_PREFIX = "game:";
     private static final String GAME_PIN_PREFIX = "game:pin:";
     private static final String LEADERBOARD_CACHE_PREFIX = "leaderboard:";
     private static final String PARTICIPANTS_CACHE_PREFIX = "participants:";
     private static final String ANSWER_LOCK_PREFIX = "answer:lock:";
 
-    private static final long CACHE_TTL_SECONDS = 300;
+    private static final long PIN_CACHE_TTL_SECONDS = 300;
     private static final long LEADERBOARD_TTL_SECONDS = 5;
     private static final long PARTICIPANTS_TTL_SECONDS = 60;
 
@@ -139,7 +126,12 @@ public class GameServiceImpl implements GameService {
         game = gameRepository.save(game);
         log.info("Game created: {} with PIN: {}", game.getGameId(), pinCode);
 
-        cacheGame(game);
+        game.setPlayerCount(0);
+        game.setActivePlayerCount(0);
+        gameRepository.save(game);
+
+        // Cache PIN -> GameId mapping only
+        cachePinLookup(pinCode, game.getGameId());
 
         publishGameEvent(game.getGameId(), "GAME_CREATED", hostId, Map.of(
                 "pinCode", pinCode,
@@ -149,9 +141,14 @@ public class GameServiceImpl implements GameService {
 
         quizService.incrementPlayCount(quiz.getQuizId());
 
-        return gameMapper.toResponseDTO(game);
-    }
+        // ✅ FIX: Return DTO with populated data
+        GameResponseDTO response = gameMapper.toResponseDTO(game);
+        response.setHostParticipantId(hostId.toString());
+        log.info("Game created successfully: gameId={}, pinCode={}, hostId={}",
+                game.getGameId(), pinCode,hostId);
 
+        return response;
+    }
     // ==================== JOIN GAME ====================
 
     @Override
@@ -159,7 +156,7 @@ public class GameServiceImpl implements GameService {
         log.info("User {} joining game with PIN: {}", userId, pinCode);
 
         Game game = getGameByPinWithValidation(pinCode);
-        validateGameJoinable(game);
+        validateGameJoinable(game, userId);
 
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new GameException("User not found"));
@@ -204,7 +201,7 @@ public class GameServiceImpl implements GameService {
         log.info("Anonymous user joining game with PIN: {}", pinCode);
 
         Game game = getGameByPinWithValidation(pinCode);
-        validateGameJoinable(game);
+        validateGameJoinable(game, null);
 
         if (!game.isAllowAnonymous()) {
             throw new GameException("Anonymous players not allowed in this game");
@@ -250,7 +247,9 @@ public class GameServiceImpl implements GameService {
     public void startGame(UUID gameId, UUID hostId) {
         log.info("Starting game: {} by host: {}", gameId, hostId);
 
-        Game game = getGameByIdWithCache(gameId);
+        Game game = gameRepository.findById(gameId)
+                .orElseThrow(() -> new GameNotFoundException("Game not found: " + gameId));
+
         validateHost(game, hostId);
 
         if (game.getGameStatus() != GameStatus.WAITING) {
@@ -261,65 +260,124 @@ public class GameServiceImpl implements GameService {
             throw new GameException("Cannot start game with no players");
         }
 
-        game.setGameStatus(GameStatus.STARTING);
-        gameRepository.save(game);
-        cacheGame(game);
+        // Eager load questions
+        List<Question> questions = getGameQuestionsEager(game);
+        if (questions.isEmpty()) {
+            throw new GameException("Quiz has no questions");
+        }
+        for (Question q : questions) {
+            Hibernate.initialize(q.getOptions());
+        }
 
-        publishGameEvent(gameId, "GAME_STARTING", hostId, Map.of(
-                "countdown", 3,
-                "totalQuestions", game.getTotalQuestions()
-        ));
+        // ✅ Set game status to IN_PROGRESS
+        game.startGame();
+        gameRepository.saveAndFlush(game);
+
+        log.info("Game {} status changed to IN_PROGRESS and flushed to DB", gameId);
+
+        // ✅ FIX 1: ASYNC broadcast with 500ms delay
+        // Cho frontend có thời gian subscribe trước khi broadcast Q1
+        log.info("🚀 Scheduling first question broadcast in 500ms for game {}", gameId);
 
         taskScheduler.schedule(
-                () -> actuallyStartGame(gameId, hostId),
-                Instant.now().plusSeconds(3)
+                () -> {
+                    try {
+                        log.info("📤 [ASYNC] Broadcasting first question for game {}", gameId);
+                        moveToNextQuestion(gameId, hostId);
+                    } catch (Exception e) {
+                        log.error("❌ Failed to move to first question: {}", e.getMessage(), e);
+                        publishGameEvent(gameId, "GAME_START_FAILED", hostId, Map.of(
+                                "error", e.getMessage()
+                        ));
+                    }
+                },
+                Instant.now().plusMillis(500)  // ← 500ms delay để frontend subscribe
         );
+
+        // ✅ API return immediately, không block
+        publishGameEvent(gameId, "GAME_STARTED", hostId, Map.of(
+                "totalQuestions", game.getTotalQuestions()
+        ));
     }
 
-    @Transactional
-    public void actuallyStartGame(UUID gameId, UUID hostId) {
-        try {
-            log.info("Actually starting game: {}", gameId);
+    /**
+     * ✅ NEW: Broadcast first question directly
+     * Không cần gọi moveToNextQuestion() lại
+     */
+    private void broadcastFirstQuestion(UUID gameId, List<Question> questions) {
+        Game game = gameRepository.findById(gameId)
+                .orElseThrow(() -> new GameNotFoundException("Game not found: " + gameId));
 
-            Game game = gameRepository.findById(gameId)
-                    .orElseThrow(() -> new GameNotFoundException("Game not found: " + gameId));
-
-            if (game.getGameStatus() != GameStatus.STARTING) {
-                log.warn("Game {} status changed, abort start", gameId);
-                return;
-            }
-
-            game.startGame();
-            gameRepository.save(game);
-            cacheGame(game);
-
-            publishGameEvent(gameId, "GAME_STARTED", hostId, Map.of(
-                    "totalQuestions", game.getTotalQuestions()
-            ));
-
-            moveToNextQuestion(gameId, hostId);
-
-        } catch (Exception e) {
-            log.error("Failed to start game {}: {}", gameId, e.getMessage(), e);
-            try {
-                Game game = gameRepository.findById(gameId).orElse(null);
-                if (game != null && game.getGameStatus() == GameStatus.STARTING) {
-                    game.setGameStatus(GameStatus.WAITING);
-                    gameRepository.save(game);
-                    cacheGame(game);
-                    publishGameEvent(gameId, "GAME_START_FAILED", hostId, Map.of("error", e.getMessage()));
-                }
-            } catch (Exception ex) {
-                log.error("Failed to rollback: {}", ex.getMessage());
-            }
+        if (questions.isEmpty()) {
+            throw new GameException("No questions available");
         }
+
+        // ✅ Set to first question
+        game.setCurrentQuestionIndex(0);
+        Question firstQuestion = questions.get(0);
+        game.setCurrentQuestionId(firstQuestion.getQuestionId());
+        game.setQuestionStartTime(LocalDateTime.now());
+        gameRepository.save(game);
+
+        log.info("🎯 Broadcasting first question {} for game {}",
+                firstQuestion.getQuestionId(), gameId);
+
+        // ✅ Broadcast immediately
+        publishGameEvent(gameId, "QUESTION_STARTED", game.getHost().getUserId(), Map.of(
+                "question", gameMapper.toQuestionDTOWithoutAnswers(firstQuestion),
+                "questionNumber", 1,
+                "totalQuestions", game.getTotalQuestions(),
+                "timeLimit", firstQuestion.getTimeLimitSeconds(),
+                "catchUp", true
+        ));
     }
+
+//    @Transactional
+//    public void actuallyStartGame(UUID gameId, UUID hostId) {
+//        try {
+//            log.info("Actually starting game: {}", gameId);
+//
+//            Game game = gameRepository.findById(gameId)
+//                    .orElseThrow(() -> new GameNotFoundException("Game not found: " + gameId));
+//
+//            if (game.getGameStatus() != GameStatus.STARTING) {
+//                log.warn("Game {} status changed, abort start", gameId);
+//                return;
+//            }
+//
+//            game.startGame();
+//            gameRepository.save(game);
+//
+//            publishGameEvent(gameId, "GAME_STARTED", hostId, Map.of(
+//                    "totalQuestions", game.getTotalQuestions()
+//            ));
+//
+//            taskScheduler.schedule(
+//                    () -> moveToNextQuestion(gameId, hostId),
+//                    Instant.now().plusSeconds(5)
+//            );
+//
+//        } catch (Exception e) {
+//            log.error("Failed to start game {}: {}", gameId, e.getMessage(), e);
+//            try {
+//                Game game = gameRepository.findById(gameId).orElse(null);
+//                if (game != null && game.getGameStatus() == GameStatus.STARTING) {
+//                    game.setGameStatus(GameStatus.WAITING);
+//                    gameRepository.save(game);
+//                    publishGameEvent(gameId, "GAME_START_FAILED", hostId, Map.of("error", e.getMessage()));
+//                }
+//            } catch (Exception ex) {
+//                log.error("Failed to rollback: {}", ex.getMessage());
+//            }
+//        }
+//    }
 
     @Override
     public void pauseGame(UUID gameId, UUID hostId) {
         log.info("Pausing game: {} by host: {}", gameId, hostId);
 
-        Game game = getGameByIdWithCache(gameId);
+        Game game = gameRepository.findById(gameId)
+                .orElseThrow(() -> new GameNotFoundException("Game not found: " + gameId));
         validateHost(game, hostId);
 
         if (game.getGameStatus() != GameStatus.IN_PROGRESS) {
@@ -328,7 +386,6 @@ public class GameServiceImpl implements GameService {
 
         game.setGameStatus(GameStatus.PAUSED);
         gameRepository.save(game);
-        cacheGame(game);
 
         publishGameEvent(gameId, "GAME_PAUSED", hostId, null);
     }
@@ -337,7 +394,8 @@ public class GameServiceImpl implements GameService {
     public void resumeGame(UUID gameId, UUID hostId) {
         log.info("Resuming game: {} by host: {}", gameId, hostId);
 
-        Game game = getGameByIdWithCache(gameId);
+        Game game = gameRepository.findById(gameId)
+                .orElseThrow(() -> new GameNotFoundException("Game not found: " + gameId));
         validateHost(game, hostId);
 
         if (game.getGameStatus() != GameStatus.PAUSED) {
@@ -346,27 +404,31 @@ public class GameServiceImpl implements GameService {
 
         game.setGameStatus(GameStatus.IN_PROGRESS);
         gameRepository.save(game);
-        cacheGame(game);
 
         publishGameEvent(gameId, "GAME_RESUMED", hostId, null);
     }
 
     @Override
+    @Transactional // Đảm bảo có session
     public void endGame(UUID gameId, UUID hostId) {
         log.info("Ending game: {} by host: {}", gameId, hostId);
 
-        Game game = getGameByIdWithCache(gameId);
+        Game game = gameRepository.findById(gameId)
+                .orElseThrow(() -> new GameNotFoundException("Game not found: " + gameId));
         validateHost(game, hostId);
 
         if (game.getGameStatus() == GameStatus.FINISHED || game.getGameStatus() == GameStatus.CANCELLED) {
             throw new GameException("Game already ended");
         }
 
+        // ✅ FIX: Reload game với quiz để tránh lazy exception
+        game = gameRepository.findByIdWithQuiz(gameId)
+                .orElseThrow(() -> new GameNotFoundException("Game not found: " + gameId));
+
         calculateFinalStatistics(game);
 
         game.endGame();
         gameRepository.save(game);
-        cacheGame(game);
 
         quizService.incrementCompletionCount(game.getQuiz().getQuizId());
         quizService.updateAverageScore(game.getQuiz().getQuizId(), game.getAverageScore());
@@ -386,13 +448,13 @@ public class GameServiceImpl implements GameService {
     public void cancelGame(UUID gameId, UUID hostId) {
         log.info("Cancelling game: {} by host: {}", gameId, hostId);
 
-        Game game = getGameByIdWithCache(gameId);
+        Game game = gameRepository.findById(gameId)
+                .orElseThrow(() -> new GameNotFoundException("Game not found: " + gameId));
         validateHost(game, hostId);
 
         game.setGameStatus(GameStatus.CANCELLED);
         game.setEndedAt(LocalDateTime.now());
         gameRepository.save(game);
-        cacheGame(game);
 
         publishGameEvent(gameId, "GAME_CANCELLED", hostId, Map.of("reason", "Cancelled by host"));
     }
@@ -400,56 +462,137 @@ public class GameServiceImpl implements GameService {
     // ==================== QUESTION FLOW ====================
 
     @Override
+    @Transactional
     public QuestionResponseDTO moveToNextQuestion(UUID gameId, UUID hostId) {
-        log.info("Moving to next question in game: {}", gameId);
+        log.info("Host {} moving to next question in game: {}", hostId, gameId);
 
-        Game game = getGameByIdWithCache(gameId);
+        // 1. Lấy game + validate
+        Game game = gameRepository.findById(gameId)
+                .orElseThrow(() -> new GameNotFoundException("Game not found: " + gameId));
+
         validateHost(game, hostId);
 
         if (game.getGameStatus() != GameStatus.IN_PROGRESS) {
-            throw new GameException("Game must be in progress");
+            throw new GameException("Game must be in progress to move to next question");
         }
 
+        // 2. Kiểm tra còn câu hỏi không
         if (game.getCurrentQuestionIndex() >= game.getTotalQuestions() - 1) {
-            log.info("All questions answered, ending game {}", gameId);
+            log.info("No more questions → auto ending game {}", gameId);
             endGame(gameId, hostId);
-            throw new GameException("No more questions");
+            throw new GameException("No more questions. Game has ended.");
         }
 
-        List<Question> questions = getGameQuestions(game);
+        // 3. ✅ FIX: Lấy danh sách câu hỏi một lần duy nhất (JOIN FETCH options)
+        List<Question> questions = getGameQuestionsEager(game);
 
-        game.moveToNextQuestion();
+        if (questions.isEmpty()) {
+            throw new GameException("Quiz has no questions");
+        }
+
+        // 4. Di chuyển sang câu tiếp theo
+        game.moveToNextQuestion(); // tăng currentQuestionIndex
+
         Question currentQuestion = questions.get(game.getCurrentQuestionIndex());
+
+        // 5. Cập nhật DB
         game.setCurrentQuestionId(currentQuestion.getQuestionId());
+        game.setQuestionStartTime(LocalDateTime.now());
         gameRepository.save(game);
-        cacheGame(game);
 
-        log.info("Game {} moved to question {}/{}", gameId,
-                game.getCurrentQuestionIndex() + 1, game.getTotalQuestions());
+        log.info("Game {} → question {}/{} (ID: {})",
+                gameId,
+                game.getCurrentQuestionIndex() + 1,
+                game.getTotalQuestions(),
+                currentQuestion.getQuestionId());
 
-        broadcastQuestion(gameId);
+        // 6. ✅ FIX: Gửi câu hỏi ngay tại đây (TRANSACTION VẪN MỞ, OPTIONS ĐÃ LOAD)
+        broadcastQuestionFromGameSession(gameId, currentQuestion);
 
-        return gameMapper.toQuestionDTO(currentQuestion);
+        // 7. Trả về DTO cho host
+        return gameMapper.toQuestionDTOWithoutAnswers(currentQuestion);
     }
 
     @Override
-    public void broadcastQuestion(UUID gameId) {
-        Game game = getGameByIdWithCache(gameId);
-        Question question = questionRepository.findById(game.getCurrentQuestionId())
+    @Transactional(readOnly = true)
+    public CurrentQuestionResponseDTO getCurrentQuestion(UUID gameId) {
+        log.debug("Fetching current question for game {}", gameId);
+
+        Game game = gameRepository.findById(gameId)
+                .orElseThrow(() -> new GameNotFoundException("Game not found: " + gameId));
+
+        // Chỉ trả về nếu game đang IN_PROGRESS và có câu hỏi hiện tại
+        if (game.getGameStatus() != GameStatus.IN_PROGRESS ||
+                game.getCurrentQuestionIndex() < 0 ||
+                game.getCurrentQuestionId() == null) {
+
+            return CurrentQuestionResponseDTO.builder()
+                    .hasCurrentQuestion(false)
+                    .build();
+        }
+
+        // Lấy câu hỏi với options đã load
+        Question currentQuestion = questionRepository.findByIdWithOptions(game.getCurrentQuestionId())
                 .orElseThrow(() -> new GameException("Current question not found"));
 
-        QuestionResponseDTO questionDTO = gameMapper.toQuestionDTOWithoutAnswers(question);
+        // Tính thời gian còn lại
+        LocalDateTime startTime = game.getQuestionStartTime();
+        LocalDateTime now = LocalDateTime.now();
+        long elapsedSeconds = Duration.between(startTime, now).getSeconds();
+        long remaining = Math.max(0, currentQuestion.getTimeLimitSeconds() - elapsedSeconds);
+
+        QuestionResponseDTO questionDTO = gameMapper.toQuestionDTOWithoutAnswers(currentQuestion);
+
+        return CurrentQuestionResponseDTO.builder()
+                .question(questionDTO)
+                .questionNumber(game.getCurrentQuestionIndex() + 1)
+                .totalQuestions(game.getTotalQuestions())
+                .timeLimitSeconds(currentQuestion.getTimeLimitSeconds())
+                .remainingTimeSeconds(remaining)
+                .hasCurrentQuestion(true)
+                .build();
+    }
+    /**
+     * Broadcast câu hỏi hiện tại cho tất cả người chơi
+     * ✅ FIX: Gửi từ danh sách questions đã fetch sẵn (TRONG TRANSACTION)
+     *
+     * Gọi NGAY SAU moveToNextQuestion() để đảm bảo options đã loaded
+     */
+    @Override
+    @Transactional
+    public void broadcastQuestionFromGameSession(UUID gameId, Question currentQuestion) {
+        log.info("🎯 Broadcasting question {} for game {}", currentQuestion.getQuestionId(), gameId);
+
+        if (currentQuestion.getOptions() == null || currentQuestion.getOptions().isEmpty()) {
+            log.warn("Question {} has no options loaded", currentQuestion.getQuestionId());
+            List<Option> options = currentQuestion.getOptions();
+            if (options != null) {
+                Hibernate.initialize(options);
+            }
+        }
+
+        QuestionResponseDTO questionDTO = gameMapper.toQuestionDTOWithoutAnswers(currentQuestion);
+
+        Game game = gameRepository.findById(gameId)
+                .orElseThrow(() -> new GameNotFoundException("Game not found: " + gameId));
 
         publishGameEvent(gameId, "QUESTION_STARTED", null, Map.of(
                 "question", questionDTO,
                 "questionNumber", game.getCurrentQuestionIndex() + 1,
                 "totalQuestions", game.getTotalQuestions(),
-                "timeLimit", question.getTimeLimitSeconds()
+                "timeLimit", currentQuestion.getTimeLimitSeconds(),
+                "catchUp", true
         ));
+
+        log.info("✅ Question {} broadcasted successfully for game {}",
+                currentQuestion.getQuestionId(), gameId);
+
+        // ✅ FIX 2: Schedule ONLY here (not in startGame or anywhere else)
+        log.info("⏱️ Scheduling end question in {} seconds", currentQuestion.getTimeLimitSeconds() + 1);
 
         taskScheduler.schedule(
                 () -> endQuestion(gameId),
-                Instant.now().plusSeconds(question.getTimeLimitSeconds())
+                Instant.now().plusSeconds(currentQuestion.getTimeLimitSeconds() + 1)
         );
     }
 
@@ -458,38 +601,50 @@ public class GameServiceImpl implements GameService {
     public void endQuestion(UUID gameId) {
         log.info("Ending current question for game: {}", gameId);
 
-        try {
-            Game game = gameRepository.findById(gameId)
-                    .orElseThrow(() -> new GameNotFoundException("Game not found: " + gameId));
+        Game game = gameRepository.findById(gameId)
+                .orElseThrow(() -> new GameNotFoundException("Game not found: " + gameId));
 
-            if (game.getGameStatus() != GameStatus.IN_PROGRESS) {
-                log.warn("Game {} not in progress, skip ending question", gameId);
-                return;
-            }
+        if (game.getGameStatus() != GameStatus.IN_PROGRESS) {
+            log.info("Game {} already ended or paused → skip endQuestion", gameId);
+            return;
+        }
 
-            // FIXED: Handle last question
-            if (game.getCurrentQuestionIndex() >= game.getTotalQuestions() - 1) {
-                log.info("Last question ended, auto-ending game {}", gameId);
-                endGame(gameId, game.getHost().getUserId());
-                return;
-            }
+        // Lấy câu hỏi hiện tại với options (để lấy đáp án đúng + explanation)
+        Question currentQuestion = questionRepository.findByIdWithOptions(game.getCurrentQuestionId())
+                .orElse(null);
 
-            List<LeaderboardEntryDTO> leaderboard = getLeaderboard(gameId);
+        // Lấy leaderboard realtime
+        List<LeaderboardEntryDTO> leaderboard = getLeaderboard(gameId);
 
-            Question currentQuestion = questionRepository.findById(game.getCurrentQuestionId())
-                    .orElse(null);
+        // ✅ Tạo payload đầy đủ gửi cho frontend
+        Map<String, Object> data = new HashMap<>();
+        data.put("leaderboard", leaderboard);
+        data.put("questionNumber", game.getCurrentQuestionIndex() + 1);
 
-            publishGameEvent(gameId, "QUESTION_ENDED", null, Map.of(
-                    "leaderboard", leaderboard,
-                    "questionNumber", game.getCurrentQuestionIndex() + 1,
-                    "correctAnswer", currentQuestion != null ?
-                            gameMapper.toQuestionDTO(currentQuestion) : null
-            ));
+        if (currentQuestion != null) {
+            // Gửi câu hỏi đầy đủ có đáp án đúng + explanation
+            data.put("revealedQuestion", gameMapper.toQuestionDTO(currentQuestion)); // có correct = true
+            data.put("explanation", currentQuestion.getExplanation());
+        }
 
-            cacheLeaderboard(gameId, leaderboard);
+        data.put("nextQuestionInSeconds", 8); // thời gian chờ trước câu tiếp theo
 
-        } catch (Exception e) {
-            log.error("Failed to end question for game {}: {}", gameId, e.getMessage(), e);
+        // ✅ Gửi event QUESTION_ENDED với đầy đủ thông tin
+        publishGameEvent(gameId, "QUESTION_ENDED", null, data);
+
+        cacheLeaderboard(gameId, leaderboard);
+
+        // Tự động chuyển câu tiếp theo hoặc kết thúc game
+        if (game.getCurrentQuestionIndex() < game.getTotalQuestions() - 1) {
+            taskScheduler.schedule(
+                    () -> moveToNextQuestion(gameId, game.getHost().getUserId()),
+                    Instant.now().plusSeconds(8)
+            );
+        } else {
+            taskScheduler.schedule(
+                    () -> endGame(gameId, game.getHost().getUserId()),
+                    Instant.now().plusSeconds(11)
+            );
         }
     }
 
@@ -516,7 +671,8 @@ public class GameServiceImpl implements GameService {
     }
 
     private AnswerResultDTO doSubmitAnswer(UUID gameId, UUID participantId, SubmitAnswerRequest request) {
-        Game game = getGameByIdWithCache(gameId);
+        Game game = gameRepository.findById(gameId)
+                .orElseThrow(() -> new GameNotFoundException("Game not found: " + gameId));
 
         if (game.getGameStatus() != GameStatus.IN_PROGRESS) {
             throw new GameException("Game is not in progress");
@@ -525,7 +681,6 @@ public class GameServiceImpl implements GameService {
         GameParticipant participant = participantRepository.findById(participantId)
                 .orElseThrow(() -> new GameException("Participant not found"));
 
-        // FIXED: Validate participant access
         validateParticipantAccess(game, participant);
 
         Question question = questionRepository.findById(game.getCurrentQuestionId())
@@ -568,7 +723,6 @@ public class GameServiceImpl implements GameService {
 
         answer = answerRepository.save(answer);
 
-        // FIXED: Record participant stats properly
         recordParticipantStats(participant, answer);
         participant.updateScore(points);
         participantRepository.save(participant);
@@ -594,7 +748,9 @@ public class GameServiceImpl implements GameService {
     public void skipQuestion(UUID gameId, UUID participantId) {
         log.debug("Participant {} skipping question in game {}", participantId, gameId);
 
-        Game game = getGameByIdWithCache(gameId);
+        Game game = gameRepository.findById(gameId)
+                .orElseThrow(() -> new GameNotFoundException("Game not found: " + gameId));
+
         GameParticipant participant = participantRepository.findById(participantId)
                 .orElseThrow(() -> new GameException("Participant not found"));
 
@@ -607,7 +763,8 @@ public class GameServiceImpl implements GameService {
                 game, participant, question
         );
         if (alreadyAnswered) {
-            throw new GameException("Already answered this question");
+            log.debug("Participant {} already answered or skipped question {}", participantId, question.getQuestionId());
+            return; // Không throw, chỉ return
         }
 
         UserAnswer answer = UserAnswer.builder()
@@ -636,7 +793,8 @@ public class GameServiceImpl implements GameService {
     public void kickParticipant(UUID gameId, UUID participantId, UUID hostId, String reason) {
         log.info("Kicking participant {} from game {}", participantId, gameId);
 
-        Game game = getGameByIdWithCache(gameId);
+        Game game = gameRepository.findById(gameId)
+                .orElseThrow(() -> new GameNotFoundException("Game not found: " + gameId));
         validateHost(game, hostId);
 
         GameParticipant participant = participantRepository.findById(participantId)
@@ -644,7 +802,6 @@ public class GameServiceImpl implements GameService {
 
         validateParticipantAccess(game, participant);
 
-        // FIXED: Update active player count
         boolean wasActive = participant.isActive();
 
         participant.kick(reason);
@@ -655,7 +812,6 @@ public class GameServiceImpl implements GameService {
         if (wasActive && game.getGameStatus() == GameStatus.IN_PROGRESS) {
             game.setActivePlayerCount(Math.max(0, game.getActivePlayerCount() - 1));
             gameRepository.save(game);
-            cacheGame(game);
         }
 
         checkAndAutoEndGameIfNeeded(game);
@@ -666,19 +822,22 @@ public class GameServiceImpl implements GameService {
                 "reason", reason,
                 "playerCount", game.getPlayerCount()
         ));
+
+        invalidateParticipantsCache(gameId);
     }
 
     @Override
     public void leaveGame(UUID gameId, UUID participantId) {
         log.info("Participant {} leaving game {}", participantId, gameId);
 
-        Game game = getGameByIdWithCache(gameId);
+        Game game = gameRepository.findById(gameId)
+                .orElseThrow(() -> new GameNotFoundException("Game not found: " + gameId));
+
         GameParticipant participant = participantRepository.findById(participantId)
                 .orElseThrow(() -> new GameException("Participant not found"));
 
         validateParticipantAccess(game, participant);
 
-        // FIXED: Update active player count
         boolean wasActive = participant.isActive();
 
         participant.leave();
@@ -689,7 +848,6 @@ public class GameServiceImpl implements GameService {
         if (wasActive && game.getGameStatus() == GameStatus.IN_PROGRESS) {
             game.setActivePlayerCount(Math.max(0, game.getActivePlayerCount() - 1));
             gameRepository.save(game);
-            cacheGame(game);
         }
 
         checkAndAutoEndGameIfNeeded(game);
@@ -702,9 +860,12 @@ public class GameServiceImpl implements GameService {
                         "playerCount", game.getPlayerCount()
                 )
         );
+
+        invalidateParticipantsCache(gameId);
     }
 
     @Override
+    @Transactional(readOnly = true)
     public List<GameParticipantDTO> getParticipants(UUID gameId) {
         String cacheKey = PARTICIPANTS_CACHE_PREFIX + gameId;
         Object cached = redisTemplate.opsForValue().get(cacheKey);
@@ -719,12 +880,14 @@ public class GameServiceImpl implements GameService {
             }
         }
 
-        Game game = getGameByIdWithCache(gameId);
+
+        Game game = gameRepository.findById(gameId)
+                .orElseThrow(() -> new GameNotFoundException("Game not found: " + gameId));
+
         List<GameParticipant> participants = participantRepository.findByGameAndStatusIn(
                 game,
                 List.of(ParticipantStatus.JOINED, ParticipantStatus.READY, ParticipantStatus.PLAYING)
         );
-
         List<GameParticipantDTO> result = participants.stream()
                 .map(gameMapper::toParticipantDTO)
                 .collect(Collectors.toList());
@@ -742,6 +905,7 @@ public class GameServiceImpl implements GameService {
     // ==================== LEADERBOARD ====================
 
     @Override
+    @Transactional(readOnly = true)
     public List<LeaderboardEntryDTO> getLeaderboard(UUID gameId) {
         String cacheKey = LEADERBOARD_CACHE_PREFIX + gameId;
         Object cached = redisTemplate.opsForValue().get(cacheKey);
@@ -756,7 +920,8 @@ public class GameServiceImpl implements GameService {
             }
         }
 
-        Game game = getGameByIdWithCache(gameId);
+        Game game = gameRepository.findById(gameId)
+                .orElseThrow(() -> new GameNotFoundException("Game not found: " + gameId));
         List<GameParticipant> participants = participantRepository.findByGameOrderByScoreDescTotalTimeMsAsc(game);
 
         List<LeaderboardEntryDTO> leaderboard = new ArrayList<>();
@@ -780,10 +945,12 @@ public class GameServiceImpl implements GameService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public List<LeaderboardEntryDTO> getFinalLeaderboard(UUID gameId) {
         List<LeaderboardEntryDTO> leaderboard = getLeaderboard(gameId);
 
-        Game game = getGameByIdWithCache(gameId);
+        Game game = gameRepository.findById(gameId)
+                .orElseThrow(() -> new GameNotFoundException("Game not found: " + gameId));
         List<GameParticipant> participants = participantRepository.findByGameOrderByScoreDescTotalTimeMsAsc(game);
 
         int rank = 1;
@@ -799,27 +966,32 @@ public class GameServiceImpl implements GameService {
     // ==================== GAME INFO ====================
 
     @Override
+    @Transactional(readOnly = true)
     public GameResponseDTO getGameByPin(String pinCode) {
         Game game = getGameByPinWithValidation(pinCode);
         return gameMapper.toResponseDTO(game);
     }
 
     @Override
+    @Transactional(readOnly = true)
     public Game findGameEntityById(UUID gameId) {
         return gameRepository.findById(gameId)
                 .orElseThrow(() -> new GameNotFoundException("Game not found: " + gameId));
     }
 
     @Override
+    @Transactional(readOnly = true)
     public GameResponseDTO getGameById(UUID gameId) {
-        Game game = getGameByIdWithCache(gameId);
+        Game game = gameRepository.findById(gameId)
+                .orElseThrow(() -> new GameNotFoundException("Game not found: " + gameId));
         return gameMapper.toResponseDTO(game);
     }
 
     @Override
-    @Cacheable(value = "gameDetails", key = "#gameId + '-' + (#userId != null ? #userId : 'null')")
+    @Transactional(readOnly = true)
     public GameDetailDTO getGameDetails(UUID gameId, UUID userId) {
-        Game game = getGameByIdWithCache(gameId);
+        Game game = gameRepository.findById(gameId)
+                .orElseThrow(() -> new GameNotFoundException("Game not found: " + gameId));
 
         boolean isHost = game.getHost().getUserId().equals(userId);
         GameParticipant participant = null;
@@ -833,6 +1005,7 @@ public class GameServiceImpl implements GameService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public Page<GameResponseDTO> getMyGames(UUID userId, Pageable pageable) {
         return gameRepository.findByHostUserIdOrderByCreatedAtDesc(userId, pageable)
                 .map(gameMapper::toResponseDTO);
@@ -841,8 +1014,10 @@ public class GameServiceImpl implements GameService {
     // ==================== STATISTICS ====================
 
     @Override
+    @Transactional(readOnly = true)
     public GameStatisticsDTO getGameStatistics(UUID gameId) {
-        Game game = getGameByIdWithCache(gameId);
+        Game game = gameRepository.findById(gameId)
+                .orElseThrow(() -> new GameNotFoundException("Game not found: " + gameId));
         List<GameParticipant> participants = participantRepository.findByGame(game);
 
         int totalAnswers = answerRepository.countByGame(game);
@@ -861,6 +1036,7 @@ public class GameServiceImpl implements GameService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public UserQuizStatsDTO getUserStatistics(UUID userId, UUID quizId) {
         UserQuizStatistics stats = statsRepository.findByUserUserIdAndQuizQuizId(userId, quizId)
                 .orElse(createDefaultStats(userId, quizId));
@@ -871,59 +1047,41 @@ public class GameServiceImpl implements GameService {
     // ==================== CACHE OPERATIONS ====================
 
     private Game getGameByPinWithValidation(String pinCode) {
+        // Try to get gameId from cache first
         String cacheKey = GAME_PIN_PREFIX + pinCode;
-        Object cached = redisTemplate.opsForValue().get(cacheKey);
+        Object cachedGameId = redisTemplate.opsForValue().get(cacheKey);
 
-        if (cached != null) {
+        UUID gameId = null;
+        if (cachedGameId != null) {
             try {
-                String json = (String) cached;
-                return redisObjectMapper.readValue(json, Game.class);
+                gameId = UUID.fromString((String) cachedGameId);
             } catch (Exception e) {
-                log.warn("Failed to deserialize cached game: {}", e.getMessage());
+                log.warn("Failed to parse cached gameId: {}", e.getMessage());
             }
         }
 
+        // If gameId found in cache, fetch from DB
+        if (gameId != null) {
+            return gameRepository.findById(gameId)
+                    .orElseThrow(() -> new GameException("Game not found with PIN: " + pinCode));
+        }
+
+        // Otherwise, query by PIN
         Game game = gameRepository.findByPinCode(pinCode)
                 .orElseThrow(() -> new GameException("Game not found with PIN: " + pinCode));
 
-        cacheGame(game);
+        // Cache the PIN -> GameId mapping
+        cachePinLookup(pinCode, game.getGameId());
+
         return game;
     }
 
-    // ADDED: Cache game by ID
-    private Game getGameByIdWithCache(UUID gameId) {
-        String cacheKey = GAME_CACHE_PREFIX + gameId;
-        Object cached = redisTemplate.opsForValue().get(cacheKey);
-
-        if (cached != null) {
-            try {
-                String json = (String) cached;
-                return redisObjectMapper.readValue(json, Game.class);
-            } catch (Exception e) {
-                log.warn("Failed to deserialize cached game: {}", e.getMessage());
-            }
-        }
-
-        Game game = gameRepository.findById(gameId)
-                .orElseThrow(() -> new GameNotFoundException("Game not found: " + gameId));
-
-        cacheGame(game);
-        return game;
-    }
-
-    private void cacheGame(Game game) {
+    private void cachePinLookup(String pinCode, UUID gameId) {
         try {
-            String json = redisObjectMapper.writeValueAsString(game);
-
-            String idKey = GAME_CACHE_PREFIX + game.getGameId();
-            String pinKey = GAME_PIN_PREFIX + game.getPinCode();
-
-            redisTemplate.opsForValue().set(idKey, json, CACHE_TTL_SECONDS, TimeUnit.SECONDS);
-            redisTemplate.opsForValue().set(pinKey, json, CACHE_TTL_SECONDS, TimeUnit.SECONDS);
-
-            log.debug("Cached game {} with TTL {}s", game.getGameId(), CACHE_TTL_SECONDS);
-        } catch (JsonProcessingException e) {
-            log.error("Failed to cache game {}: {}", game.getGameId(), e.getMessage());
+            String cacheKey = GAME_PIN_PREFIX + pinCode;
+            redisTemplate.opsForValue().set(cacheKey, gameId.toString(), PIN_CACHE_TTL_SECONDS, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            log.warn("Failed to cache PIN lookup: {}", e.getMessage());
         }
     }
 
@@ -968,10 +1126,6 @@ public class GameServiceImpl implements GameService {
 
     // ==================== HELPER METHODS ====================
 
-    /**
-     * ADDED: Validate participant has access to this game
-     * Checks if participant is kicked, left, or belongs to game
-     */
     private void validateParticipantAccess(Game game, GameParticipant participant) {
         if (!participant.getGame().getGameId().equals(game.getGameId())) {
             throw new GameException("Participant does not belong to this game");
@@ -984,10 +1138,6 @@ public class GameServiceImpl implements GameService {
         }
     }
 
-    /**
-     * ADDED: Record participant statistics after answering
-     * Updates score, correctCount, streak tracking, etc.
-     */
     private void recordParticipantStats(GameParticipant participant, UserAnswer answer) {
         if (answer.isCorrect() && !answer.isTimeout() && !answer.isSkipped()) {
             participant.recordCorrectAnswer(answer.getResponseTimeMs());
@@ -998,9 +1148,6 @@ public class GameServiceImpl implements GameService {
         }
     }
 
-    /**
-     * ADDED: Auto-end game if all players have left/kicked
-     */
     private void checkAndAutoEndGameIfNeeded(Game game) {
         if (game.getGameStatus() == GameStatus.IN_PROGRESS) {
             if (game.getActivePlayerCount() <= 0) {
@@ -1008,7 +1155,6 @@ public class GameServiceImpl implements GameService {
                 game.setGameStatus(GameStatus.FINISHED);
                 game.setEndedAt(LocalDateTime.now());
                 gameRepository.save(game);
-                cacheGame(game);
 
                 publishGameEvent(game.getGameId(), "GAME_AUTO_ENDED", game.getHost().getUserId(),
                         Map.of("reason", "No active players remaining"));
@@ -1033,7 +1179,10 @@ public class GameServiceImpl implements GameService {
         return pin;
     }
 
-    private void validateGameJoinable(Game game) {
+    private void validateGameJoinable(Game game, UUID userId) {
+        if (game.getHost().getUserId().equals(userId)) {
+            throw new GameException("Host cannot join as participant");
+        }
         if (game.getGameStatus() != GameStatus.WAITING) {
             throw new GameException("Game already started or ended");
         }
@@ -1052,17 +1201,20 @@ public class GameServiceImpl implements GameService {
         game.setPlayerCount(game.getPlayerCount() + delta);
         game.setActivePlayerCount(Math.max(0, game.getActivePlayerCount() + delta));
         gameRepository.save(game);
-        cacheGame(game);
         invalidateParticipantsCache(game.getGameId());
     }
 
-    private List<Question> getGameQuestions(Game game) {
-        List<Question> questions = questionRepository
-                .findByQuizQuizIdAndDeletedFalseOrderByOrderIndexAsc(game.getQuiz().getQuizId());
+    private List<Question> getGameQuestionsEager(Game game) {
+        // ← DÙNG METHOD MỚI TRONG REPO: đã JOIN FETCH options
+        List<Question> questions = questionRepository.findByQuizIdWithOptions(game.getQuiz().getQuizId());
 
         if (game.isRandomizeQuestions()) {
             Collections.shuffle(questions);
         }
+
+        // Nếu bạn có thiết lập số câu hỏi tối đa khác với số câu trong quiz
+        // thì có thể cắt bớt ở đây, ví dụ:
+        // return questions.stream().limit(game.getTotalQuestions()).collect(Collectors.toList());
 
         return questions;
     }
@@ -1095,13 +1247,21 @@ public class GameServiceImpl implements GameService {
             throw new IllegalArgumentException("Invalid answer type: " + answer.getClass());
         }
 
-        List<UUID> correctIds = question.getOptions().stream()
-                .filter(opt -> opt.isCorrect())
-                .map(opt -> opt.getOptionId())
+        List<String> correctTexts = question.getOptions().stream()
+                .filter(Option::isCorrect)
+                .map(this::getOptionDisplayText) // ← Hàm mới
                 .toList();
 
-        boolean isCorrect = correctIds.contains(selectedId);
-        return new AnswerGradingResult(isCorrect, correctIds.toString());
+        boolean isCorrect = question.getOptions().stream()
+                .filter(Option::isCorrect)
+                .map(Option::getOptionId)
+                .anyMatch(id -> id.equals(selectedId));
+
+        String correctAnswerDisplay = correctTexts.isEmpty()
+                ? "Không có đáp án đúng"
+                : String.join(", ", correctTexts);
+
+        return new AnswerGradingResult(isCorrect, correctAnswerDisplay);
     }
 
     private AnswerGradingResult gradeMultipleChoice(Question question, Object answer) {
@@ -1115,13 +1275,23 @@ public class GameServiceImpl implements GameService {
             throw new IllegalArgumentException("Invalid answer type for multiple choice");
         }
 
-        List<UUID> correctIds = question.getOptions().stream()
-                .filter(opt -> opt.isCorrect())
-                .map(opt -> opt.getOptionId())
+        List<String> correctTexts = question.getOptions().stream()
+                .filter(Option::isCorrect)
+                .map(this::getOptionDisplayText)
                 .toList();
 
-        boolean isCorrect = new HashSet<>(selectedIds).equals(new HashSet<>(correctIds));
-        return new AnswerGradingResult(isCorrect, correctIds.toString());
+        Set<UUID> correctIdSet = question.getOptions().stream()
+                .filter(Option::isCorrect)
+                .map(Option::getOptionId)
+                .collect(Collectors.toSet());
+
+        boolean isCorrect = new HashSet<>(selectedIds).equals(correctIdSet);
+
+        String correctAnswerDisplay = correctTexts.isEmpty()
+                ? "Không có đáp án đúng"
+                : String.join(", ", correctTexts);
+
+        return new AnswerGradingResult(isCorrect, correctAnswerDisplay);
     }
 
     private AnswerGradingResult gradeTrueFalse(Question question, Object answer) {
@@ -1165,7 +1335,17 @@ public class GameServiceImpl implements GameService {
 
         return points;
     }
-
+    // Hàm helper để lấy text hiển thị theo type option
+    private String getOptionDisplayText(Option option) {
+        return switch (option) {
+            case SingleChoiceOption sco -> sco.getText();
+            case MultipleChoiceOption mco -> mco.getText();
+            case ImageSelectionOption iso -> iso.getImageLabel() != null ? iso.getImageLabel() : "Hình ảnh";
+            case DropdownOption dro -> dro.getDisplayLabel() != null ? dro.getDisplayLabel() : dro.getDropdownValue();
+            case TrueFalseOption tfo -> tfo.getText(); // "True" hoặc "False"
+            default -> "Đáp án";
+        };
+    }
     // ==================== STATISTICS ====================
 
     private void calculateFinalStatistics(Game game) {

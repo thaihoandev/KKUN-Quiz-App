@@ -1,4 +1,5 @@
 package com.kkunquizapp.QuizAppBackend.game.dto;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.kkunquizapp.QuizAppBackend.game.model.enums.GameStatus;
 import lombok.*;
 
@@ -26,6 +27,8 @@ public class GameDetailDTO {
     private int totalQuestions;
     private int currentQuestionIndex;
     private Integer timeLimitSeconds; // nếu đang có câu hỏi hiện tại
+
+    @JsonProperty("isHost")
     private boolean isHost;
     private ParticipantInfoDTO currentParticipant; // null nếu là host
     private LocalDateTime startedAt;

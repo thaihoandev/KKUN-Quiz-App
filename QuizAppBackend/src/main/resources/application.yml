@@ -198,12 +198,13 @@ limits:
 logging:
   level:
     root: INFO
-    com.kkunquizapp: DEBUG
-    org.springframework.data.redis: INFO
-    io.lettuce.core: WARN
-    org.hibernate.SQL: DEBUG
-    org.hibernate.type.descriptor.sql: TRACE
-    org.springframework.security: INFO
+    com.kkunquizapp: INFO
+    org.springframework: INFO
+
+    # Tắt toàn bộ log SQL
+    org.hibernate.SQL: OFF
+    org.hibernate.orm.jdbc.bind: OFF
+    org.hibernate.type.descriptor.sql: OFF
 
 management:
   endpoints:

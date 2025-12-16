@@ -34,4 +34,7 @@ public interface GameRepo extends JpaRepository<Game, UUID> {
     // Cleanup: tìm game quá cũ để xóa (optional)
     @Query("SELECT g FROM Game g WHERE g.gameStatus IN ('FINISHED', 'CANCELLED') AND g.endedAt < :cutoff")
     List<Game> findExpiredGamesForCleanup(@Param("cutoff") java.time.LocalDateTime cutoff);
+
+    @Query("SELECT g FROM Game g LEFT JOIN FETCH g.quiz WHERE g.gameId = :gameId")
+    Optional<Game> findByIdWithQuiz(UUID gameId);
 }

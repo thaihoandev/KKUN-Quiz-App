@@ -298,4 +298,23 @@ public interface QuestionRepo extends JpaRepository<Question, UUID> {
      */
     @Query("SELECT COALESCE(MAX(q.orderIndex), 0) FROM Question q WHERE q.quiz.quizId = :quizId AND q.deleted = false")
     int getMaxOrderIndex(@Param("quizId") UUID quizId);
+
+    /**
+     * Lấy 1 câu hỏi + toàn bộ options (JOIN FETCH) để dùng trong game realtime
+     * Tránh hoàn toàn LazyInitializationException khi dùng trong scheduled task
+     */
+    @Query("SELECT q FROM Question q " +
+            "LEFT JOIN FETCH q.options " +
+            "WHERE q.questionId = :questionId AND q.deleted = false")
+    Optional<Question> findByIdWithOptions(@Param("questionId") UUID questionId);
+
+    /**
+     * Lấy toàn bộ câu hỏi của quiz + options luôn (dùng khi start game)
+     * Chỉ 1 query duy nhất thay vì N+1 query
+     */
+    @Query("SELECT q FROM Question q " +
+            "LEFT JOIN FETCH q.options " +
+            "WHERE q.quiz.quizId = :quizId AND q.deleted = false " +
+            "ORDER BY q.orderIndex ASC")
+    List<Question> findByQuizIdWithOptions(@Param("quizId") UUID quizId);
 }

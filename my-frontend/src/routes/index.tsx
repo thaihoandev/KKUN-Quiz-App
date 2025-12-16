@@ -3,7 +3,7 @@ import { Routes, Route } from "react-router-dom";
 import ScrollToTop from "@/components/ScrollToTop";
 
 // Routes
-import ProtectedRoute from "@/routes/ProtectedRoute";
+import ProtectedRoute, { GamePlayGuard, GameRoomGuard } from "@/routes/ProtectedRoute";
 import PublicRoute from "@/routes/PublicRoute";
 
 // Layouts
@@ -71,12 +71,46 @@ const AppRoutes: React.FC = () => (
         <Route path="/" element={<SingleLayout />}>
           <Route index element={<HomePage />} />
 
-          {/* Game */}
+          {/* ========== GAME ROUTES ==========
+              - JOIN GAME: Public (no validation needed)
+              - WAITING ROOM: Protected (GameRoomGuard)
+              - GAME PLAY: Protected (GamePlayGuard)
+          ===================================== */}
+
+          {/* 1. Join Game - Public, no validation */}
           <Route path="join-game" element={<JoinGamePage />} />
           <Route path="join-game/:pinCode" element={<JoinGamePage />} />
-          <Route path="game-session/:gameId" element={<WaitingRoomSessionPage />} />
-          <Route path="game-play/:gameId" element={<GamePlayPage />} />
 
+          {/* 2. Waiting Room - Protected with GameRoomGuard
+              ✅ Check: participantId, gameId, pinCode
+              ✅ Validate: Game exists, not started, not cancelled
+              ✅ Load: Game info, participants
+              ✅ Reject: Invalid session → redirect /join-game
+          */}
+          <Route
+            path="game-session/:gameId"
+            element={
+              <GameRoomGuard>
+                <WaitingRoomSessionPage />
+              </GameRoomGuard>
+            }
+          />
+
+          {/* 3. Game Play - Protected with GamePlayGuard
+              ✅ Check: participantId, gameId exist
+              ✅ Validate: Session is valid
+              ✅ Reject: Invalid session → redirect /join-game
+          */}
+          <Route
+            path="game-play/:gameId"
+            element={
+              <GamePlayGuard>
+                <GamePlayPage />
+              </GamePlayGuard>
+            }
+          />
+
+          {/* Chat */}
           <Route path="chat" element={<ChatPage />} />
 
           {/* Articles (public) */}

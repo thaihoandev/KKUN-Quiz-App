@@ -1,4 +1,5 @@
-// src/services/gameService.ts
+// src/services/gameService.ts - COMPLETE & UPDATED VERSION
+
 import axiosInstance from "./axiosInstance";
 import { handleApiError } from "@/utils/apiErrorHandler";
 import type {
@@ -6,6 +7,8 @@ import type {
     GameDetailDTO,
     GameParticipantDTO,
     QuestionResponseDTO,
+    CurrentQuestionResponseDTO,
+    QuestionUpdateDTO,
     AnswerResultDTO,
     LeaderboardEntryDTO,
     GameCreateRequest,
@@ -13,24 +16,32 @@ import type {
     SubmitAnswerRequest,
     GameStatisticsDTO,
     UserQuizStatsDTO,
+    GameEvent,
+    GameEventType,
+    HostListenerCallbacks,
+    ParticipantListenerCallbacks,
 } from "@/types/game";
 import { webSocketService } from "./webSocketService";
+// ✅ Import GameEventPayload from webSocketService (single source of truth)
+import type { GameEventPayload } from "./webSocketService";
 
 // ==================== HOST ACTIONS ====================
 
 /**
- * Tạo game mới
- * @param request - Game creation parameters
- * @returns Created game info
+ * Create a new game from a quiz
+ * @param request - Game creation request with quiz ID and settings
+ * @returns Created game details
  */
 export const createGame = async (
     request: GameCreateRequest
 ): Promise<GameResponseDTO> => {
     try {
+        logWSOperation("CREATE_GAME", { quizId: request.quizId });
         const response = await axiosInstance.post<GameResponseDTO>(
             "/games/create",
             request
         );
+        logWSOperation("GAME_CREATED", { gameId: response.data.gameId });
         return response.data;
     } catch (error) {
         handleApiError(error);
@@ -39,11 +50,18 @@ export const createGame = async (
 };
 
 /**
- * Bắt đầu game (có countdown 3s)
+ * Start the game (transitions from WAITING to IN_PROGRESS)
+ * Broadcasts first question via WebSocket
+ * @param gameId - Game ID
  */
 export const startGame = async (gameId: string): Promise<void> => {
     try {
+        logWSOperation("START_GAME", { gameId });
         await axiosInstance.post(`/games/${gameId}/start`);
+
+        // ✅ Wait a bit for event to propagate through Kafka
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        logWSOperation("GAME_STARTED", { gameId });
     } catch (error) {
         handleApiError(error);
         throw error;
@@ -51,10 +69,12 @@ export const startGame = async (gameId: string): Promise<void> => {
 };
 
 /**
- * Tạm dừng game
+ * Pause the game
+ * @param gameId - Game ID
  */
 export const pauseGame = async (gameId: string): Promise<void> => {
     try {
+        logWSOperation("PAUSE_GAME", { gameId });
         await axiosInstance.post(`/games/${gameId}/pause`);
     } catch (error) {
         handleApiError(error);
@@ -63,10 +83,12 @@ export const pauseGame = async (gameId: string): Promise<void> => {
 };
 
 /**
- * Tiếp tục game
+ * Resume a paused game
+ * @param gameId - Game ID
  */
 export const resumeGame = async (gameId: string): Promise<void> => {
     try {
+        logWSOperation("RESUME_GAME", { gameId });
         await axiosInstance.post(`/games/${gameId}/resume`);
     } catch (error) {
         handleApiError(error);
@@ -75,12 +97,15 @@ export const resumeGame = async (gameId: string): Promise<void> => {
 };
 
 /**
- * Chuyển sang câu hỏi tiếp theo
+ * Move to next question (host action)
+ * @param gameId - Game ID
+ * @returns Next question details
  */
 export const nextQuestion = async (
     gameId: string
 ): Promise<QuestionResponseDTO> => {
     try {
+        logWSOperation("NEXT_QUESTION", { gameId });
         const response = await axiosInstance.post<QuestionResponseDTO>(
             `/games/${gameId}/next-question`
         );
@@ -92,10 +117,12 @@ export const nextQuestion = async (
 };
 
 /**
- * Kết thúc game
+ * End the game (calculates statistics, marks as FINISHED)
+ * @param gameId - Game ID
  */
 export const endGame = async (gameId: string): Promise<void> => {
     try {
+        logWSOperation("END_GAME", { gameId });
         await axiosInstance.post(`/games/${gameId}/end`);
     } catch (error) {
         handleApiError(error);
@@ -104,10 +131,12 @@ export const endGame = async (gameId: string): Promise<void> => {
 };
 
 /**
- * Hủy game
+ * Cancel the game
+ * @param gameId - Game ID
  */
 export const cancelGame = async (gameId: string): Promise<void> => {
     try {
+        logWSOperation("CANCEL_GAME", { gameId });
         await axiosInstance.post(`/games/${gameId}/cancel`);
     } catch (error) {
         handleApiError(error);
@@ -116,7 +145,10 @@ export const cancelGame = async (gameId: string): Promise<void> => {
 };
 
 /**
- * Kick người chơi
+ * Kick a participant from the game
+ * @param gameId - Game ID
+ * @param participantId - Participant to kick
+ * @param reason - Reason for kicking (optional)
  */
 export const kickParticipant = async (
     gameId: string,
@@ -124,6 +156,7 @@ export const kickParticipant = async (
     reason = "Kicked by host"
 ): Promise<void> => {
     try {
+        logWSOperation("KICK_PARTICIPANT", { gameId, participantId, reason });
         await axiosInstance.post(
             `/games/${gameId}/kick/${participantId}`,
             null,
@@ -140,13 +173,17 @@ export const kickParticipant = async (
 // ==================== PLAYER ACTIONS ====================
 
 /**
- * Tham gia game bằng PIN (đã đăng nhập)
+ * Join game as authenticated user
+ * @param pinCode - Game PIN code
+ * @param request - Join request with nickname
+ * @returns Participant details
  */
 export const joinGameAuthenticated = async (
     pinCode: string,
     request: JoinGameRequest
 ): Promise<GameParticipantDTO> => {
     try {
+        logWSOperation("JOIN_GAME_AUTH", { pinCode });
         const response = await axiosInstance.post<GameParticipantDTO>(
             "/games/join",
             request,
@@ -154,7 +191,14 @@ export const joinGameAuthenticated = async (
                 params: { pinCode },
             }
         );
-        return response.data;
+
+        const participant = response.data;
+        saveParticipantSession(participant.participantId, false);
+        logWSOperation("JOINED_AS_AUTH", {
+            participantId: participant.participantId,
+        });
+
+        return participant;
     } catch (error) {
         handleApiError(error);
         throw error;
@@ -162,13 +206,17 @@ export const joinGameAuthenticated = async (
 };
 
 /**
- * Tham gia game ẩn danh
+ * Join game anonymously
+ * @param pinCode - Game PIN code
+ * @param request - Join request with nickname
+ * @returns Participant details with guest token
  */
 export const joinGameAnonymous = async (
     pinCode: string,
     request: JoinGameRequest
 ): Promise<GameParticipantDTO> => {
     try {
+        logWSOperation("JOIN_GAME_ANON", { pinCode });
         const response = await axiosInstance.post<GameParticipantDTO>(
             "/games/join-anonymous",
             request,
@@ -178,10 +226,14 @@ export const joinGameAnonymous = async (
         );
 
         const participant = response.data;
+        saveParticipantSession(participant.participantId, true);
         if (participant.guestToken) {
             localStorage.setItem("guestToken", participant.guestToken);
-            localStorage.setItem("participantId", participant.participantId);
         }
+        logWSOperation("JOINED_AS_ANON", {
+            participantId: participant.participantId,
+        });
+
         return participant;
     } catch (error) {
         handleApiError(error);
@@ -190,89 +242,152 @@ export const joinGameAnonymous = async (
 };
 
 /**
- * Rời phòng chơi
+ * Leave game
+ * @param gameId - Game ID
+ * @param participantId - Participant leaving
  */
 export const leaveGame = async (
     gameId: string,
     participantId: string
 ): Promise<void> => {
     try {
+        logWSOperation("LEAVE_GAME", { gameId, participantId });
         await axiosInstance.post(`/games/${gameId}/leave`, null, {
             headers: { "X-Participant-Id": participantId },
         });
+
+        clearParticipantSession();
+        logWSOperation("LEFT_GAME", { gameId });
     } catch (error) {
         handleApiError(error);
         throw error;
     }
 };
 
-// ==================== REAL-TIME ACTIONS (WebSocket) ====================
+// ==================== WEBSOCKET ACTIONS ====================
 
 /**
- * Nộp câu trả lời via WebSocket
- * Cách sử dụng: submitAnswer(gameId, participantId, UUID | UUID[] | boolean | string)
+ * ✅ FIXED: Submit answer via WebSocket
+ * Properly delegates to webSocketService with correct STOMP headers
+ * @param gameId - Game ID
+ * @param participantId - Participant submitting
+ * @param answer - The answer (UUID | UUID[] | boolean | string)
  */
 export const submitAnswer = (
     gameId: string,
     participantId: string,
     answer: any
 ): void => {
+    logWSOperation("SUBMIT_ANSWER", { gameId, participantId });
     webSocketService.submitAnswer(gameId, participantId, answer);
 };
 
 /**
- * Bỏ qua câu hỏi
+ * ✅ FIXED: Skip question via WebSocket
+ * @param gameId - Game ID
+ * @param participantId - Participant skipping
  */
 export const skipQuestion = (gameId: string, participantId: string): void => {
+    logWSOperation("SKIP_QUESTION", { gameId, participantId });
     webSocketService.skipQuestion(gameId, participantId);
 };
 
 /**
- * Gửi heartbeat (giữ kết nối sống)
+ * Send heartbeat to keep connection alive
+ * @param gameId - Game ID
+ * @param participantId - Participant ID
  */
 export const sendHeartbeat = (gameId: string, participantId: string): void => {
     webSocketService.sendHeartbeat(gameId, participantId);
 };
 
 /**
- * Yêu cầu bảng xếp hạng real-time
+ * Request leaderboard via WebSocket
+ * @param gameId - Game ID
+ * @param participantId - Participant requesting
  */
-export const requestLeaderboard = (gameId: string): void => {
-    webSocketService.requestLeaderboard(gameId);
+export const requestLeaderboard = (
+    gameId: string,
+    participantId: string
+): void => {
+    logWSOperation("REQUEST_LEADERBOARD", { gameId });
+    webSocketService.requestLeaderboard(gameId, participantId);
 };
 
 /**
- * Yêu cầu danh sách người chơi
+ * Request participants list via WebSocket
+ * @param gameId - Game ID
+ * @param participantId - Participant requesting
  */
-export const requestParticipants = (gameId: string): void => {
-    webSocketService.requestParticipants(gameId);
+export const requestParticipants = (
+    gameId: string,
+    participantId: string
+): void => {
+    logWSOperation("REQUEST_PARTICIPANTS", { gameId });
+    webSocketService.requestParticipants(gameId, participantId);
 };
 
 /**
- * Yêu cầu chi tiết game
+ * ✅ FIXED: Request game details via WebSocket
+ * Response handled via onGameDetails callback
+ * @param gameId - Game ID
+ * @param participantId - Participant requesting
  */
-export const requestGameDetails = (gameId: string): void => {
-    webSocketService.requestGameDetails(gameId);
+export const requestGameDetails = (
+    gameId: string,
+    participantId: string
+): void => {
+    logWSOperation("REQUEST_GAME_DETAILS", { gameId });
+    webSocketService.requestGameDetails(gameId, participantId);
 };
 
 /**
- * Yêu cầu thống kê game
+ * ✅ FIXED: Request game statistics via WebSocket
+ * Response handled via onGameStatistics callback
+ * @param gameId - Game ID
+ * @param participantId - Participant requesting
  */
-export const requestGameStatistics = (gameId: string): void => {
-    webSocketService.requestGameStatistics(gameId);
+export const requestGameStatistics = (
+    gameId: string,
+    participantId: string
+): void => {
+    logWSOperation("REQUEST_GAME_STATISTICS", { gameId });
+    webSocketService.requestGameStatistics(gameId, participantId);
 };
 
 /**
- * Yêu cầu final leaderboard
+ * Request final leaderboard (after game ends)
+ * @param gameId - Game ID
+ * @param participantId - Participant requesting
  */
-export const requestFinalLeaderboard = (gameId: string): void => {
-    webSocketService.requestFinalLeaderboard(gameId);
+export const requestFinalLeaderboard = (
+    gameId: string,
+    participantId: string
+): void => {
+    logWSOperation("REQUEST_FINAL_LEADERBOARD", { gameId });
+    webSocketService.requestFinalLeaderboard(gameId, participantId);
 };
 
-// ==================== FETCH DATA (HTTP - REST API) ====================
+/**
+ * ✅ NEW: Request current question
+ * Used when player reconnects or joins late
+ * @param gameId - Game ID
+ * @param participantId - Participant ID
+ */
+export const requestCurrentQuestion = (
+    gameId: string,
+    participantId: string
+): void => {
+    logWSOperation("REQUEST_CURRENT_QUESTION", { gameId });
+    webSocketService.requestCurrentQuestion(gameId, participantId);
+};
+
+// ==================== FETCH DATA (REST API) ====================
 
 /**
- * Lấy thông tin game bằng PIN (màn hình chờ)
+ * Get game by PIN code
+ * @param pinCode - Game PIN code
+ * @returns Game details
  */
 export const getGameByPin = async (
     pinCode: string
@@ -289,7 +404,9 @@ export const getGameByPin = async (
 };
 
 /**
- * Lấy chi tiết game (host + player)
+ * Get detailed game information
+ * @param gameId - Game ID
+ * @returns Game details
  */
 export const getGameDetails = async (
     gameId: string
@@ -306,7 +423,29 @@ export const getGameDetails = async (
 };
 
 /**
- * Lấy danh sách người chơi hiện tại (HTTP fallback)
+ * ✅ NEW: Get current question for a game
+ * Used by host to know what question is being asked
+ * @param gameId - Game ID
+ * @returns Current question with timing info
+ */
+export const getCurrentQuestion = async (
+    gameId: string
+): Promise<CurrentQuestionResponseDTO> => {
+    try {
+        const response = await axiosInstance.get<CurrentQuestionResponseDTO>(
+            `/games/${gameId}/current-question`
+        );
+        return response.data;
+    } catch (error) {
+        handleApiError(error);
+        throw error;
+    }
+};
+
+/**
+ * Get list of participants in game
+ * @param gameId - Game ID
+ * @returns Array of participants
  */
 export const getParticipants = async (
     gameId: string
@@ -323,7 +462,9 @@ export const getParticipants = async (
 };
 
 /**
- * Lấy bảng xếp hạng real-time (HTTP fallback)
+ * Get real-time leaderboard
+ * @param gameId - Game ID
+ * @returns Array of leaderboard entries
  */
 export const getLeaderboard = async (
     gameId: string
@@ -340,7 +481,9 @@ export const getLeaderboard = async (
 };
 
 /**
- * Lấy bảng xếp hạng cuối cùng
+ * Get final leaderboard (after game ends)
+ * @param gameId - Game ID
+ * @returns Array of final leaderboard entries
  */
 export const getFinalLeaderboard = async (
     gameId: string
@@ -357,7 +500,10 @@ export const getFinalLeaderboard = async (
 };
 
 /**
- * Lấy lịch sử game đã tạo (host)
+ * Get user's games
+ * @param page - Page number (0-based)
+ * @param size - Items per page
+ * @returns Paginated games
  */
 export const getMyGames = async (
     page = 0,
@@ -375,7 +521,9 @@ export const getMyGames = async (
 };
 
 /**
- * Lấy thống kê game
+ * Get game statistics (after game ends)
+ * @param gameId - Game ID
+ * @returns Statistics including accuracy, average score, etc.
  */
 export const getGameStatistics = async (
     gameId: string
@@ -392,7 +540,10 @@ export const getGameStatistics = async (
 };
 
 /**
- * Lấy thống kê user-quiz (performance history)
+ * Get user's statistics for a specific quiz
+ * @param userId - User ID
+ * @param quizId - Quiz ID
+ * @returns User quiz statistics
  */
 export const getUserQuizStats = async (
     userId: string,
@@ -412,123 +563,129 @@ export const getUserQuizStats = async (
 // ==================== WEBSOCKET LISTENER SETUP ====================
 
 /**
- * Setup game event listeners
- * Auto-cleanup with cleanup function
+ * ✅ Setup host listeners
+ * Subscribe to all game topics for real-time updates
+ * Backend sends events via Kafka → GameEventConsumer → /topic/game/{gameId}
+ *
+ * @param gameId - Game ID
+ * @param callbacks - Host callback handlers
+ * @returns Cleanup function to unsubscribe
  */
-export const setupGameEventListeners = (
+export const setupHostListeners = (
     gameId: string,
-    callbacks: {
-        onGameEvent?: (event: any) => void;
-        onQuestionStarted?: (question: any) => void;
-        onLeaderboardUpdate?: (leaderboard: any[]) => void;
-        onParticipantUpdate?: (participants: any[]) => void;
-        onError?: (error: any) => void;
-    }
-) => {
+    callbacks: HostListenerCallbacks
+): (() => void) => {
     const unsubs: (() => void)[] = [];
 
-    if (callbacks.onGameEvent) {
+    console.log("🔌 [HOST] Setting up listeners for game:", gameId);
+
+    // Join game room
+    webSocketService.joinGameRoom(gameId);
+
+    // Subscribe to topics
+    webSocketService.subscribeToQuestions(gameId);
+    webSocketService.subscribeToLeaderboard(gameId);
+    webSocketService.subscribeToParticipants(gameId);
+
+    // Setup callbacks
+    callbacks.onGameEvent &&
         unsubs.push(webSocketService.onGameEvent(callbacks.onGameEvent));
-    }
+    callbacks.onQuestion &&
+        unsubs.push(webSocketService.onQuestion(callbacks.onQuestion));
+    callbacks.onLeaderboard &&
+        unsubs.push(webSocketService.onLeaderboard(callbacks.onLeaderboard));
+    callbacks.onParticipants &&
+        unsubs.push(webSocketService.onParticipants(callbacks.onParticipants));
+    callbacks.onGameDetails &&
+        unsubs.push(webSocketService.onGameDetails(callbacks.onGameDetails));
+    callbacks.onGameStatistics &&
+        unsubs.push(webSocketService.onStatistics(callbacks.onGameStatistics));
 
-    if (callbacks.onQuestionStarted) {
-        unsubs.push(webSocketService.onQuestion(callbacks.onQuestionStarted));
-    }
+    // ✅ BỔ SUNG: Request current state on reconnect
+    const handleReconnect = (connected: boolean) => {
+        if (connected) {
+            console.log("🔄 [HOST] Reconnected - requesting current state");
+            requestCurrentQuestion(gameId, "host");
+            requestGameDetails(gameId, "host");
+            requestLeaderboard(gameId, "host");
+        }
+        callbacks.onConnectionChange?.(connected);
+    };
+    unsubs.push(webSocketService.onConnectionChange(handleReconnect));
 
-    if (callbacks.onLeaderboardUpdate) {
-        unsubs.push(
-            webSocketService.onLeaderboard(callbacks.onLeaderboardUpdate)
-        );
-    }
-
-    if (callbacks.onParticipantUpdate) {
-        unsubs.push(
-            webSocketService.onParticipants(callbacks.onParticipantUpdate)
-        );
-    }
-
-    if (callbacks.onError) {
-        unsubs.push(webSocketService.onError(callbacks.onError));
-    }
-
-    // Return cleanup function
+    // Cleanup function
     return () => {
+        console.log("🧹 [HOST] Cleaning up listeners");
         unsubs.forEach((unsub) => unsub());
+        webSocketService.leaveGameRoom(gameId);
+        webSocketService.unsubscribeFromAllGameTopics(gameId);
     };
 };
 
 /**
- * Setup participant-specific listeners
+ * ✅ Setup participant listeners
+ * Complete setup: subscriptions + callbacks + reconnect logic
+ *
+ * @param gameId - Game ID
+ * @param participantId - Participant ID
+ * @param callbacks - Participant callback handlers
+ * @returns Cleanup function to unsubscribe
  */
 export const setupParticipantListeners = (
     gameId: string,
     participantId: string,
-    callbacks: {
-        onAnswerResult?: (result: any) => void;
-        onKicked?: (notification: any) => void;
-        onConnectionChange?: (connected: boolean) => void;
-    }
-) => {
+    callbacks: ParticipantListenerCallbacks
+): (() => void) => {
     const unsubs: (() => void)[] = [];
 
-    // Subscribe to kick notifications
+    console.log("🔌 [PARTICIPANT] Setting up listeners", {
+        gameId,
+        participantId,
+    });
+
+    // Join game room
+    webSocketService.joinGameRoom(gameId, participantId);
+
+    // Subscribe to topics
+    webSocketService.subscribeToQuestions(gameId);
+    webSocketService.subscribeToLeaderboard(gameId);
+    webSocketService.subscribeToParticipants(gameId);
     webSocketService.subscribeToKickNotifications(gameId, participantId);
 
-    if (callbacks.onAnswerResult) {
+    // Setup callbacks
+    callbacks.onQuestion &&
+        unsubs.push(webSocketService.onQuestion(callbacks.onQuestion));
+    callbacks.onLeaderboard &&
+        unsubs.push(webSocketService.onLeaderboard(callbacks.onLeaderboard));
+    callbacks.onParticipants &&
+        unsubs.push(webSocketService.onParticipants(callbacks.onParticipants));
+    callbacks.onAnswerResult &&
         unsubs.push(webSocketService.onAnswerResult(callbacks.onAnswerResult));
-    }
-
-    if (callbacks.onKicked) {
+    callbacks.onGameDetails &&
+        unsubs.push(webSocketService.onGameDetails(callbacks.onGameDetails));
+    callbacks.onGameStatistics &&
+        unsubs.push(webSocketService.onStatistics(callbacks.onGameStatistics));
+    callbacks.onKicked &&
         unsubs.push(webSocketService.onKicked(callbacks.onKicked));
-    }
 
-    if (callbacks.onConnectionChange) {
-        unsubs.push(
-            webSocketService.onConnectionChange(callbacks.onConnectionChange)
-        );
-    }
-
-    return () => {
-        unsubs.forEach((unsub) => unsub());
+    // ✅ BỔ SUNG: Catch-up khi reconnect
+    const handleReconnect = (connected: boolean) => {
+        if (connected) {
+            console.log(
+                "🔄 [PARTICIPANT] Reconnected - requesting current question"
+            );
+            requestCurrentQuestion(gameId, participantId);
+            requestGameDetails(gameId, participantId);
+            requestLeaderboard(gameId, participantId);
+        }
+        callbacks.onConnectionChange?.(connected);
     };
-};
+    callbacks.onConnectionChange &&
+        unsubs.push(webSocketService.onConnectionChange(handleReconnect));
 
-/**
- * Setup host listeners
- */
-export const setupHostListeners = (
-    gameId: string,
-    callbacks: {
-        onGameEvent?: (event: any) => void;
-        onConnectionChange?: (connected: boolean) => void;
-    }
-) => {
-    const unsubs: (() => void)[] = [];
-
-    webSocketService.joinGameRoom(gameId);
-    webSocketService.subscribeToGameDetails(gameId);
-
-    if (callbacks.onGameEvent) {
-        unsubs.push(webSocketService.onGameEvent(callbacks.onGameEvent));
-    }
-    unsubs.push(
-        webSocketService.onParticipants((participants) => {
-            // Host nhận được danh sách mới → trigger callback nếu cần
-            if (callbacks.onGameEvent) {
-                callbacks.onGameEvent({
-                    eventType: "PARTICIPANTS_UPDATED",
-                    data: participants,
-                });
-            }
-        })
-    );
-    if (callbacks.onConnectionChange) {
-        unsubs.push(
-            webSocketService.onConnectionChange(callbacks.onConnectionChange)
-        );
-    }
-
+    // Cleanup function
     return () => {
+        console.log("🧹 [PARTICIPANT] Cleaning up listeners");
         unsubs.forEach((unsub) => unsub());
         webSocketService.leaveGameRoom(gameId);
         webSocketService.unsubscribeFromAllGameTopics(gameId);
@@ -538,7 +695,10 @@ export const setupHostListeners = (
 // ==================== SESSION MANAGEMENT ====================
 
 /**
- * Lưu participant session để reconnect sau này
+ * Save participant session to localStorage
+ * Used to remember participant across page reloads
+ * @param participantId - Participant ID
+ * @param isAnonymous - Whether participant is anonymous
  */
 export const saveParticipantSession = (
     participantId: string | undefined | null,
@@ -556,13 +716,20 @@ export const saveParticipantSession = (
     try {
         localStorage.setItem("participantId", participantId.toString());
         localStorage.setItem("isAnonymous", String(isAnonymous));
+        console.log(
+            "✅ Participant session saved:",
+            participantId,
+            "anonymous:",
+            isAnonymous
+        );
     } catch (err) {
         console.error("Lỗi lưu session:", err);
     }
 };
 
 /**
- * Lấy participantId từ localStorage
+ * Get saved participant ID from session
+ * @returns Participant ID or null
  */
 export const getSavedParticipantId = (): string | null => {
     try {
@@ -574,7 +741,8 @@ export const getSavedParticipantId = (): string | null => {
 };
 
 /**
- * Check xem có saved anonymous session không
+ * Check if session is for anonymous participant
+ * @returns True if anonymous, false otherwise
  */
 export const hasSavedAnonymousSession = (): boolean => {
     try {
@@ -587,14 +755,65 @@ export const hasSavedAnonymousSession = (): boolean => {
 };
 
 /**
- * Xóa session khi rời game
+ * Clear participant session from localStorage
  */
 export const clearParticipantSession = () => {
     try {
         localStorage.removeItem("participantId");
         localStorage.removeItem("guestToken");
         localStorage.removeItem("isAnonymous");
+        console.log("✅ Participant session cleared");
     } catch (err) {
         console.error("Lỗi xóa session:", err);
     }
+};
+
+/**
+ * Get saved guest token (for anonymous users)
+ * @returns Guest token or null
+ */
+export const getSavedGuestToken = (): string | null => {
+    try {
+        return localStorage.getItem("guestToken") || null;
+    } catch (err) {
+        console.error("Lỗi lấy guest token:", err);
+        return null;
+    }
+};
+
+// ==================== HELPER FUNCTIONS ====================
+
+/**
+ * Create a debug log prefix
+ * @param component - Component name
+ * @returns Formatted prefix
+ */
+const createLogPrefix = (component: string): string => {
+    return `[GameService.${component}]`;
+};
+
+/**
+ * Log game event with consistent formatting
+ * @param eventType - Event type
+ * @param data - Event data (optional)
+ */
+export const logGameEvent = (eventType: string, data?: any) => {
+    console.log(
+        `📡 ${createLogPrefix("Event")} ${eventType}`,
+        data ? "→" : "",
+        data || ""
+    );
+};
+
+/**
+ * Log WebSocket operation
+ * @param operation - Operation name
+ * @param details - Operation details (optional)
+ */
+export const logWSOperation = (operation: string, details?: any) => {
+    console.log(
+        `🔌 ${createLogPrefix("WS")} ${operation}`,
+        details ? "→" : "",
+        details || ""
+    );
 };

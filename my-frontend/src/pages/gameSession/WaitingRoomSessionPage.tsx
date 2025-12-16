@@ -1,719 +1,739 @@
-// src/pages/WaitingRoomSessionPage.tsx
-"use client";
+// src/pages/WaitingRoomSessionPage.tsx - ENHANCED WITH QR CODE
 
-import React, { useEffect, useMemo, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
-import { toast } from "react-toastify";
+import { useState, useEffect, useRef } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import QRCode, { QRCodeCanvas, QRCodeSVG } from "qrcode.react"; // Thêm thư viện QR Code
 import {
-  getGameDetails,
-  getParticipants,
   startGame,
   cancelGame,
-  getSavedParticipantId,
-  clearParticipantSession,
+  leaveGame,
+  kickParticipant,
+  getParticipants,
   setupHostListeners,
-  setupGameEventListeners,
   setupParticipantListeners,
 } from "@/services/gameService";
-import type { GameDetailDTO, GameParticipantDTO, GameEventPayload } from "@/types/game";
+import { webSocketService } from "@/services/webSocketService";
+import { useGameSessionValidator } from "@/hooks/useGameSessionValidator";
+import { handleApiError } from "@/utils/apiErrorHandler";
 
-import unknownAvatar from "@/assets/img/avatars/unknown.jpg";
-import avatar1 from "@/assets/img/avatars/1.png";
-import avatar2 from "@/assets/img/avatars/2.png";
-import avatar3 from "@/assets/img/avatars/3.png";
-import avatar4 from "@/assets/img/avatars/4.png";
-import avatar5 from "@/assets/img/avatars/5.png";
-import avatar6 from "@/assets/img/avatars/6.png";
-import avatar7 from "@/assets/img/avatars/7.png";
-import avatar8 from "@/assets/img/avatars/8.png";
-import avatar9 from "@/assets/img/avatars/9.png";
-import avatar10 from "@/assets/img/avatars/10.png";
-import avatar11 from "@/assets/img/avatars/11.png";
-import avatar12 from "@/assets/img/avatars/12.png";
-import avatar13 from "@/assets/img/avatars/13.png";
-import avatar14 from "@/assets/img/avatars/14.png";
-import avatar15 from "@/assets/img/avatars/15.png";
-
-const AVATAR_POOL = [
-  avatar1,
-  avatar2,
-  avatar3,
-  avatar4,
-  avatar5,
-  avatar6,
-  avatar7,
-  avatar8,
-  avatar9,
-  avatar10,
-  avatar11,
-  avatar12,
-  avatar13,
-  avatar14,
-  avatar15,
-];
-
-// ==================== QR CODE COMPONENT ====================
-
-interface QRCodeProps {
-  value: string;
-  size?: number;
-}
-
-const QRCode: React.FC<QRCodeProps> = ({ value, size = 140 }) => {
-  const url = `https://chart.googleapis.com/chart?chs=${size}x${size}&cht=qr&chl=${encodeURIComponent(value)}`;
-  return (
-    <div className="d-flex flex-column align-items-center">
-      <div className="bg-white p-3 rounded-3 shadow-sm border">
-        <img
-          src={url}
-          alt="QR Code"
-          width={size}
-          height={size}
-          className="img-fluid"
-        />
-      </div>
-      <small className="text-white-50 mt-2">Scan to join</small>
-    </div>
-  );
-};
-
-// ==================== HOST INFO COMPONENT ====================
-
-interface HostInfoCardProps {
-  host: {
-    userId: string;
-    username: string;
-    nickname?: string;
-    avatarUrl?: string;
-  };
-}
-
-const HostInfoCard: React.FC<HostInfoCardProps> = ({ host }) => {
-  return (
-    <div className="card border-0 shadow-sm rounded-4 p-4 mb-4 bg-gradient" style={{
-      background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)"
-    }}>
-      <div className="d-flex align-items-center text-white">
-        <img
-          src={host.avatarUrl || unknownAvatar}
-          alt={host.nickname || host.username}
-          className="rounded-circle me-3 flex-shrink-0 border border-3 border-white"
-          width={80}
-          height={80}
-          style={{ objectFit: 'cover' }}
-        />
-        <div className="flex-grow-1">
-          <div className="badge bg-warning text-dark mb-2">
-            <i className="bx bx-crown me-1"></i>
-            Host
-          </div>
-          <h4 className="mb-1 fw-bold">{host.nickname || host.username}</h4>
-          <p className="mb-0 opacity-75">@{host.username}</p>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// ==================== PARTICIPANT AVATAR COMPONENT ====================
-
-interface ParticipantCardProps {
-  participant: GameParticipantDTO & { avatar?: string };
-  isYou: boolean;
-}
-
-const ParticipantCard: React.FC<ParticipantCardProps> = ({
-  participant,
-  isYou,
-}) => {
-  return (
-    <div className="col-md-6 col-lg-4">
-      <div
-        className={`card h-100 border-0 shadow-sm rounded-4 p-3 position-relative ${
-          isYou ? "border-primary border-3 bg-primary-subtle" : ""
-        }`}
-      >
-        {isYou && (
-          <div className="position-absolute top-0 end-0 translate-middle-x">
-            <span className="badge bg-primary rounded-pill">You</span>
-          </div>
-        )}
-        <div className="d-flex align-items-center">
-          <img
-            src={participant.avatar || unknownAvatar}
-            alt={participant.nickname}
-            className="rounded-circle me-3 flex-shrink-0"
-            width={56}
-            height={56}
-            style={{ objectFit: 'cover' }}
-          />
-          <div className="flex-grow-1 min-w-0">
-            <h6 className="mb-0 fw-bold text-truncate">
-              {participant.nickname}
-            </h6>
-            <small className="text-muted">
-              {isYou ? "Your player" : "Joined"}
-            </small>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// ==================== MAIN COMPONENT ====================
-
-const WaitingRoomSessionPage: React.FC = () => {
-  const { gameId } = useParams<{ gameId: string }>();
+const WaitingRoomSessionPage = () => {
   const navigate = useNavigate();
+  const { gameId } = useParams();
 
-  const [game, setGame] = useState<GameDetailDTO | null>(null);
-  const [participants, setParticipants] = useState<
-    (GameParticipantDTO & { avatar?: string })[]
-  >([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [showQR, setShowQR] = useState(false);
+  const {
+    isValid,
+    isValidating,
+    error: validationError,
+    gameInfo,
+    participants: initialParticipants,
+    participantId,
+    pinCode,
+  } = useGameSessionValidator(gameId);
+
+  const [participants, setParticipants] = useState(initialParticipants);
+  const [isHost, setIsHost] = useState(false);
+  const [lastUpdate, setLastUpdate] = useState(Date.now());
+  const [isDark, setIsDark] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
+  const [isLeaving, setIsLeaving] = useState(false);
+  const [showCopyFeedback, setShowCopyFeedback] = useState(false);
+  const [actionError, setActionError] = useState("");
 
-  // ✅ Determine role - Check if currentParticipant is null (means user is host)
-  const isHost = useMemo(() => {
-    if (!game) return false;
-    // If currentParticipant is null, user is the host
-    return game.currentParticipant === null;
-  }, [game]);
+  const unsubscribeRef = useRef<(() => void) | null>(null);
+  const questionListenerRef = useRef<(() => void) | null>(null);
 
-  // ✅ Get host information from game.host
-  const hostInfo = useMemo(() => game?.host, [game]);
-  
-  const participantId = useMemo(() => getSavedParticipantId(), []);
+  // URL để người chơi tham gia (dùng cho QR Code)
+  const joinUrl = pinCode ? `${window.location.origin}/join/${pinCode}` : "";
 
-  // ==================== LOAD INITIAL DATA ====================
-
+  // Dark mode detection
   useEffect(() => {
-    if (!gameId) {
-      setError("Game ID not found");
-      setIsLoading(false);
-      return;
-    }
-
-    const loadGameData = async () => {
-      try {
-        console.log("Loading game details for:", gameId);
-        const gameData = await getGameDetails(gameId);
-
-        if (!gameData) {
-          throw new Error("Failed to load game");
-        }
-
-        setGame(gameData);
-        console.log("✅ Game loaded:", {
-          gameId: gameData.gameId,
-          status: gameData.gameStatus,
-          playerCount: gameData.playerCount,
-          isHost: gameData.currentParticipant === null,
-          hostInfo: gameData.host
-        });
-
-        // Check game status - redirect if necessary
-        if (gameData.gameStatus === "IN_PROGRESS") {
-          console.log("Game already started, redirecting to gameplay...");
-          navigate(`/game-play/${gameId}`, { replace: true });
-          return;
-        }
-
-        if (["FINISHED", "CANCELLED"].includes(gameData.gameStatus)) {
-          console.log("Game already ended");
-          clearParticipantSession();
-          toast.info("Game session has ended");
-          navigate("/", { replace: true });
-          return;
-        }
-
-        // ✅ FIXED: Only non-host players need to have participantId
-        // Host doesn't join as participant, so no participantId
-        const isUserHost = gameData.currentParticipant === null;
-        if (!isUserHost && !participantId) {
-          console.log("Non-host player without participantId, redirecting to join...");
-          navigate(`/join-game/${gameData.pinCode}`, { replace: true });
-          return;
-        }
-
-        // Load participants
-        const participantsData = await getParticipants(gameId);
-        setParticipantsWithAvatars(participantsData);
-
-        setIsLoading(false);
-      } catch (err: any) {
-        console.error("Failed to load game:", err);
-        setError(err.message || "Failed to load game room");
-        setIsLoading(false);
-      }
+    const checkDarkMode = () => {
+      setIsDark(document.body.classList.contains("dark-mode"));
     };
+    checkDarkMode();
+    const observer = new MutationObserver(checkDarkMode);
+    observer.observe(document.body, {
+      attributes: true,
+      attributeFilter: ["class"],
+    });
+    return () => observer.disconnect();
+  }, []);
 
-    loadGameData();
-  }, [gameId, navigate, participantId]);
-
-  // ==================== WEBSOCKET - REAL-TIME UPDATES ====================
-
+  // Sync participants from validator
   useEffect(() => {
-    if (!gameId || !game) return;
-
-    let cleanupFunctions: Array<() => void> = [];
-
-    const handleGameEvent = (event: GameEventPayload) => {
-      console.log("Game event received:", event.eventType);
-
-      switch (event.eventType) {
-        case "PARTICIPANT_JOINED": {
-          console.log("Participant joined");
-          if (event.data && event.data.playerCount !== undefined) {
-            setGame((prev) =>
-              prev
-                ? { ...prev, playerCount: event.data!.playerCount }
-                : null
-            );
-          }
-          loadParticipantsList();
-          break;
-        }
-
-        case "PARTICIPANT_LEFT": {
-          console.log("Participant left");
-          if (event.data && event.data.playerCount !== undefined) {
-            setGame((prev) =>
-              prev
-                ? { ...prev, playerCount: event.data!.playerCount }
-                : null
-            );
-          }
-          loadParticipantsList();
-          break;
-        }
-
-        case "PARTICIPANT_KICKED": {
-          console.log("Participant kicked");
-          if (event.data && event.data.participantId === participantId) {
-            toast.error(
-              event.data.reason || "You have been kicked from the game"
-            );
-            clearParticipantSession();
-            navigate("/", { replace: true });
-          } else {
-            loadParticipantsList();
-          }
-          break;
-        }
-
-        case "GAME_STARTING": {
-          setIsStarting(true);
-          toast.info("Game starting in 3 seconds...", { autoClose: 3000 });
-          break;
-        }
-
-        case "GAME_STARTED": {
-          console.log("Game started, redirecting to gameplay...");
-          navigate(`/game-play/${gameId}`, { replace: true });
-          break;
-        }
-
-        case "GAME_ENDED":
-        case "GAME_CANCELLED": {
-          console.log("Game ended or cancelled");
-          clearParticipantSession();
-          toast.info("Game session has ended");
-          navigate("/", { replace: true });
-          break;
-        }
-
-        default:
-          console.debug("Unhandled event:", event.eventType);
-      }
-    };
-
-    // Setup listeners based on role
-    if (isHost) {
-      cleanupFunctions.push(
-        setupHostListeners(gameId, {
-          onGameEvent: handleGameEvent,
-          onConnectionChange: (connected) => {
-            if (!connected) {
-              toast.warning("Connection lost");
-            }
-          },
-        })
-      );
-    } else {
-      cleanupFunctions.push(
-        setupGameEventListeners(gameId, {
-          onGameEvent: handleGameEvent,
-        })
-      );
-
-      if (participantId) {
-        cleanupFunctions.push(
-          setupParticipantListeners(gameId, participantId, {
-            onKicked: (notification) => {
-              toast.error(notification.reason || "You have been kicked");
-              clearParticipantSession();
-              navigate("/", { replace: true });
-            },
-            onConnectionChange: (connected) => {
-              if (!connected) {
-                toast.warning("Connection lost");
-              }
-            },
-          })
-        );
-      }
+    if (initialParticipants.length > 0) {
+      setParticipants(initialParticipants);
     }
+  }, [initialParticipants]);
 
-    return () => {
-      cleanupFunctions.forEach((cleanup) => cleanup());
-    };
-  }, [gameId, game, isHost, participantId, navigate]);
+  // Detect host
+  useEffect(() => {
+    if (gameInfo) {
+      setIsHost(gameInfo.isHost || false);
+    }
+  }, [gameInfo]);
 
-  // ==================== HELPER FUNCTIONS ====================
-
-  const loadParticipantsList = async () => {
+  // Load participants manually (backup)
+  const loadParticipants = async () => {
+    if (!gameId) return;
     try {
-      if (!gameId) return;
-      const data = await getParticipants(gameId);
-      setParticipantsWithAvatars(data);
+      const participantsList = await getParticipants(gameId);
+      setParticipants(participantsList || []);
+      setLastUpdate(Date.now());
     } catch (err) {
       console.error("Failed to load participants:", err);
     }
   };
 
-  const setParticipantsWithAvatars = (data: GameParticipantDTO[]) => {
-    const used = new Set<string>();
-    const withAvatars = data.map((p) => {
-      let avatar = unknownAvatar;
+  // ==================== WEBSOCKET SETUP ====================
+  useEffect(() => {
+    if (!gameId || isValidating || !isValid || !gameInfo) {
+      return;
+    }
 
-      if (p.isAnonymous) {
-        const available = AVATAR_POOL.filter((a) => !used.has(a));
-        avatar =
-          available.length > 0
-            ? available[Math.floor(Math.random() * available.length)]
-            : unknownAvatar;
-        used.add(avatar);
-      }
-
-      return { ...p, avatar };
+    console.log("🔌 [WAITING ROOM] Setting up WebSocket listeners...", {
+      gameId,
+      participantId,
+      isHost,
     });
 
-    setParticipants(withAvatars);
-  };
+    webSocketService.subscribeToQuestions(gameId);
+
+    questionListenerRef.current = webSocketService.onQuestion((question) => {
+      console.log(
+        "✅ [WAITING ROOM] First question received! Navigating to GamePlay...",
+        question.questionNumber
+      );
+
+      navigate(`/game-play/${gameId}`, {
+        replace: true,
+        state: { initialQuestion: question },
+      });
+    });
+
+    if (isHost) {
+      unsubscribeRef.current = setupHostListeners(gameId, {
+        onGameEvent: (event) => {
+          if (
+            ["PARTICIPANT_JOINED", "PARTICIPANT_LEFT", "PARTICIPANT_KICKED"].includes(
+              event.eventType
+            )
+          ) {
+            loadParticipants();
+          }
+        },
+        onParticipants: (participantsList) => {
+          setParticipants(participantsList || []);
+          setLastUpdate(Date.now());
+        },
+        onConnectionChange: (connected) => {
+          console.log("🔌 [HOST - WAITING] Connection:", connected);
+        },
+      });
+    } else {
+      unsubscribeRef.current = setupParticipantListeners(
+        gameId,
+        participantId!,
+        {
+          onParticipants: (participantsList) => {
+            setParticipants(participantsList || []);
+            setLastUpdate(Date.now());
+          },
+          onKicked: () => {
+            setActionError("Bạn đã bị host kick khỏi phòng");
+            setTimeout(() => {
+              localStorage.removeItem("participantId");
+              localStorage.removeItem("isAnonymous");
+              navigate("/", { replace: true });
+            }, 3000);
+          },
+          onConnectionChange: (connected) => {
+            console.log("🔌 [PARTICIPANT - WAITING] Connection:", connected);
+          },
+        }
+      );
+    }
+
+    return () => {
+      console.log("🧹 [WAITING ROOM] Cleaning up listeners");
+      if (questionListenerRef.current) {
+        questionListenerRef.current();
+        questionListenerRef.current = null;
+      }
+      if (unsubscribeRef.current) {
+        unsubscribeRef.current();
+        unsubscribeRef.current = null;
+      }
+    };
+  }, [gameId, participantId, isValidating, isValid, gameInfo, isHost, navigate]);
 
   // ==================== HOST ACTIONS ====================
-
   const handleStartGame = async () => {
-    if (!gameId || !game || isStarting) return;
-
+    if (!gameId || isStarting || participants.length === 0) return;
     setIsStarting(true);
+    setActionError("");
+
     try {
-      console.log("Host starting game...");
       await startGame(gameId);
-      toast.success("Game started!");
+      console.log("🎬 [HOST] Start game called - waiting for first question...");
     } catch (err: any) {
-      console.error("Failed to start game:", err);
-      toast.error(err.message || "Failed to start game");
+      handleApiError(err);
+      setActionError("Không thể bắt đầu trò chơi. Vui lòng thử lại.");
       setIsStarting(false);
     }
   };
 
   const handleCancelGame = async () => {
-    if (!gameId || !game) return;
+    if (!gameId || isCancelling) return;
+    if (!window.confirm("Bạn có chắc chắn muốn hủy trò chơi này?")) return;
 
-    if (!window.confirm("Are you sure you want to cancel this game?")) {
-      return;
-    }
-
+    setIsCancelling(true);
     try {
-      console.log("Host cancelling game...");
       await cancelGame(gameId);
-      clearParticipantSession();
-      toast.success("Game cancelled");
+      localStorage.removeItem("participantId");
+      localStorage.removeItem("isAnonymous");
       navigate("/", { replace: true });
     } catch (err: any) {
-      console.error("Failed to cancel game:", err);
-      toast.error(err.message || "Failed to cancel game");
+      handleApiError(err);
+      setActionError("Không thể hủy trò chơi");
+    } finally {
+      setIsCancelling(false);
     }
   };
 
-  const copyPin = async () => {
-    if (!game?.pinCode) return;
+  // ==================== PARTICIPANT ACTIONS ====================
+  const handleLeaveGame = async () => {
+    if (!gameId || !participantId || isLeaving) return;
+    if (!window.confirm("Bạn có chắc chắn muốn rời phòng chơi?")) return;
+
+    setIsLeaving(true);
     try {
-      await navigator.clipboard.writeText(game.pinCode);
-      toast.success("Room code copied!");
-    } catch {
-      toast.error("Failed to copy");
+      await leaveGame(gameId, participantId);
+      localStorage.removeItem("participantId");
+      localStorage.removeItem("isAnonymous");
+      navigate("/", { replace: true });
+    } catch (err: any) {
+      handleApiError(err);
+      setActionError("Không thể rời phòng");
+    } finally {
+      setIsLeaving(false);
     }
   };
 
-  const joinUrl = game?.pinCode
-    ? `${window.location.origin}/join-game/${game.pinCode}`
-    : "";
+  const handleKickPlayer = async (participantToKick: string, nickname: string) => {
+    if (!gameId) return;
+    if (!window.confirm(`Kick ${nickname} khỏi phòng?`)) return;
+
+    try {
+      await kickParticipant(gameId, participantToKick);
+      await loadParticipants();
+    } catch (err: any) {
+      handleApiError(err);
+    }
+  };
+
+  const copyToClipboard = () => {
+    navigator.clipboard.writeText(pinCode || "");
+    setShowCopyFeedback(true);
+    setTimeout(() => setShowCopyFeedback(false), 2000);
+  };
 
   // ==================== RENDER ====================
-
-  // Loading state
-  if (isLoading) {
+  if (isValidating) {
     return (
-      <div className="min-vh-100 d-flex align-items-center justify-content-center bg-gradient-primary">
-        <div className="text-center text-white">
-          <div
-            className="spinner-border mb-3"
-            style={{ width: "3rem", height: "3rem" }}
-            role="status"
-          >
-            <span className="visually-hidden">Loading...</span>
-          </div>
-          <h4>Loading game room...</h4>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          height: "100vh",
+          backgroundColor: isDark ? "#0f172a" : "#f8fafc",
+          flexDirection: "column",
+          gap: "1rem",
+        }}
+      >
+        <div style={{ fontSize: "3rem", animation: "spin 1s linear infinite" }}>
+          ⚙️
+        </div>
+        <p style={{ color: isDark ? "#cbd5e1" : "#475569", fontSize: "1.1rem" }}>
+          Đang xác thực phiên chơi...
+        </p>
+      </div>
+    );
+  }
+
+  if (!isValid || validationError) {
+    return (
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          height: "100vh",
+          backgroundColor: isDark ? "#0f172a" : "#f8fafc",
+          padding: "2rem",
+        }}
+      >
+        <div
+          style={{
+            textAlign: "center",
+            backgroundColor: isDark ? "#1e293b" : "#fff",
+            padding: "3rem",
+            borderRadius: "16px",
+            boxShadow: isDark
+              ? "0 20px 25px rgba(0,0,0,0.3)"
+              : "0 20px 25px rgba(0,0,0,0.1)",
+            maxWidth: "400px",
+          }}
+        >
+          <div style={{ fontSize: "3rem", marginBottom: "1rem" }}>❌</div>
+          <h2 style={{ color: isDark ? "#f1f5f9" : "#1e293b", marginBottom: "0.5rem" }}>
+            Không thể tham gia phòng chơi
+          </h2>
+          <p style={{ color: isDark ? "#cbd5e1" : "#64748b" }}>
+            {validationError || "Phiên chơi không hợp lệ"}
+          </p>
         </div>
       </div>
     );
   }
 
-  // Error state
-  if (error || !game) {
+  if (!gameInfo) {
     return (
-      <div className="min-vh-100 d-flex align-items-center justify-content-center bg-gradient-primary">
-        <div className="card shadow-lg p-5 text-center" style={{ maxWidth: 500 }}>
-          <i
-            className="bx bx-error-circle text-danger mb-3"
-            style={{ fontSize: "4rem" }}
-          ></i>
-          <h4>Error</h4>
-          <p className="text-muted">{error || "Game room not found"}</p>
-          <button
-            className="btn btn-light mt-3"
-            onClick={() => navigate("/")}
-          >
-            Back to Home
-          </button>
-        </div>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          height: "100vh",
+          backgroundColor: isDark ? "#0f172a" : "#f8fafc",
+        }}
+      >
+        <h2 style={{ color: isDark ? "#f1f5f9" : "#1e293b" }}>Không tìm thấy trò chơi</h2>
       </div>
     );
   }
 
-  // Main content
   return (
     <div
-      className="min-vh-100"
       style={{
-        background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+        minHeight: "100vh",
+        backgroundColor: isDark ? "#0f172a" : "#f8fafc",
+        color: isDark ? "#f1f5f9" : "#1e293b",
+        fontFamily: "system-ui, -apple-system, sans-serif",
       }}
     >
-      <div className="container py-4 py-md-5">
-        <div className="row justify-content-center">
-          <div className="col-xl-10">
-            <div className="card border-0 shadow-lg rounded-4 overflow-hidden">
-              {/* Header */}
-              <div
-                className="text-white text-center py-5"
-                style={{
-                  background:
-                    "linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)",
-                }}
-              >
-                <h1 className="display-5 fw-bold mb-2">
-                  {game.quiz.title || "Quiz Game"}
-                </h1>
-                <p className="lead mb-0">
-                  {isHost ? "Host Waiting Room" : "Waiting for host to start..."}
+      {/* Error Banner */}
+      {actionError && (
+        <div
+          style={{
+            backgroundColor: "#ef4444",
+            color: "#fff",
+            padding: "1rem",
+            textAlign: "center",
+            fontSize: "0.95rem",
+            fontWeight: 500,
+            animation: "slideDown 0.3s ease",
+          }}
+        >
+          ⚠️ {actionError}
+        </div>
+      )}
+
+      {/* Header */}
+      <div
+        style={{
+          backgroundColor: isDark ? "#1e293b" : "#fff",
+          borderBottom: isDark ? "1px solid #334155" : "1px solid #e2e8f0",
+          padding: "2rem 1rem",
+          boxShadow: isDark ? "0 4px 20px rgba(0,0,0,0.3)" : "0 4px 20px rgba(0,0,0,0.08)",
+        }}
+      >
+        <div style={{ maxWidth: "1200px", margin: "0 auto" }}>
+          <h1
+            style={{
+              margin: "0 0 2rem 0",
+              fontSize: "2.4rem",
+              fontWeight: 800,
+              textAlign: "center",
+              color: isDark ? "#f1f5f9" : "#0f172a",
+            }}
+          >
+            {gameInfo.quiz.title}
+          </h1>
+
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: "2rem",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            {/* Host Info */}
+            <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+              <span style={{ fontSize: "2rem" }}>👑</span>
+              <div>
+                <p style={{ margin: 0, fontSize: "0.9rem", opacity: 0.7 }}>Host</p>
+                <p style={{ margin: 0, fontWeight: 700, fontSize: "1.2rem" }}>
+                  {gameInfo.host.nickname || gameInfo.host.username}
+                  {isHost && (
+                    <span
+                      style={{
+                        marginLeft: "0.75rem",
+                        backgroundColor: "#3b82f6",
+                        color: "#fff",
+                        padding: "0.3rem 0.9rem",
+                        borderRadius: "12px",
+                        fontSize: "0.8rem",
+                        fontWeight: 600,
+                      }}
+                    >
+                      YOU
+                    </span>
+                  )}
+                </p>
+              </div>
+            </div>
+
+            {/* PIN + QR Code Card */}
+            <div
+              style={{
+                backgroundColor: isDark ? "#1e293b" : "#ffffff",
+                padding: "2rem",
+                borderRadius: "20px",
+                border: isDark ? "1px solid #334155" : "1px solid #e2e8f0",
+                boxShadow: isDark
+                  ? "0 10px 30px rgba(0,0,0,0.4)"
+                  : "0 10px 30px rgba(0,0,0,0.1)",
+                display: "flex",
+                alignItems: "center",
+                gap: "2rem",
+                flexWrap: "wrap",
+                justifyContent: "center",
+              }}
+            >
+              {/* QR Code */}
+              <div style={{ textAlign: "center" }}>
+                <div
+                  style={{
+                    padding: "1rem",
+                    backgroundColor: "#fff",
+                    borderRadius: "16px",
+                    display: "inline-block",
+                    boxShadow: "0 6px 16px rgba(0,0,0,0.15)",
+                  }}
+                >
+                  <QRCodeSVG value={joinUrl} size={160} level="H" includeMargin />
+                </div>
+                <p
+                  style={{
+                    margin: "1rem 0 0 0",
+                    fontSize: "0.95rem",
+                    opacity: 0.85,
+                    fontWeight: 500,
+                  }}
+                >
+                  Quét QR để tham gia
                 </p>
               </div>
 
-              <div className="card-body p-4 p-md-5">
-                {/* ✅ HOST INFO - Show for both host and players */}
-                {hostInfo && (
-                  <HostInfoCard host={hostInfo} />
-                )}
-
-                {/* PIN + QR Section */}
-                <div className="row align-items-center mb-5">
-                  <div className="col-lg-8">
-                    <h3 className="fw-bold text-primary mb-3">Room Code</h3>
-                    <div className="d-flex align-items-center gap-4 flex-wrap">
-                      <div
-                        className="py-3 px-5 rounded-4 text-white fw-bold shadow-lg"
-                        style={{
-                          background:
-                            "linear-gradient(45deg, #ff6b6b, #ee5a24)",
-                          fontSize: "2.8rem",
-                          letterSpacing: "0.2em",
-                        }}
-                      >
-                        {game.pinCode}
-                      </div>
-                      <div className="d-flex gap-2">
-                        <button
-                          className="btn btn-light rounded-circle shadow-sm"
-                          onClick={copyPin}
-                          title="Copy room code"
-                        >
-                          <i className="bx bx-copy"></i>
-                        </button>
-                        {isHost && (
-                          <button
-                            className="btn btn-light rounded-circle shadow-sm"
-                            onClick={() => setShowQR((v) => !v)}
-                            title="Show QR code"
-                          >
-                            <i className="bx bx-qr"></i>
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                    <p className="text-muted mt-3">
-                      {isHost
-                        ? "Share this code with friends to join!"
-                        : `You joined with code ${game.pinCode}`}
-                    </p>
-                  </div>
-                  <div className="col-lg-4 text-center">
-                    {isHost && (showQR || window.innerWidth >= 992) && (
-                      <QRCode value={joinUrl} />
-                    )}
-                  </div>
-                </div>
-
-                {/* ✅ Game Settings Info */}
-                <div className="row mb-4">
-                  <div className="col-12">
-                    <div className="card border-0 bg-light rounded-4 p-3">
-                      <div className="row g-3 text-center">
-                        <div className="col-6 col-md-3">
-                          <div className="d-flex flex-column">
-                            <i className="bx bx-question-mark display-6 text-primary"></i>
-                            <strong className="fs-5">{game.totalQuestions}</strong>
-                            <small className="text-muted">Questions</small>
-                          </div>
-                        </div>
-                        <div className="col-6 col-md-3">
-                          <div className="d-flex flex-column">
-                            <i className="bx bx-group display-6 text-success"></i>
-                            <strong className="fs-5">{game.playerCount}/{game.maxPlayers}</strong>
-                            <small className="text-muted">Players</small>
-                          </div>
-                        </div>
-                        <div className="col-6 col-md-3">
-                          <div className="d-flex flex-column">
-                            <i className={`bx ${game.allowAnonymous ? 'bx-check-circle' : 'bx-x-circle'} display-6 text-info`}></i>
-                            <strong className="fs-5">{game.allowAnonymous ? 'Yes' : 'No'}</strong>
-                            <small className="text-muted">Anonymous</small>
-                          </div>
-                        </div>
-                        <div className="col-6 col-md-3">
-                          <div className="d-flex flex-column">
-                            <i className={`bx ${game.showLeaderboard ? 'bx-trophy' : 'bx-hide'} display-6 text-warning`}></i>
-                            <strong className="fs-5">{game.showLeaderboard ? 'On' : 'Off'}</strong>
-                            <small className="text-muted">Leaderboard</small>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Participants Section */}
-                <div className="mb-5">
-                  <div className="d-flex justify-content-between align-items-center mb-4">
-                    <h3 className="fw-bold">
-                      Players ({participants.length})
-                    </h3>
-                    <span className="badge bg-success fs-6 px-3 py-2">
-                      {isHost ? "Waiting..." : "Ready"}
-                    </span>
-                  </div>
-
-                  {participants.length === 0 ? (
-                    <div className="text-center py-5 bg-light rounded-4">
-                      <i className="bx bx-user-plus display-1 text-primary mb-3"></i>
-                      <h5>No players yet</h5>
-                      <p className="text-muted">
-                        Share the room code to invite players!
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="row g-3">
-                      {participants.map((p) => {
-                        const isYou = p.participantId === participantId;
-                        return (
-                          <ParticipantCard
-                            key={p.participantId}
-                            participant={p}
-                            isYou={isYou}
-                          />
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-
-                {/* Action Buttons */}
-                {isHost ? (
-                  // Host controls
-                  <div className="d-flex flex-column flex-sm-row gap-3 justify-content-center p-4 bg-light rounded-4">
-                    <button
-                      className="btn btn-danger btn-lg rounded-pill px-5"
-                      onClick={handleCancelGame}
-                      disabled={isStarting}
-                      title="Cancel and close this game"
-                    >
-                      <i className="bx bx-x me-2"></i>
-                      Cancel Game
-                    </button>
-                    <button
-                      className="btn btn-success btn-lg rounded-pill px-5 fw-bold"
-                      onClick={handleStartGame}
-                      disabled={participants.length === 0 || isStarting}
-                      title={
-                        participants.length === 0
-                          ? "Need at least 1 player"
-                          : "Start the game"
-                      }
-                    >
-                      {isStarting ? (
-                        <>
-                          <span
-                            className="spinner-border spinner-border-sm me-2"
-                            role="status"
-                          ></span>
-                          Starting...
-                        </>
-                      ) : (
-                        <>
-                          <i className="bx bx-play-circle me-2"></i>
-                          Start Game ({participants.length}{" "}
-                          {participants.length === 1 ? "player" : "players"})
-                        </>
-                      )}
-                    </button>
-                  </div>
-                ) : (
-                  // Player waiting state
-                  <div className="text-center p-5 bg-light rounded-4">
-                    <div
-                      className="spinner-grow text-primary mb-3"
-                      role="status"
-                    >
-                      <span className="visually-hidden">Waiting...</span>
-                    </div>
-                    <h5 className="text-primary">Waiting for host to start...</h5>
-                    <p className="text-muted">
-                      {participants.length} player
-                      {participants.length !== 1 ? "s" : ""} ready • Share
-                      the room code to invite more friends!
-                    </p>
-                  </div>
-                )}
+              {/* PIN Code */}
+              <div style={{ minWidth: "200px", textAlign: "center" }}>
+                <p style={{ margin: "0 0 0.5rem 0", fontSize: "0.95rem", opacity: 0.7 }}>
+                  Mã phòng
+                </p>
+                <p
+                  style={{
+                    margin: "0 0 1rem 0",
+                    fontSize: "2.5rem",
+                    fontWeight: 800,
+                    fontFamily: "monospace",
+                    letterSpacing: "0.2em",
+                    color: "#3b82f6",
+                  }}
+                >
+                  {pinCode}
+                </p>
+                <button
+                  onClick={copyToClipboard}
+                  style={{
+                    width: "100%",
+                    backgroundColor: "#3b82f6",
+                    color: "#fff",
+                    border: "none",
+                    padding: "0.9rem",
+                    borderRadius: "12px",
+                    cursor: "pointer",
+                    fontWeight: 600,
+                    fontSize: "1rem",
+                    transition: "all 0.2s",
+                  }}
+                  onMouseOver={(e) => (e.currentTarget.style.backgroundColor = "#2563eb")}
+                  onMouseOut={(e) => (e.currentTarget.style.backgroundColor = "#3b82f6")}
+                >
+                  {showCopyFeedback ? "✓ Đã copy!" : "📋 Copy mã"}
+                </button>
               </div>
             </div>
           </div>
         </div>
       </div>
+
+      {/* Main Content - Responsive */}
+      <div
+        style={{
+          maxWidth: "1200px",
+          margin: "0 auto",
+          padding: "2rem 1rem",
+          display: "grid",
+          gridTemplateColumns: "1fr minmax(320px, 400px)",
+          gap: "2rem",
+        }}
+        className="main-content-grid"
+      >
+        {/* Participants Section */}
+        <div
+          style={{
+            backgroundColor: isDark ? "#1e293b" : "#fff",
+            borderRadius: "20px",
+            padding: "2rem",
+            boxShadow: isDark
+              ? "0 10px 30px rgba(0,0,0,0.3)"
+              : "0 10px 30px rgba(0,0,0,0.08)",
+            border: isDark ? "1px solid #334155" : "1px solid #e2e8f0",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "1.5rem" }}>
+            <span style={{ fontSize: "1.8rem" }}>👥</span>
+            <h2 style={{ margin: 0, fontSize: "1.4rem", fontWeight: 700 }}>
+              Người chơi
+              <span
+                style={{
+                  marginLeft: "0.75rem",
+                  backgroundColor: "#3b82f6",
+                  color: "#fff",
+                  padding: "0.4rem 1rem",
+                  borderRadius: "16px",
+                  fontSize: "0.9rem",
+                  fontWeight: 600,
+                }}
+              >
+                {participants.length}/{gameInfo.maxPlayers}
+              </span>
+            </h2>
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+            {participants.length === 0 ? (
+              <div style={{ padding: "3rem", textAlign: "center", color: isDark ? "#94a3b8" : "#94a3b8" }}>
+                <p style={{ fontSize: "3.5rem", margin: "0 0 1rem 0" }}>⏳</p>
+                <p style={{ margin: 0, fontSize: "1.1rem" }}>Đang chờ người chơi tham gia...</p>
+              </div>
+            ) : (
+              participants.map((p, idx) => (
+                <div
+                  key={p.participantId}
+                  style={{
+                    padding: "1.2rem",
+                    backgroundColor: isDark ? "#0f172a" : "#f8fafc",
+                    borderRadius: "16px",
+                    border: isDark ? "1px solid #334155" : "1px solid #e2e8f0",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+                    <div
+                      style={{
+                        width: "48px",
+                        height: "48px",
+                        borderRadius: "50%",
+                        backgroundColor: "#3b82f6",
+                        color: "#fff",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontWeight: 700,
+                        fontSize: "1.1rem",
+                      }}
+                    >
+                      {idx + 1}
+                    </div>
+                    <div>
+                      <p style={{ margin: 0, fontWeight: 600, fontSize: "1.05rem" }}>
+                        {p.nickname}
+                      </p>
+                      {p.isAnonymous && (
+                        <p style={{ margin: "0.3rem 0 0 0", fontSize: "0.8rem", opacity: 0.6 }}>
+                          🔐 Anonymous
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {isHost && p.participantId !== participantId && (
+                    <button
+                      onClick={() => handleKickPlayer(p.participantId, p.nickname)}
+                      style={{
+                        padding: "0.6rem 1.2rem",
+                        backgroundColor: "#ef4444",
+                        color: "#fff",
+                        border: "none",
+                        borderRadius: "10px",
+                        cursor: "pointer",
+                        fontWeight: 600,
+                      }}
+                      onMouseOver={(e) => (e.currentTarget.style.backgroundColor = "#dc2626")}
+                      onMouseOut={(e) => (e.currentTarget.style.backgroundColor = "#ef4444")}
+                    >
+                      Kick
+                    </button>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* Controls Panel */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+          {/* Game Info Card */}
+          <div
+            style={{
+              backgroundColor: isDark ? "#1e293b" : "#fff",
+              borderRadius: "20px",
+              padding: "2rem",
+              boxShadow: isDark
+                ? "0 10px 30px rgba(0,0,0,0.3)"
+                : "0 10px 30px rgba(0,0,0,0.08)",
+              border: isDark ? "1px solid #334155" : "1px solid #e2e8f0",
+            }}
+          >
+            <p style={{ margin: "0 0 1rem 0", fontSize: "0.95rem", opacity: 0.7 }}>📊 Thông tin trò chơi</p>
+            <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+              <div>
+                <p style={{ margin: "0 0 0.4rem 0", fontSize: "0.9rem", opacity: 0.7 }}>Số câu hỏi</p>
+                <p style={{ margin: 0, fontWeight: 700, fontSize: "1.1rem" }}>
+                  {gameInfo.totalQuestions} câu
+                </p>
+              </div>
+              <div>
+                <p style={{ margin: "0 0 0.4rem 0", fontSize: "0.9rem", opacity: 0.7 }}>Trạng thái</p>
+                <p style={{ margin: 0, fontWeight: 700, fontSize: "1.1rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                  <span style={{ color: "#10b981" }}>●</span> Đang chờ bắt đầu
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          {isHost ? (
+            <>
+              <button
+                onClick={handleStartGame}
+                disabled={isStarting || participants.length === 0}
+                style={{
+                  width: "100%",
+                  padding: "1.4rem",
+                  backgroundColor: isStarting || participants.length === 0 ? "#94a3b8" : "#10b981",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: "16px",
+                  fontSize: "1.2rem",
+                  fontWeight: 700,
+                  cursor: isStarting || participants.length === 0 ? "not-allowed" : "pointer",
+                  transition: "all 0.3s",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "0.75rem",
+                }}
+                onMouseOver={(e) =>
+                  !isStarting && participants.length > 0 && (e.currentTarget.style.backgroundColor = "#059669")
+                }
+                onMouseOut={(e) =>
+                  !isStarting && participants.length > 0 && (e.currentTarget.style.backgroundColor = "#10b981")
+                }
+              >
+                {isStarting ? (
+                  <>
+                    <span style={{ animation: "spin 1s linear infinite" }}>⚙️</span>
+                    Đang bắt đầu...
+                  </>
+                ) : (
+                  <>🎮 Bắt đầu trò chơi</>
+                )}
+              </button>
+
+              <button
+                onClick={handleCancelGame}
+                disabled={isCancelling}
+                style={{
+                  width: "100%",
+                  padding: "1rem",
+                  backgroundColor: "#ef4444",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: "16px",
+                  fontSize: "1rem",
+                  fontWeight: 600,
+                  cursor: isCancelling ? "not-allowed" : "pointer",
+                  opacity: isCancelling ? 0.6 : 1,
+                }}
+                onMouseOver={(e) => !isCancelling && (e.currentTarget.style.backgroundColor = "#dc2626")}
+                onMouseOut={(e) => !isCancelling && (e.currentTarget.style.backgroundColor = "#ef4444")}
+              >
+                {isCancelling ? "Đang hủy..." : "🚫 Hủy trò chơi"}
+              </button>
+            </>
+          ) : (
+            <>
+              <div
+                style={{
+                  backgroundColor: "#dbeafe",
+                  color: "#1e40af",
+                  padding: "2rem",
+                  borderRadius: "16px",
+                  textAlign: "center",
+                  border: "1px solid #93c5fd",
+                }}
+              >
+                <p style={{ margin: "0 0 0.75rem 0", fontSize: "2rem" }}>⏳</p>
+                <p style={{ margin: 0, fontSize: "1.1rem", fontWeight: 600 }}>
+                  Đang chờ host bắt đầu trò chơi...
+                </p>
+              </div>
+
+              <button
+                onClick={handleLeaveGame}
+                disabled={isLeaving}
+                style={{
+                  width: "100%",
+                  padding: "1.2rem",
+                  backgroundColor: "#64748b",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: "16px",
+                  fontSize: "1rem",
+                  fontWeight: 600,
+                  cursor: isLeaving ? "not-allowed" : "pointer",
+                  opacity: isLeaving ? 0.6 : 1,
+                }}
+                onMouseOver={(e) => !isLeaving && (e.currentTarget.style.backgroundColor = "#475569")}
+                onMouseOut={(e) => !isLeaving && (e.currentTarget.style.backgroundColor = "#64748b")}
+              >
+                {isLeaving ? "Đang rời..." : "👋 Rời phòng chơi"}
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
+     
     </div>
   );
 };

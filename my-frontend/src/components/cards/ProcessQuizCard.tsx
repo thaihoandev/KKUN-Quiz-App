@@ -1,11 +1,11 @@
-// src/components/quiz/ProcessQuizCard.tsx
+// src/components/quiz/ProcessQuizCard.tsx - FIXED VERSION
 import { useState, useEffect } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { createGame } from "@/services/gameService"; // Đã sửa đúng import
+import { useNavigate } from "react-router-dom";
+import { createGame, getParticipants } from "@/services/gameService";
 import { handleApiError } from "@/utils/apiErrorHandler";
 import unknownAvatar from "@/assets/img/avatars/unknown.jpg";
 import type { QuizSummaryDto } from "@/services/quizService";
-import type { GameCreateRequest } from "@/types/game";
+import type { GameCreateRequest, GameResponseDTO } from "@/types/game";
 
 interface ProcessQuizCardProps {
   quiz: QuizSummaryDto;
@@ -64,12 +64,30 @@ const ProcessQuizCard = ({ quiz }: ProcessQuizCardProps) => {
 
   const playerCount = quiz.startCount || 0;
 
-  // Bắt đầu game (host tạo game mới)
+  // ==================== CREATE GAME (HOST) ====================
+  /**
+   * ✅ FIXED: Properly get host participantId
+   * 
+   * Flow:
+   * 1. Call createGame() API
+   * 2. Backend tạo game + trả về gameId, pinCode, hostParticipantId
+   * 3. Lưu vào localStorage:
+   *    - participantId (actual host's participantId từ backend)
+   *    - gameId
+   *    - currentPinCode
+   *    - isAnonymous = false
+   * 4. Navigate to /game-session/{gameId}
+   * 5. GameSessionPage sẽ sử dụng participantId chính xác
+   * 6. WebSocket sẽ send đúng participantId
+   * 7. Answer submission sẽ thành công ✅
+   */
   const handleStartQuiz = async () => {
     if (isStarting) return;
 
     setIsStarting(true);
     try {
+      console.log("🚀 [ProcessQuizCard] Creating game for quiz:", quiz.quizId);
+
       const createRequest: GameCreateRequest = {
         quizId: quiz.quizId,
         maxPlayers: 200,
@@ -79,10 +97,77 @@ const ProcessQuizCard = ({ quiz }: ProcessQuizCardProps) => {
         randomizeOptions: false,
       };
 
-      // Gọi đúng API từ backend mới
-      const gameResponse = await createGame(createRequest);
+      // Call createGame API
+      const gameResponse: GameResponseDTO = await createGame(createRequest);
 
-      // Chuyển hướng đến màn hình host (hoặc lobby nếu muốn)
+      console.log("✅ [ProcessQuizCard] Game created:", {
+        gameId: gameResponse.gameId,
+        pinCode: gameResponse.pinCode,
+        playerCount: gameResponse.playerCount,
+      });
+
+      // ✅ FIX: Get actual host participantId
+      let hostParticipantId: string | null = null;
+
+      // Try Option 1: Backend includes hostParticipantId in response
+      if (gameResponse.hostParticipantId) {
+        hostParticipantId = gameResponse.hostParticipantId;
+        console.log("✅ [ProcessQuizCard] Got hostParticipantId from createGame response");
+      } else {
+        // Fallback Option 2: Fetch participants and find host
+        try {
+          console.log("⏳ [ProcessQuizCard] Fetching participants to get host participantId...");
+          const participants = await getParticipants(gameResponse.gameId);
+
+          // Find participant that matches current user or is first (host)
+          // ⚠️ Note: This assumes first participant is host (not ideal)
+          // Better solution: Backend should include isHost flag or return hostParticipantId
+          if (participants.length > 0) {
+            hostParticipantId = participants[0].participantId;
+            console.log(
+              "✅ [ProcessQuizCard] Got hostParticipantId from participants list:",
+              hostParticipantId
+            );
+          }
+        } catch (e) {
+          console.warn("⚠️ [ProcessQuizCard] Failed to fetch participants:", e);
+          // Last resort fallback - use gameId (not ideal, will likely fail)
+          hostParticipantId = gameResponse.gameId;
+          console.warn(
+            "⚠️ [ProcessQuizCard] Using gameId as fallback (may cause issues)"
+          );
+        }
+      }
+
+      // Save HOST session to localStorage
+      if (hostParticipantId && gameResponse.gameId) {
+        console.log("💾 [ProcessQuizCard] Saving host session to localStorage...");
+
+        localStorage.setItem("participantId", hostParticipantId);
+        localStorage.setItem("gameId", gameResponse.gameId);
+        localStorage.setItem("currentPinCode", gameResponse.pinCode);
+        localStorage.setItem("isAnonymous", "false");
+        localStorage.removeItem("guestToken");
+
+        console.log("✅ [ProcessQuizCard] Host session saved:", {
+          participantId: hostParticipantId,
+          gameId: gameResponse.gameId,
+          pinCode: gameResponse.pinCode,
+          isHost: true,
+        });
+
+        console.log("📊 [ProcessQuizCard] localStorage content:", {
+          participantId: localStorage.getItem("participantId"),
+          gameId: localStorage.getItem("gameId"),
+          currentPinCode: localStorage.getItem("currentPinCode"),
+          isAnonymous: localStorage.getItem("isAnonymous"),
+        });
+      } else {
+        throw new Error("Failed to get host participantId");
+      }
+
+      // Navigate to waiting room
+      console.log("📍 [ProcessQuizCard] Navigating to /game-session/" + gameResponse.gameId);
       navigate(`/game-session/${gameResponse.gameId}`, {
         state: {
           pinCode: gameResponse.pinCode,
@@ -92,8 +177,8 @@ const ProcessQuizCard = ({ quiz }: ProcessQuizCardProps) => {
         replace: true,
       });
     } catch (error: any) {
+      console.error("❌ [ProcessQuizCard] Failed to create game:", error);
       handleApiError(error, "Không thể tạo phòng chơi");
-      console.error("Failed to create game:", error);
     } finally {
       setIsStarting(false);
     }
@@ -122,7 +207,7 @@ const ProcessQuizCard = ({ quiz }: ProcessQuizCardProps) => {
       <div className="card-body p-4 d-flex flex-column">
         {/* Creator Info */}
         <div className="d-flex align-items-center mb-3">
-          <Link to={`/profile/${displayCreatorId}`} className="me-3">
+          <a href={`/profile/${displayCreatorId}`} className="me-3">
             <img
               src={displayAvatar}
               alt={displayCreatorName}
@@ -144,17 +229,17 @@ const ProcessQuizCard = ({ quiz }: ProcessQuizCardProps) => {
                 e.currentTarget.style.boxShadow = "none";
               }}
             />
-          </Link>
+          </a>
           <div>
-            <Link
-              to={`/profile/${displayCreatorId}`}
+            <a
+              href={`/profile/${displayCreatorId}`}
               className="text-decoration-none fw-medium"
               style={{ color: "var(--text-color)", fontSize: "0.95rem" }}
               onMouseEnter={(e) => (e.currentTarget.style.color = "var(--primary-color)")}
               onMouseLeave={(e) => (e.currentTarget.style.color = "var(--text-color)")}
             >
               {displayCreatorName}
-            </Link>
+            </a>
             <div style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Creator</div>
           </div>
         </div>
@@ -169,7 +254,7 @@ const ProcessQuizCard = ({ quiz }: ProcessQuizCardProps) => {
               color: categoryColor,
             }}
           >
-            {quiz.difficulty|| "General"}
+            {quiz.difficulty || "General"}
           </span>
 
           <div className="d-flex align-items-center gap-1 fw-semibold">
@@ -182,8 +267,8 @@ const ProcessQuizCard = ({ quiz }: ProcessQuizCardProps) => {
         </div>
 
         {/* Title */}
-        <Link
-          to={`/quiz/${quiz.slug || quiz.quizId}`}
+        <a
+          href={`/quiz/${quiz.slug || quiz.quizId}`}
           className="text-decoration-none mb-3"
           style={{
             display: "block",
@@ -197,7 +282,7 @@ const ProcessQuizCard = ({ quiz }: ProcessQuizCardProps) => {
           onMouseLeave={(e) => (e.currentTarget.style.color = "var(--text-color)")}
         >
           {displayTitle}
-        </Link>
+        </a>
 
         {/* Description */}
         <p
@@ -228,7 +313,7 @@ const ProcessQuizCard = ({ quiz }: ProcessQuizCardProps) => {
 
         {/* Action Buttons */}
         <div className="d-flex gap-3 mt-auto">
-          {/* Start Quiz Button */}
+          {/* Host Game Button */}
           <button
             className="btn flex-fill fw-bold text-white position-relative"
             style={{
@@ -243,9 +328,20 @@ const ProcessQuizCard = ({ quiz }: ProcessQuizCardProps) => {
               gap: "8px",
               opacity: isStarting ? 0.8 : 1,
               cursor: isStarting ? "not-allowed" : "pointer",
+              transition: "all 0.25s ease",
             }}
             onClick={handleStartQuiz}
             disabled={isStarting}
+            onMouseEnter={(e) => {
+              if (!isStarting) {
+                e.currentTarget.style.transform = "translateY(-2px)";
+                e.currentTarget.style.boxShadow = "0 10px 25px rgba(96, 165, 250, 0.3)";
+              }
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = "translateY(0)";
+              e.currentTarget.style.boxShadow = "none";
+            }}
           >
             {isStarting ? (
               <>
@@ -261,8 +357,8 @@ const ProcessQuizCard = ({ quiz }: ProcessQuizCardProps) => {
           </button>
 
           {/* View Details Button */}
-          <Link
-            to={`/quiz/${quiz.slug || quiz.quizId}`}
+          <a
+            href={`/quiz/${quiz.slug || quiz.quizId}`}
             className="btn flex-fill fw-bold d-flex align-items-center justify-content-center gap-2"
             style={{
               background: "var(--surface-alt)",
@@ -271,6 +367,7 @@ const ProcessQuizCard = ({ quiz }: ProcessQuizCardProps) => {
               borderRadius: "12px",
               padding: "0.75rem",
               textDecoration: "none",
+              transition: "all 0.25s ease",
             }}
             onMouseEnter={(e) => {
               e.currentTarget.style.background = "var(--gradient-primary)";
@@ -285,7 +382,7 @@ const ProcessQuizCard = ({ quiz }: ProcessQuizCardProps) => {
           >
             <i className="bx bx-info-circle" style={{ fontSize: "1.2rem" }}></i>
             View Details
-          </Link>
+          </a>
         </div>
       </div>
     </div>

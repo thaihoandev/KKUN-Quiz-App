@@ -1,46 +1,83 @@
+// ==================== OptionDTO.java ====================
 package com.kkunquizapp.QuizAppBackend.game.dto;
 
 import lombok.*;
 
 import java.util.UUID;
 
+/**
+ * ✅ FIXED: Added 'type' field for type discrimination
+ */
 @Getter
 @Setter
-@Builder(toBuilder = true)   // QUAN TRỌNG: thêm toBuilder = true
+@Builder(toBuilder = true)
 @NoArgsConstructor
 @AllArgsConstructor
 public class OptionDTO {
 
+    // === CORE FIELDS ===
     private UUID optionId;
-    private String text;
-    private String imageUrl;
+    private String type;                    // ✅ ADDED: Question type (SINGLE_CHOICE, MULTIPLE_CHOICE, etc)
     private Integer orderIndex;
-    private String matchKey;
     private String explanation;
 
-    // === Dành cho các loại câu hỏi đặc biệt ===
-    private String leftItem;           // Matching
-    private String rightItem;          // Matching
-    private String item;               // Ordering, Ranking
-    private Integer correctPosition;   // Ordering (đã thêm)
+    // === SINGLE_CHOICE / MULTIPLE_CHOICE / TRUE_FALSE / IMAGE_SELECTION ===
+    private String text;
+    private String imageUrl;
+    private String imageLabel;
+    private String thumbnailUrl;
 
-    private String draggableItem;      // Drag & Drop
-    private String dropZoneId;         // Drag & Drop
-    private String dropZoneLabel;      // Drag & Drop
-    private String dragImageUrl;       // Drag & Drop
+    // === FILL_IN_THE_BLANK ===
+    private String correctAnswer;
+    private Boolean caseInsensitive;
 
-    private String hotspotCoordinates; // Hotspot
-    private String hotspotLabel;       // Hotspot
+    // === MATCHING ===
+    private String leftItem;
+    private String rightItem;
 
-    private String imageLabel;         // Image Selection
-    private String thumbnailUrl;       // Image Selection
+    // === ORDERING ===
+    private String item;
+    private Integer correctPosition;
 
-    private String correctAnswer;      // Fill-in-the-blank, Short Answer
-    private Boolean caseInsensitive;   // Fill-in-the-blank (đã thêm Boolean)
+    // === RANKING ===
+    private String rankableItem;
+    private Integer correctRank;
+    private Integer rankingScale;
 
-    // === Chỉ dùng khi reveal đáp án đúng (QUESTION_ENDED) ===
-    private Boolean correct;           // true/false/null
+    // === DRAG_DROP ===
+    private String draggableItem;
+    private String dropZoneId;
+    private String dropZoneLabel;
+    private String dragImageUrl;
 
-    // === Extra data (nếu cần mở rộng sau này) ===
+    // === HOTSPOT ===
+    private String hotspotCoordinates;
+    private String hotspotLabel;
+
+    // === SHORT_ANSWER ===
+    private String expectedAnswer;
+
+    // === ESSAY ===
+    private Integer minWords;
+    private Integer maxWords;
+    private String sampleAnswer;
+
+    // === DROPDOWN ===
+    private String dropdownValue;
+    private String displayLabel;
+    private String placeholder;
+
+    // === MATRIX ===
+    private String rowId;
+    private String columnId;
+    private String rowLabel;
+    private String columnLabel;
+    private String cellValue;
+
+    // === REVEAL ANSWER (chỉ sau khi QUESTION_ENDED) ===
+    private Boolean correct;
+
+    // === EXTRA ===
     private String extraData;
+    private String matchKey;  // Keep for backward compatibility
 }

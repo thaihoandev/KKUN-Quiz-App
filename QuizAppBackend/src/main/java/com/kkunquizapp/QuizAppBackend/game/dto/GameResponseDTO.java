@@ -19,6 +19,7 @@ public class GameResponseDTO {
     private GameStatus status;
     private String quizTitle;
     private String quizThumbnail;
+    private String hostParticipantId;
     private String hostNickname;
     private int playerCount;
     private int maxPlayers;

@@ -83,17 +83,6 @@ export interface PlayerRequestDTO {
     score: number;
 }
 
-// Định nghĩa interface cho PlayerResponseDTO
-export interface PlayerResponseDTO {
-    playerId: string;
-    gameId: string;
-    userId?: string | null;
-    nickname: string;
-    score: number;
-    anonymous: boolean;
-    inGame: boolean;
-}
-
 // Định nghĩa interface cho GameResponseDTO
 export interface GameResponseDTO {
     gameId: string;

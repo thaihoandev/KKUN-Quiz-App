@@ -16,6 +16,7 @@ import java.util.UUID;
 public class OptionResponseDTO {
     private UUID optionId;
     private String text;
+    private String type;
     private String imageUrl;
     private Boolean correct; // Use Boolean (wrapper) to allow null when hiding answers
     private String matchKey;

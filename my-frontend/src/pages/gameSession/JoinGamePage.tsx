@@ -1,391 +1,689 @@
 // src/pages/JoinGamePage.tsx
-"use client";
-
-import React, { useEffect, useState } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { toast } from "react-toastify";
+import { useState, useEffect } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import {
   joinGameAuthenticated,
   joinGameAnonymous,
-  getSavedParticipantId,
-  saveParticipantSession,
-  clearParticipantSession,
+  getGameByPin,
 } from "@/services/gameService";
-import { useAuthStore } from "@/store/authStore";
-import { webSocketService } from "@/services/webSocketService";
+import { setWebSocketGuestToken, setWebSocketToken } from "@/services/webSocketService";
+import { handleApiError } from "@/utils/apiErrorHandler";
+import type { GameResponseDTO } from "@/types/game";
 
-// ==================== HOOK ====================
-
-function useJoinGameLogic() {
-  const { pinCode: pinFromParam } = useParams<{ pinCode?: string }>();
-  const [searchParams] = useSearchParams();
+const JoinGamePage = () => {
   const navigate = useNavigate();
+  const { pinCode: routePinCode } = useParams();
 
-  const [pinCode, setPinCode] = useState<string>("");
-  const [nickname, setNickname] = useState<string>("");
-  const [error, setError] = useState<string | null>(null);
-  const [isJoining, setIsJoining] = useState<boolean>(false);
+  // State
+  const [step, setStep] = useState<"enter-code" | "enter-nickname" | "loading">(
+    routePinCode ? "enter-nickname" : "enter-code"
+  );
+  const [pinCode, setPinCode] = useState(routePinCode || "");
+  const [nickname, setNickname] = useState("");
+  const [gameInfo, setGameInfo] = useState<GameResponseDTO | null>(null);
+  const [error, setError] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [isDark, setIsDark] = useState(false);
 
-  // Get PIN from URL or localStorage
+  // Current auth state
+  const [isAuthenticated] = useState(
+    !!localStorage.getItem("authToken") || !!localStorage.getItem("accessToken")
+  );
+
+  // Detect dark mode
   useEffect(() => {
-    const pinFromQuery = searchParams.get("pin") || "";
-    const pinFromStorage = localStorage.getItem("currentPinCode") || "";
-    const finalPin = pinFromParam || pinFromQuery || pinFromStorage || "";
+    const checkDarkMode = () => {
+      setIsDark(document.body.classList.contains("dark-mode"));
+    };
+    checkDarkMode();
+    const observer = new MutationObserver(checkDarkMode);
+    observer.observe(document.body, { attributes: true, attributeFilter: ["class"] });
+    return () => observer.disconnect();
+  }, []);
 
-    if (finalPin) {
-      setPinCode(finalPin);
-    }
-  }, [pinFromParam, searchParams]);
-
-  // Restore saved nickname
+  // Load game info if PIN provided via route
   useEffect(() => {
-    const saved = localStorage.getItem("nickname") || "";
-    if (saved) {
-      setNickname(saved);
+    if (routePinCode && step === "enter-nickname" && !gameInfo) {
+      validateAndFetchGame(routePinCode);
     }
   }, []);
 
-  // Check for existing session - redirect if already in a game
-  useEffect(() => {
-    const savedParticipantId = getSavedParticipantId();
-    const savedGameId = localStorage.getItem("currentGameId");
+  // Validate PIN and fetch game info
+  const validateAndFetchGame = async (code: string) => {
+    setError("");
+    const trimmedCode = code.trim();
 
-    if (savedParticipantId && savedGameId) {
-      console.log("Existing session detected, redirecting to game...", savedGameId);
-      navigate(`/game-session/${savedGameId}`, { replace: true });
-    }
-  }, [navigate]);
-
-  /**
-   * Join game - Player only (not host)
-   * Host creates game via QuizSubCard → goes directly to WaitingRoomSessionPage
-   */
-  const handleJoinGame = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-
-    const trimmedPin = pinCode.trim();
-    const trimmedNickname = nickname.trim();
-
-    // Validation
-    if (!trimmedPin) {
+    if (!trimmedCode) {
       setError("Please enter a room code");
-      return;
+      return false;
     }
 
-    if (trimmedPin.length !== 6) {
+    if (trimmedCode.length !== 6 || !/^\d{6}$/.test(trimmedCode)) {
       setError("Room code must be exactly 6 digits");
-      return;
+      return false;
     }
+
+    setIsLoading(true);
+
+    try {
+      const game = await getGameByPin(trimmedCode);
+      if (!game || !game.gameId) {
+        setError("Room code not found. Please check and try again.");
+        return false;
+      }
+
+      setGameInfo(game);
+      setPinCode(trimmedCode);
+      setStep("enter-nickname");
+      return true;
+    } catch (err: any) {
+      console.error("Failed to fetch game info:", err);
+      setError(
+        err.response?.data?.message ||
+          "Room not found. Please check the code and try again."
+      );
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleEnterCode = async () => {
+    await validateAndFetchGame(pinCode);
+  };
+
+  const handleKeyDownCode = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !isLoading && pinCode.length === 6) {
+      handleEnterCode();
+    }
+  };
+
+  // Join game
+  const handleJoinGame = async (anonymous: boolean) => {
+    setError("");
+    const trimmedNickname = nickname.trim();
 
     if (!trimmedNickname) {
       setError("Please enter a nickname");
       return;
     }
 
-    if (trimmedNickname.length > 20) {
-      setError("Nickname must be 20 characters or less");
+    if (trimmedNickname.length < 2) {
+      setError("Nickname must be at least 2 characters");
       return;
     }
 
-    setIsJoining(true);
+    if (trimmedNickname.length > 30) {
+      setError("Nickname must be less than 30 characters");
+      return;
+    }
+
+    setIsLoading(true);
+    setStep("loading");
 
     try {
-      const token = useAuthStore.getState().accessToken;
+      const joinRequest = { nickname: trimmedNickname };
+
       let participant;
-
-      // Join as authenticated user or anonymous
-      if (token) {
-        console.log("Joining as authenticated player...");
-        participant = await joinGameAuthenticated(trimmedPin, {
-          nickname: trimmedNickname,
-        });
+      if (anonymous) {
+        participant = await joinGameAnonymous(pinCode, joinRequest);
+        // Set guest token for anonymous users
+        if (participant.guestToken) {
+          localStorage.setItem("guestToken", participant.guestToken);
+          setWebSocketGuestToken(participant.guestToken);
+        }
       } else {
-        console.log("Joining as anonymous player...");
-        participant = await joinGameAnonymous(trimmedPin, {
-          nickname: trimmedNickname,
-        });
+        participant = await joinGameAuthenticated(pinCode, joinRequest);
+        // Set auth token for authenticated users
+        const authToken = localStorage.getItem("authToken") || localStorage.getItem("accessToken");
+        if (authToken) {
+          setWebSocketToken(authToken);
+        }
       }
 
-      // CRITICAL: Validate response
-      if (
-        !participant ||
-        !participant.participantId ||
-        !participant.gameId
-      ) {
-        console.error("Invalid participant response:", participant);
-        throw new Error("Invalid server response. Please try again.");
+      // Save participant session
+      if (participant.participantId) {
+        localStorage.setItem("participantId", participant.participantId);
+        localStorage.setItem("isAnonymous", String(anonymous));
+        localStorage.setItem("gameId", gameInfo?.gameId || "");
+        localStorage.setItem("currentPinCode", pinCode);
       }
 
-      // Save session
-      saveParticipantSession(participant.participantId, participant.isAnonymous);
-      localStorage.setItem("currentGameId", participant.gameId);
-      localStorage.setItem("currentPinCode", trimmedPin);
-      localStorage.setItem("nickname", participant.nickname || trimmedNickname);
-
-      console.log("Successfully joined game:", {
-        gameId: participant.gameId,
+      console.log("✅ Successfully joined game", {
         participantId: participant.participantId,
-        isHost: false,
-        isAnonymous: participant.isAnonymous,
+        gameId: gameInfo?.gameId,
+        isAnonymous: anonymous,
       });
 
-      // Setup WebSocket connection
-      webSocketService.joinGameRoom(participant.gameId);
-
-      toast.success(`Joined game! Room: ${trimmedPin}`);
-
-      // Navigate to waiting room as PLAYER (not host)
-      navigate(`/game-session/${participant.gameId}`, {
-        replace: true,
+      // Navigate to waiting room
+      navigate(`/game-session/${gameInfo?.gameId}`, {
         state: {
           participantId: participant.participantId,
-          gameId: participant.gameId,
-          nickname: participant.nickname || trimmedNickname,
-          pinCode: trimmedPin,
-          isHost: false, // ← IMPORTANT: Player is NOT host
-          isAnonymous: participant.isAnonymous,
-          joinedAt: new Date().toISOString(),
+          pinCode: pinCode,
+          nickname: trimmedNickname,
+          isAnonymous: anonymous,
         },
+        replace: true,
       });
     } catch (err: any) {
       console.error("Failed to join game:", err);
-
-      const errorMsg =
+      handleApiError(err, "Không thể tham gia phòng");
+      setError(
         err.response?.data?.message ||
-        err.message ||
-        "Failed to join room. Please check the code and try again.";
-
-      setError(errorMsg);
-      toast.error(errorMsg);
-
-      // Clear invalid session
-      clearParticipantSession();
-      localStorage.removeItem("currentGameId");
+          "Failed to join game. Please try again."
+      );
+      setStep("enter-nickname");
     } finally {
-      setIsJoining(false);
+      setIsLoading(false);
     }
   };
 
-  return {
-    pinCode,
-    setPinCode,
-    nickname,
-    setNickname,
-    error,
-    setError,
-    isJoining,
-    handleJoinGame,
+  const handleGoBack = () => {
+    setStep("enter-code");
+    setPinCode("");
+    setNickname("");
+    setGameInfo(null);
+    setError("");
   };
-}
 
-// ==================== COMPONENT ====================
+  const handleKeyDownNickname = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !isLoading && nickname.trim().length >= 2) {
+      handleJoinGame(isAuthenticated ? false : true);
+    }
+  };
 
-/**
- * JoinGamePage - For PLAYERS to join an existing game
- *
- * Flow:
- * 1. Player gets room code (from PIN or QR)
- * 2. Player enters nickname
- * 3. Player joins game as PARTICIPANT (not host)
- * 4. Redirected to WaitingRoomSessionPage (player view)
- *
- * Note: Host does NOT use this page
- * Host flow: QuizSubCard → createGame → WaitingRoomSessionPage (host view)
- */
-const JoinGamePage: React.FC = () => {
-  const {
-    pinCode,
-    setPinCode,
-    nickname,
-    setNickname,
-    error,
-    isJoining,
-    handleJoinGame,
-  } = useJoinGameLogic();
-
-  const navigate = useNavigate();
-
-  const showPinInput = !pinCode;
+  // ==================== RENDER ====================
 
   return (
     <div
-      className="min-vh-100 d-flex align-items-center justify-content-center px-3"
       style={{
-        background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+        minHeight: "100vh",
+        background: "var(--bg-color)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "2rem 1rem",
       }}
     >
-      <div className="w-100" style={{ maxWidth: 520 }}>
-        {/* Card */}
-        <div className="card border-0 shadow-lg rounded-4 overflow-hidden">
-          {/* Header */}
+      <div
+        style={{
+          width: "100%",
+          maxWidth: "480px",
+          background: "var(--surface-color)",
+          borderRadius: "20px",
+          border: "2px solid var(--border-color)",
+          padding: "3rem 2rem",
+          boxShadow: "0 20px 60px rgba(0, 0, 0, 0.15)",
+          animation: "slideInUp 0.4s ease forwards",
+        }}
+      >
+        {/* Header */}
+        <div style={{ textAlign: "center", marginBottom: "2.5rem" }}>
           <div
-            className="text-center text-white py-5"
             style={{
-              background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+              fontSize: "3rem",
+              marginBottom: "1rem",
+              background: "var(--gradient-primary)",
+              WebkitBackgroundClip: "text",
+              WebkitTextFillColor: "transparent",
             }}
           >
-            <h1 className="display-5 fw-bold mb-2">
-              <i className="bx bx-joystick-alt me-3"></i>
-              KKun Quiz
-            </h1>
-            <p className="lead mb-0 opacity-90">
-              {showPinInput
-                ? "Enter room code to join a game"
-                : "Choose your nickname and join!"}
+            <i className="bx bx-game"></i>
+          </div>
+          <h1
+            style={{
+              fontSize: "1.8rem",
+              fontWeight: 700,
+              marginBottom: "0.5rem",
+              color: "var(--text-color)",
+            }}
+          >
+            {step === "enter-code" ? "Join Game" : "Enter Your Name"}
+          </h1>
+          <p style={{ color: "var(--text-muted)", fontSize: "0.95rem" }}>
+            {step === "enter-code"
+              ? "Enter the room code to join a quiz game"
+              : `Joining as ${isAuthenticated ? "Authenticated User" : "Guest"}`}
+          </p>
+        </div>
+
+        {/* Step 1: Enter Code */}
+        {step === "enter-code" && (
+          <div style={{ animation: "fadeIn 0.3s ease" }}>
+            <div style={{ marginBottom: "2rem" }}>
+              <label
+                style={{
+                  display: "block",
+                  marginBottom: "0.75rem",
+                  fontSize: "0.95rem",
+                  fontWeight: 600,
+                  color: "var(--text-color)",
+                }}
+              >
+                Room Code
+              </label>
+              <input
+                type="text"
+                placeholder="000000"
+                value={pinCode}
+                onChange={(e) => {
+                  const value = e.target.value.replace(/\D/g, "").slice(0, 6);
+                  setPinCode(value);
+                }}
+                onKeyDown={handleKeyDownCode}
+                disabled={isLoading}
+                maxLength={6}
+                style={{
+                  width: "100%",
+                  padding: "1rem",
+                  fontSize: "1.5rem",
+                  fontWeight: 600,
+                  textAlign: "center",
+                  letterSpacing: "8px",
+                  borderRadius: "12px",
+                  border: "2px solid var(--border-color)",
+                  backgroundColor: "var(--surface-alt)",
+                  color: "var(--text-color)",
+                  transition: "all 0.25s ease",
+                  boxSizing: "border-box",
+                }}
+                onFocus={(e) => {
+                  e.currentTarget.style.borderColor = "var(--primary-color)";
+                  e.currentTarget.style.boxShadow = "0 0 0 4px rgba(96, 165, 250, 0.15)";
+                }}
+                onBlur={(e) => {
+                  e.currentTarget.style.borderColor = "var(--border-color)";
+                  e.currentTarget.style.boxShadow = "none";
+                }}
+              />
+            </div>
+
+            {error && (
+              <div
+                style={{
+                  padding: "1rem",
+                  marginBottom: "1.5rem",
+                  borderRadius: "12px",
+                  backgroundColor: "rgba(239, 68, 68, 0.15)",
+                  borderLeft: "4px solid var(--danger-color)",
+                  color: "var(--danger-color)",
+                  fontSize: "0.9rem",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.75rem",
+                  animation: "slideInDown 0.3s ease",
+                }}
+              >
+                <i className="bx bx-error-circle" style={{ fontSize: "1.2rem" }}></i>
+                <span>{error}</span>
+              </div>
+            )}
+
+            <button
+              onClick={handleEnterCode}
+              disabled={isLoading || pinCode.length !== 6}
+              style={{
+                width: "100%",
+                padding: "1rem",
+                fontSize: "1rem",
+                fontWeight: 700,
+                borderRadius: "12px",
+                border: "none",
+                background: pinCode.length === 6 ? "var(--gradient-primary)" : "var(--surface-alt)",
+                color: pinCode.length === 6 ? "white" : "var(--text-muted)",
+                cursor: pinCode.length === 6 && !isLoading ? "pointer" : "not-allowed",
+                transition: "all 0.25s ease",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "0.75rem",
+                opacity: isLoading ? 0.7 : 1,
+              }}
+              onMouseEnter={(e) => {
+                if (pinCode.length === 6 && !isLoading) {
+                  e.currentTarget.style.transform = "translateY(-2px)";
+                  e.currentTarget.style.boxShadow = "0 10px 25px rgba(96, 165, 250, 0.3)";
+                }
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = "translateY(0)";
+                e.currentTarget.style.boxShadow = "none";
+              }}
+            >
+              {isLoading ? (
+                <>
+                  <span className="spinner-border spinner-border-sm"></span>
+                  Verifying...
+                </>
+              ) : (
+                <>
+                  <i className="bx bx-right-arrow-circle"></i>
+                  Next
+                </>
+              )}
+            </button>
+
+            <p
+              style={{
+                marginTop: "1.5rem",
+                fontSize: "0.85rem",
+                color: "var(--text-muted)",
+                textAlign: "center",
+              }}
+            >
+              Get the code from the host or check the displayed QR code
             </p>
           </div>
+        )}
 
-          {/* Body */}
-          <div className="card-body p-4 p-md-5">
-            <form
-              onSubmit={handleJoinGame}
-              className="needs-validation"
-              noValidate
+        {/* Step 2: Enter Nickname */}
+        {step === "enter-nickname" && gameInfo && (
+          <div style={{ animation: "fadeIn 0.3s ease" }}>
+            {/* Game Info Card */}
+            <div
+              style={{
+                marginBottom: "2rem",
+                padding: "1.5rem",
+                borderRadius: "12px",
+                backgroundColor: "var(--surface-alt)",
+                border: "1px solid var(--border-color)",
+              }}
             >
-              {/* PIN Code Input - only show if not provided */}
-              {showPinInput && (
-                <div className="mb-4">
-                  <label htmlFor="pinCode" className="form-label fw-semibold">
-                    <i className="bx bx-key me-2"></i>
-                    Room Code
-                  </label>
-                  <input
-                    type="text"
-                    className="form-control form-control-lg text-center rounded-4"
-                    id="pinCode"
-                    placeholder="123456"
-                    value={pinCode}
-                    onChange={(e) => {
-                      // Only allow digits, max 6
-                      const value = e.target.value
-                        .replace(/\D/g, "")
-                        .slice(0, 6);
-                      setPinCode(value);
-                    }}
-                    inputMode="numeric"
-                    maxLength={6}
-                    required
-                    disabled={isJoining}
-                    style={{
-                      fontSize: "2rem",
-                      letterSpacing: "8px",
-                      fontWeight: 600,
-                    }}
-                  />
-                  <div className="form-text text-center mt-2">
-                    <i className="bx bx-info-circle me-1"></i>
-                    Ask your friend or scan the QR code to get the room code
-                  </div>
-                </div>
-              )}
-
-              {/* Nickname Input */}
-              <div className="mb-4">
-                <label htmlFor="nickname" className="form-label fw-semibold">
-                  <i className="bx bx-user me-2"></i>
-                  Your Nickname
-                </label>
-                <input
-                  type="text"
-                  className="form-control form-control-lg rounded-4"
-                  id="nickname"
-                  placeholder="E.g. ProGamer123"
-                  value={nickname}
-                  onChange={(e) => setNickname(e.target.value.slice(0, 20))}
-                  maxLength={20}
-                  required
-                  disabled={isJoining}
-                />
-                <div className="form-text">
-                  {nickname.length}/20 characters. We'll remember it next time!
-                </div>
+              <h3
+                style={{
+                  fontSize: "0.9rem",
+                  fontWeight: 600,
+                  textTransform: "uppercase",
+                  color: "var(--text-muted)",
+                  marginBottom: "0.75rem",
+                }}
+              >
+                Game Details
+              </h3>
+              <p
+                style={{
+                  fontSize: "1.2rem",
+                  fontWeight: 700,
+                  color: "var(--text-color)",
+                  marginBottom: "0.5rem",
+                }}
+              >
+                {gameInfo.quizTitle}
+              </p>
+              <p style={{ fontSize: "0.9rem", color: "var(--text-muted)", marginBottom: "0.75rem" }}>
+                Host: <strong>{gameInfo.hostNickname}</strong>
+              </p>
+              <div
+                style={{
+                  display: "flex",
+                  gap: "1rem",
+                  fontSize: "0.85rem",
+                  color: "var(--text-muted)",
+                }}
+              >
+                <span>
+                  <i className="bx bx-group"></i> {gameInfo.playerCount}/{gameInfo.maxPlayers} Players
+                </span>
+                <span>
+                  <i className="bx bx-book-open"></i> {gameInfo.totalQuestions} Questions
+                </span>
               </div>
+            </div>
 
-              {/* Error Alert */}
-              {error && (
-                <div
-                  className="alert alert-danger d-flex align-items-center rounded-4 mb-4"
-                  role="alert"
-                >
-                  <i className="bx bx-error-circle fs-5 me-2 flex-shrink-0"></i>
-                  <div>{error}</div>
-                </div>
-              )}
+            {/* Nickname Input */}
+            <div style={{ marginBottom: "2rem" }}>
+              <label
+                style={{
+                  display: "block",
+                  marginBottom: "0.75rem",
+                  fontSize: "0.95rem",
+                  fontWeight: 600,
+                  color: "var(--text-color)",
+                }}
+              >
+                Your Nickname
+              </label>
+              <input
+                type="text"
+                placeholder="Enter your name"
+                value={nickname}
+                onChange={(e) => setNickname(e.target.value)}
+                onKeyDown={handleKeyDownNickname}
+                disabled={isLoading}
+                maxLength={30}
+                style={{
+                  width: "100%",
+                  padding: "0.875rem 1rem",
+                  fontSize: "1rem",
+                  borderRadius: "12px",
+                  border: "2px solid var(--border-color)",
+                  backgroundColor: "var(--surface-alt)",
+                  color: "var(--text-color)",
+                  transition: "all 0.25s ease",
+                  boxSizing: "border-box",
+                }}
+                onFocus={(e) => {
+                  e.currentTarget.style.borderColor = "var(--primary-color)";
+                  e.currentTarget.style.boxShadow = "0 0 0 4px rgba(96, 165, 250, 0.15)";
+                }}
+                onBlur={(e) => {
+                  e.currentTarget.style.borderColor = "var(--border-color)";
+                  e.currentTarget.style.boxShadow = "none";
+                }}
+              />
+              <p
+                style={{
+                  fontSize: "0.75rem",
+                  color: "var(--text-muted)",
+                  marginTop: "0.5rem",
+                }}
+              >
+                {nickname.length}/30 characters
+              </p>
+            </div>
 
-              {/* Buttons */}
-              <div className="d-grid gap-3">
-                {/* Join Button */}
-                <button
-                  type="submit"
-                  className="btn btn-lg rounded-4 text-white fw-bold"
-                  style={{
-                    background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-                    padding: "1rem",
-                    fontSize: "1.1rem",
-                    opacity: isJoining || nickname.length === 0 ? 0.7 : 1,
-                  }}
-                  disabled={isJoining || nickname.length === 0}
-                  title={
-                    nickname.length === 0
-                      ? "Please enter a nickname"
-                      : "Join the game room"
+            {error && (
+              <div
+                style={{
+                  padding: "1rem",
+                  marginBottom: "1.5rem",
+                  borderRadius: "12px",
+                  backgroundColor: "rgba(239, 68, 68, 0.15)",
+                  borderLeft: "4px solid var(--danger-color)",
+                  color: "var(--danger-color)",
+                  fontSize: "0.9rem",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.75rem",
+                  animation: "slideInDown 0.3s ease",
+                }}
+              >
+                <i className="bx bx-error-circle" style={{ fontSize: "1.2rem" }}></i>
+                <span>{error}</span>
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div style={{ display: "flex", gap: "1rem" }}>
+              <button
+                onClick={handleGoBack}
+                disabled={isLoading}
+                style={{
+                  flex: 1,
+                  padding: "0.875rem",
+                  fontSize: "0.95rem",
+                  fontWeight: 600,
+                  borderRadius: "12px",
+                  border: "2px solid var(--border-color)",
+                  background: "transparent",
+                  color: "var(--text-color)",
+                  cursor: isLoading ? "not-allowed" : "pointer",
+                  transition: "all 0.25s ease",
+                  opacity: isLoading ? 0.5 : 1,
+                }}
+                onMouseEnter={(e) => {
+                  if (!isLoading) {
+                    e.currentTarget.style.background = "var(--surface-alt)";
+                    e.currentTarget.style.borderColor = "var(--primary-color)";
                   }
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "transparent";
+                  e.currentTarget.style.borderColor = "var(--border-color)";
+                }}
+              >
+                <i className="bx bx-left-arrow-circle"></i> Back
+              </button>
+
+              {isAuthenticated ? (
+                <button
+                  onClick={() => handleJoinGame(false)}
+                  disabled={isLoading || nickname.trim().length < 2}
+                  style={{
+                    flex: 1,
+                    padding: "0.875rem",
+                    fontSize: "0.95rem",
+                    fontWeight: 700,
+                    borderRadius: "12px",
+                    border: "none",
+                    background:
+                      nickname.trim().length >= 2 && !isLoading
+                        ? "var(--gradient-primary)"
+                        : "var(--surface-alt)",
+                    color: nickname.trim().length >= 2 && !isLoading ? "white" : "var(--text-muted)",
+                    cursor:
+                      nickname.trim().length >= 2 && !isLoading ? "pointer" : "not-allowed",
+                    transition: "all 0.25s ease",
+                    opacity: isLoading ? 0.7 : 1,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "0.5rem",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (nickname.trim().length >= 2 && !isLoading) {
+                      e.currentTarget.style.transform = "translateY(-2px)";
+                      e.currentTarget.style.boxShadow = "0 10px 25px rgba(96, 165, 250, 0.3)";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = "translateY(0)";
+                    e.currentTarget.style.boxShadow = "none";
+                  }}
                 >
-                  {isJoining ? (
+                  {isLoading ? (
                     <>
-                      <span
-                        className="spinner-border spinner-border-sm me-2"
-                        role="status"
-                        aria-hidden="true"
-                      ></span>
-                      Joining room...
+                      <span className="spinner-border spinner-border-sm"></span>
+                      Joining...
                     </>
                   ) : (
                     <>
-                      <i
-                        className="bx bx-log-in-circle me-2"
-                        style={{ fontSize: "1.4rem" }}
-                      ></i>
-                      Join Game
+                      <i className="bx bx-log-in-circle"></i>
+                      Join
                     </>
                   )}
                 </button>
-
-                {/* Back Button */}
+              ) : (
                 <button
-                  type="button"
-                  className="btn btn-lg btn-outline-secondary rounded-4 fw-bold"
-                  onClick={() => navigate("/")}
-                  disabled={isJoining}
-                  title="Go back to home"
+                  onClick={() => handleJoinGame(true)}
+                  disabled={isLoading || nickname.trim().length < 2}
+                  style={{
+                    flex: 1,
+                    padding: "0.875rem",
+                    fontSize: "0.95rem",
+                    fontWeight: 700,
+                    borderRadius: "12px",
+                    border: "none",
+                    background:
+                      nickname.trim().length >= 2 && !isLoading
+                        ? "var(--gradient-primary)"
+                        : "var(--surface-alt)",
+                    color: nickname.trim().length >= 2 && !isLoading ? "white" : "var(--text-muted)",
+                    cursor:
+                      nickname.trim().length >= 2 && !isLoading ? "pointer" : "not-allowed",
+                    transition: "all 0.25s ease",
+                    opacity: isLoading ? 0.7 : 1,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "0.5rem",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (nickname.trim().length >= 2 && !isLoading) {
+                      e.currentTarget.style.transform = "translateY(-2px)";
+                      e.currentTarget.style.boxShadow = "0 10px 25px rgba(96, 165, 250, 0.3)";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = "translateY(0)";
+                    e.currentTarget.style.boxShadow = "none";
+                  }}
                 >
-                  <i className="bx bx-home me-2"></i>
-                  Back to Home
+                  {isLoading ? (
+                    <>
+                      <span className="spinner-border spinner-border-sm"></span>
+                      Joining...
+                    </>
+                  ) : (
+                    <>
+                      <i className="bx bx-ghost"></i>
+                      Join as Guest
+                    </>
+                  )}
                 </button>
-              </div>
-            </form>
-          </div>
-
-          {/* Footer hint */}
-          {!showPinInput && (
-            <div className="bg-light px-4 py-3 text-center border-top">
-              <small className="text-muted d-flex align-items-center justify-content-center gap-2">
-                <i className="bx bx-check-shield"></i>
-                Joining room <strong>{pinCode}</strong> as a player
-              </small>
+              )}
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
-        {/* Bottom tip */}
-        <div className="text-center text-white mt-4 opacity-75">
-          <small>
-            <i className="bx bx-bulb me-1"></i>
-            Tip: Keep your nickname to remember your score!
-          </small>
-        </div>
+        {/* Loading State */}
+        {step === "loading" && (
+          <div style={{ textAlign: "center", padding: "3rem 0" }}>
+            <div
+              style={{
+                fontSize: "3rem",
+                marginBottom: "1.5rem",
+                animation: "spin 1s linear infinite",
+              }}
+            >
+              <i className="bx bx-loader"></i>
+            </div>
+            <p style={{ color: "var(--text-muted)", fontSize: "1rem" }}>
+              Joining game...
+            </p>
+          </div>
+        )}
       </div>
+
+      <style>{`
+        @keyframes slideInUp {
+          from {
+            opacity: 0;
+            transform: translateY(30px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        @keyframes slideInDown {
+          from {
+            opacity: 0;
+            transform: translateY(-10px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
     </div>
   );
 };
