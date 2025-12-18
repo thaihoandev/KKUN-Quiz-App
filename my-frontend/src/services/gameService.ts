@@ -278,7 +278,6 @@ export const submitAnswer = (
     participantId: string,
     answer: any
 ): void => {
-    logWSOperation("SUBMIT_ANSWER", { gameId, participantId });
     webSocketService.submitAnswer(gameId, participantId, answer);
 };
 
@@ -288,7 +287,6 @@ export const submitAnswer = (
  * @param participantId - Participant skipping
  */
 export const skipQuestion = (gameId: string, participantId: string): void => {
-    logWSOperation("SKIP_QUESTION", { gameId, participantId });
     webSocketService.skipQuestion(gameId, participantId);
 };
 
@@ -310,7 +308,6 @@ export const requestLeaderboard = (
     gameId: string,
     participantId: string
 ): void => {
-    logWSOperation("REQUEST_LEADERBOARD", { gameId });
     webSocketService.requestLeaderboard(gameId, participantId);
 };
 
@@ -323,7 +320,6 @@ export const requestParticipants = (
     gameId: string,
     participantId: string
 ): void => {
-    logWSOperation("REQUEST_PARTICIPANTS", { gameId });
     webSocketService.requestParticipants(gameId, participantId);
 };
 
@@ -337,7 +333,6 @@ export const requestGameDetails = (
     gameId: string,
     participantId: string
 ): void => {
-    logWSOperation("REQUEST_GAME_DETAILS", { gameId });
     webSocketService.requestGameDetails(gameId, participantId);
 };
 
@@ -351,7 +346,6 @@ export const requestGameStatistics = (
     gameId: string,
     participantId: string
 ): void => {
-    logWSOperation("REQUEST_GAME_STATISTICS", { gameId });
     webSocketService.requestGameStatistics(gameId, participantId);
 };
 
@@ -364,7 +358,6 @@ export const requestFinalLeaderboard = (
     gameId: string,
     participantId: string
 ): void => {
-    logWSOperation("REQUEST_FINAL_LEADERBOARD", { gameId });
     webSocketService.requestFinalLeaderboard(gameId, participantId);
 };
 
@@ -378,7 +371,6 @@ export const requestCurrentQuestion = (
     gameId: string,
     participantId: string
 ): void => {
-    logWSOperation("REQUEST_CURRENT_QUESTION", { gameId });
     webSocketService.requestCurrentQuestion(gameId, participantId);
 };
 

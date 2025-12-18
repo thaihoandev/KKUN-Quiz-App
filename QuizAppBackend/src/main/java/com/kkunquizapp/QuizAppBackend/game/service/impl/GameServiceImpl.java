@@ -671,6 +671,7 @@ public class GameServiceImpl implements GameService {
     }
 
     private AnswerResultDTO doSubmitAnswer(UUID gameId, UUID participantId, SubmitAnswerRequest request) {
+        // 1️⃣ Fetch Game
         Game game = gameRepository.findById(gameId)
                 .orElseThrow(() -> new GameNotFoundException("Game not found: " + gameId));
 
@@ -678,14 +679,28 @@ public class GameServiceImpl implements GameService {
             throw new GameException("Game is not in progress");
         }
 
+        // 2️⃣ Fetch Participant
         GameParticipant participant = participantRepository.findById(participantId)
                 .orElseThrow(() -> new GameException("Participant not found"));
 
         validateParticipantAccess(game, participant);
 
-        Question question = questionRepository.findById(game.getCurrentQuestionId())
-                .orElseThrow(() -> new GameException("Current question not found"));
+        // ✅ 3️⃣ FIX: Get currentQuestionId from GAME (not from request)
+        UUID currentQuestionId = game.getCurrentQuestionId();
+        if (currentQuestionId == null) {
+            throw new GameException("No current question in progress");
+        }
 
+        // 4️⃣ Fetch Question with Options (eager load)
+        Question question = questionRepository.findByIdWithOptions(currentQuestionId)
+                .orElseThrow(() -> new GameException("Current question not found: " + currentQuestionId));
+
+        log.info("Question loaded: {} (type: {}, options: {})",
+                question.getQuestionId(),
+                question.getType(),
+                question.getOptions().size());
+
+        // 5️⃣ Check if already answered
         boolean alreadyAnswered = answerRepository.existsByGameAndParticipantAndQuestion(
                 game, participant, question
         );
@@ -693,11 +708,19 @@ public class GameServiceImpl implements GameService {
             throw new GameException("Already answered this question");
         }
 
+        // 6️⃣ Calculate response time
         long responseTime = Duration.between(game.getQuestionStartTime(), LocalDateTime.now()).toMillis();
         boolean isTimeout = responseTime > (question.getTimeLimitSeconds() * 1000L);
 
+        log.info("Response time: {}ms, timeout: {}, limit: {}s",
+                responseTime, isTimeout, question.getTimeLimitSeconds());
+
+        // ✅ 7️⃣ Grade answer using the loaded question with options
         AnswerGradingResult grading = gradeAnswer(question, request.getSubmittedAnswer());
 
+        log.info("Grading result: correct={}, answer={}", grading.correct(), grading.correctAnswer());
+
+        // 8️⃣ Calculate points
         int points = isTimeout ? 0 : calculatePoints(
                 grading.correct(),
                 question.getPoints(),
@@ -705,6 +728,7 @@ public class GameServiceImpl implements GameService {
                 question.getTimeLimitSeconds()
         );
 
+        // 9️⃣ Save answer
         UserAnswer answer = UserAnswer.builder()
                 .game(game)
                 .participant(participant)
@@ -722,13 +746,17 @@ public class GameServiceImpl implements GameService {
                 .build();
 
         answer = answerRepository.save(answer);
+        log.info("Answer saved: id={}, correct={}, points={}", answer.getAnswerId(), answer.isCorrect(), points);
 
+        // 🔟 Update participant stats
         recordParticipantStats(participant, answer);
         participant.updateScore(points);
         participantRepository.save(participant);
 
+        // 1️⃣1️⃣ Invalidate leaderboard cache
         invalidateLeaderboardCache(gameId);
 
+        // 1️⃣2️⃣ Build response DTO
         AnswerResultDTO result = AnswerResultDTO.builder()
                 .correct(grading.correct() && !isTimeout)
                 .pointsEarned(points)
@@ -738,8 +766,8 @@ public class GameServiceImpl implements GameService {
                 .explanation(question.getExplanation())
                 .build();
 
-        log.debug("Answer processed: correct={}, points={}, timeout={}",
-                grading.correct(), points, isTimeout);
+        log.info("Answer result: correct={}, points={}, score={}",
+                result.isCorrect(), result.getPointsEarned(), result.getCurrentScore());
 
         return result;
     }
@@ -1221,104 +1249,609 @@ public class GameServiceImpl implements GameService {
 
     // ==================== GRADING LOGIC ====================
 
+    // ✅ COMPLETE GRADING LOGIC FOR ALL 14 QUESTION TYPES
+
     private AnswerGradingResult gradeAnswer(Question question, Object submittedAnswer) {
         try {
+            // Ensure options are loaded
+            if (question.getOptions() == null || question.getOptions().isEmpty()) {
+                Hibernate.initialize(question.getOptions());
+            }
+
+            log.info("Grading {} question: {}, submitted: {}",
+                    question.getType(), question.getQuestionId(), submittedAnswer);
+
             return switch (question.getType()) {
                 case SINGLE_CHOICE -> gradeSingleChoice(question, submittedAnswer);
                 case MULTIPLE_CHOICE -> gradeMultipleChoice(question, submittedAnswer);
                 case TRUE_FALSE -> gradeTrueFalse(question, submittedAnswer);
                 case FILL_IN_THE_BLANK -> gradeFillInBlank(question, submittedAnswer);
-                default -> new AnswerGradingResult(false, "Unsupported question type");
+                case SHORT_ANSWER -> gradeShortAnswer(question, submittedAnswer);
+                case ESSAY -> gradeEssay(question, submittedAnswer);
+                case MATCHING -> gradeMatching(question, submittedAnswer);
+                case ORDERING -> gradeOrdering(question, submittedAnswer);
+                case DRAG_DROP -> gradeDragDrop(question, submittedAnswer);
+                case HOTSPOT -> gradeHotspot(question, submittedAnswer);
+                case IMAGE_SELECTION -> gradeImageSelection(question, submittedAnswer);
+                case DROPDOWN -> gradeDropdown(question, submittedAnswer);
+                case MATRIX -> gradeMatrix(question, submittedAnswer);
+                case RANKING -> gradeRanking(question, submittedAnswer);
+                default -> {
+                    log.warn("Unsupported question type: {}", question.getType());
+                    yield new AnswerGradingResult(false, "Unsupported question type");
+                }
             };
         } catch (Exception e) {
             log.error("Grading error for question {}: {}", question.getQuestionId(), e.getMessage(), e);
-            return new AnswerGradingResult(false, "Grading failed");
+            return new AnswerGradingResult(false, "Grading failed: " + e.getMessage());
         }
     }
 
+    // ==================== 1. SINGLE CHOICE ====================
     private AnswerGradingResult gradeSingleChoice(Question question, Object answer) {
-        UUID selectedId;
+        try {
+            UUID selectedId;
+            if (answer instanceof String) {
+                selectedId = UUID.fromString((String) answer);
+            } else if (answer instanceof UUID) {
+                selectedId = (UUID) answer;
+            } else {
+                throw new IllegalArgumentException("Invalid answer type for single choice");
+            }
 
-        if (answer instanceof String) {
-            selectedId = UUID.fromString((String) answer);
-        } else if (answer instanceof UUID) {
-            selectedId = (UUID) answer;
-        } else {
-            throw new IllegalArgumentException("Invalid answer type: " + answer.getClass());
-        }
-
-        List<String> correctTexts = question.getOptions().stream()
-                .filter(Option::isCorrect)
-                .map(this::getOptionDisplayText) // ← Hàm mới
-                .toList();
-
-        boolean isCorrect = question.getOptions().stream()
-                .filter(Option::isCorrect)
-                .map(Option::getOptionId)
-                .anyMatch(id -> id.equals(selectedId));
-
-        String correctAnswerDisplay = correctTexts.isEmpty()
-                ? "Không có đáp án đúng"
-                : String.join(", ", correctTexts);
-
-        return new AnswerGradingResult(isCorrect, correctAnswerDisplay);
-    }
-
-    private AnswerGradingResult gradeMultipleChoice(Question question, Object answer) {
-        List<UUID> selectedIds;
-
-        if (answer instanceof List<?>) {
-            selectedIds = ((List<?>) answer).stream()
-                    .map(id -> id instanceof String ? UUID.fromString((String) id) : (UUID) id)
+            List<String> correctTexts = question.getOptions().stream()
+                    .filter(Option::isCorrect)
+                    .map(this::getOptionDisplayText)
                     .toList();
-        } else {
-            throw new IllegalArgumentException("Invalid answer type for multiple choice");
+
+            boolean isCorrect = question.getOptions().stream()
+                    .filter(Option::isCorrect)
+                    .map(Option::getOptionId)
+                    .anyMatch(id -> id.equals(selectedId));
+
+            String correctAnswer = correctTexts.isEmpty()
+                    ? "Không có đáp án đúng"
+                    : String.join(", ", correctTexts);
+
+            return new AnswerGradingResult(isCorrect, correctAnswer);
+        } catch (Exception e) {
+            log.error("Error grading single choice: {}", e.getMessage());
+            return new AnswerGradingResult(false, "Lỗi khi chấm điểm");
         }
-
-        List<String> correctTexts = question.getOptions().stream()
-                .filter(Option::isCorrect)
-                .map(this::getOptionDisplayText)
-                .toList();
-
-        Set<UUID> correctIdSet = question.getOptions().stream()
-                .filter(Option::isCorrect)
-                .map(Option::getOptionId)
-                .collect(Collectors.toSet());
-
-        boolean isCorrect = new HashSet<>(selectedIds).equals(correctIdSet);
-
-        String correctAnswerDisplay = correctTexts.isEmpty()
-                ? "Không có đáp án đúng"
-                : String.join(", ", correctTexts);
-
-        return new AnswerGradingResult(isCorrect, correctAnswerDisplay);
     }
 
+    // ==================== 2. MULTIPLE CHOICE ====================
+    private AnswerGradingResult gradeMultipleChoice(Question question, Object answer) {
+        try {
+            List<UUID> selectedIds;
+
+            if (answer instanceof List<?>) {
+                selectedIds = ((List<?>) answer).stream()
+                        .map(id -> id instanceof String ? UUID.fromString((String) id) : (UUID) id)
+                        .toList();
+            } else {
+                throw new IllegalArgumentException("Invalid answer type for multiple choice");
+            }
+
+            List<String> correctTexts = question.getOptions().stream()
+                    .filter(Option::isCorrect)
+                    .map(this::getOptionDisplayText)
+                    .toList();
+
+            Set<UUID> correctIdSet = question.getOptions().stream()
+                    .filter(Option::isCorrect)
+                    .map(Option::getOptionId)
+                    .collect(Collectors.toSet());
+
+            boolean isCorrect = new HashSet<>(selectedIds).equals(correctIdSet);
+
+            String correctAnswer = correctTexts.isEmpty()
+                    ? "Không có đáp án đúng"
+                    : String.join(", ", correctTexts);
+
+            return new AnswerGradingResult(isCorrect, correctAnswer);
+        } catch (Exception e) {
+            log.error("Error grading multiple choice: {}", e.getMessage());
+            return new AnswerGradingResult(false, "Lỗi khi chấm điểm");
+        }
+    }
+
+    // ==================== 3. TRUE/FALSE ====================
     private AnswerGradingResult gradeTrueFalse(Question question, Object answer) {
-        boolean submitted;
+        try {
+            boolean submitted;
 
-        if (answer instanceof Boolean) {
-            submitted = (Boolean) answer;
-        } else if (answer instanceof String) {
-            submitted = Boolean.parseBoolean((String) answer);
-        } else {
-            throw new IllegalArgumentException("Invalid answer type for true/false");
+            if (answer instanceof Boolean) {
+                submitted = (Boolean) answer;
+            } else if (answer instanceof String) {
+                submitted = Boolean.parseBoolean((String) answer) ||
+                        ((String) answer).equalsIgnoreCase("true");
+            } else {
+                throw new IllegalArgumentException("Invalid answer type for true/false");
+            }
+
+            // Get correct answer from first option's correct flag
+            boolean correctValue = question.getOptions().stream()
+                    .findFirst()
+                    .map(Option::isCorrect)
+                    .orElse(false);
+
+            boolean isCorrect = submitted == correctValue;
+            String correctAnswer = correctValue ? "Đúng" : "Sai";
+
+            return new AnswerGradingResult(isCorrect, correctAnswer);
+        } catch (Exception e) {
+            log.error("Error grading true/false: {}", e.getMessage());
+            return new AnswerGradingResult(false, "Lỗi khi chấm điểm");
         }
-
-        boolean correct = question.getOptions().get(0).isCorrect();
-        boolean isCorrect = submitted == correct;
-
-        return new AnswerGradingResult(isCorrect, String.valueOf(correct));
     }
 
+    private AnswerGradingResult gradeShortAnswer(Question question, Object answer) {
+        try {
+            String submitted = String.valueOf(answer).trim();
+
+            ShortAnswerOption sao = (ShortAnswerOption) question.getOptions().get(0);
+            String expected = sao.getExpectedAnswer().trim();
+
+            // Case sensitivity
+            boolean caseSensitive = !sao.isCaseInsensitive();
+            String submittedCompare = caseSensitive ? submitted : submitted.toLowerCase();
+            String expectedCompare = caseSensitive ? expected : expected.toLowerCase();
+
+            // ✅ FIX: Basic match (contains OR exact match)
+            boolean isCorrect = submittedCompare.equals(expectedCompare) ||
+                    submittedCompare.contains(expectedCompare);
+
+            // Check required keywords - ✅ FIX: Parse from JSON string
+            String requiredKeywordsJson = sao.getRequiredKeywords();
+            if (isCorrect && requiredKeywordsJson != null && !requiredKeywordsJson.isEmpty() && !requiredKeywordsJson.equals("[]")) {
+                List<String> requiredKeywords = gameMapper.parseJsonArray(requiredKeywordsJson);
+                for (int i = 0; i < requiredKeywords.size(); i++) {
+                    String keyword = requiredKeywords.get(i);
+                    String keywordCompare = caseSensitive ? keyword : keyword.toLowerCase();
+                    if (!submittedCompare.contains(keywordCompare)) {
+                        isCorrect = false;
+                        break;
+                    }
+                }
+            }
+
+            return new AnswerGradingResult(isCorrect, expected);
+        } catch (Exception e) {
+            log.error("Error grading short answer: {}", e.getMessage());
+            return new AnswerGradingResult(false, "Lỗi khi chấm điểm");
+        }
+    }
+
+    // ==================== FIX FILL IN THE BLANK GRADING ====================
     private AnswerGradingResult gradeFillInBlank(Question question, Object answer) {
-        String submitted = ((String) answer).trim().toLowerCase();
-        String correct = question.getOptions().get(0).getText().trim().toLowerCase();
+        try {
+            String submitted = String.valueOf(answer).trim();
 
-        boolean isCorrect = submitted.equals(correct);
-        return new AnswerGradingResult(isCorrect, correct);
+            FillInTheBlankOption fbo = (FillInTheBlankOption) question.getOptions().get(0);
+            String expected = fbo.getCorrectAnswer().trim();
+
+            // Check case sensitivity
+            boolean caseSensitive = !fbo.isCaseInsensitive();
+            String submittedCompare = caseSensitive ? submitted : submitted.toLowerCase();
+            String expectedCompare = caseSensitive ? expected : expected.toLowerCase();
+
+            boolean isCorrect = submittedCompare.equals(expectedCompare);
+
+            // Check accepted variations if provided - ✅ FIX: Parse from JSON string
+            String acceptedVariationsJson = fbo.getAcceptedVariations();
+            if (!isCorrect && acceptedVariationsJson != null && !acceptedVariationsJson.isEmpty() && !acceptedVariationsJson.equals("[]")) {
+                List<String> acceptedVariations = gameMapper.parseJsonArray(acceptedVariationsJson);
+                for (int i = 0; i < acceptedVariations.size(); i++) {
+                    String variation = acceptedVariations.get(i);
+                    String variationCompare = caseSensitive ? variation : variation.toLowerCase();
+                    if (submittedCompare.equals(variationCompare)) {
+                        isCorrect = true;
+                        break;
+                    }
+                }
+            }
+
+            return new AnswerGradingResult(isCorrect, expected);
+        } catch (Exception e) {
+            log.error("Error grading fill in the blank: {}", e.getMessage());
+            return new AnswerGradingResult(false, "Lỗi khi chấm điểm");
+        }
     }
 
+
+    // ==================== 6. ESSAY ====================
+    private AnswerGradingResult gradeEssay(Question question, Object answer) {
+        try {
+            String submitted = String.valueOf(answer).trim();
+            EssayOption eo = (EssayOption) question.getOptions().get(0);
+
+            // Validate word count
+            // ✅ FIX: Proper word splitting
+            String[] words = submitted.split("\\s+");
+            int wordCount = words.length > 0 && !words[0].isEmpty() ? words.length : 0;
+
+            Integer minWords = eo.getMinWords();
+            Integer maxWords = eo.getMaxWords();
+
+            int minWordsVal = minWords != null ? minWords : 0;
+            int maxWordsVal = maxWords != null ? maxWords : Integer.MAX_VALUE;
+
+            boolean isCorrect = wordCount >= minWordsVal && wordCount <= maxWordsVal && !submitted.isEmpty();
+
+            String samplePreview = eo.getSampleAnswer() != null
+                    ? eo.getSampleAnswer().substring(0, Math.min(50, eo.getSampleAnswer().length())) + "..."
+                    : "Không có";
+
+            String correctAnswer = String.format(
+                    "Bài luận hợp lệ (%d-%d từ). Mẫu: %s",
+                    minWordsVal, maxWordsVal, samplePreview
+            );
+
+            return new AnswerGradingResult(isCorrect, correctAnswer);
+        } catch (Exception e) {
+            log.error("Error grading essay: {}", e.getMessage());
+            return new AnswerGradingResult(false, "Lỗi khi chấm điểm");
+        }
+    }
+
+    // ==================== 7. MATCHING ====================
+    private AnswerGradingResult gradeMatching(Question question, Object answer) {
+        try {
+            if (!(answer instanceof Map)) {
+                return new AnswerGradingResult(false, "Định dạng ghép nối không hợp lệ");
+            }
+
+            Map<?, ?> submitted = (Map<?, ?>) answer;
+            List<String> correctMappings = new ArrayList<>();
+            int totalPairs = 0;
+            int correctCount = 0;
+
+            for (Option opt : question.getOptions()) {
+                if (opt instanceof MatchingOption) {
+                    totalPairs++;
+                    MatchingOption mo = (MatchingOption) opt;
+                    String expectedRightItem = mo.getRightItem();
+                    String optionIdStr = mo.getOptionId().toString();
+
+                    Object submittedValue = submitted.get(optionIdStr);
+
+                    if (submittedValue != null) {
+                        // ✅ FIX: Find the right item text from the selected option
+                        String submittedRightText = null;
+                        for (Option searchOpt : question.getOptions()) {
+                            if (searchOpt instanceof MatchingOption) {
+                                MatchingOption searchMo = (MatchingOption) searchOpt;
+                                if (searchMo.getOptionId().toString().equals(submittedValue.toString())) {
+                                    submittedRightText = searchMo.getRightItem();
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (submittedRightText != null && expectedRightItem.equals(submittedRightText)) {
+                            correctCount++;
+                        }
+                    }
+
+                    correctMappings.add(mo.getLeftItem() + " → " + expectedRightItem);
+                }
+            }
+
+            boolean isCorrect = correctCount == totalPairs && totalPairs > 0;
+            String correctAnswer = String.join("; ", correctMappings);
+
+            return new AnswerGradingResult(isCorrect, correctAnswer);
+        } catch (Exception e) {
+            log.error("Error grading matching: {}", e.getMessage());
+            return new AnswerGradingResult(false, "Lỗi khi chấm điểm");
+        }
+    }
+
+
+    // ==================== 8. ORDERING ====================
+    private AnswerGradingResult gradeOrdering(Question question, Object answer) {
+        try {
+            if (!(answer instanceof List)) {
+                return new AnswerGradingResult(false, "Định dạng sắp xếp không hợp lệ");
+            }
+
+            List<?> submitted = (List<?>) answer;
+            List<Option> options = question.getOptions();
+
+            if (submitted.size() != options.size()) {
+                return new AnswerGradingResult(false, "Số lượng mục không khớp");
+            }
+
+            int correctCount = 0;
+            List<String> correctOrder = new ArrayList<>();
+
+            for (int i = 0; i < submitted.size(); i++) {
+                Object submittedId = submitted.get(i);
+
+                // ✅ FIX: Find expected option properly
+                OrderingOption expectedOption = null;
+                for (Option opt : options) {
+                    if (opt instanceof OrderingOption) {
+                        OrderingOption oo = (OrderingOption) opt;
+                        if (oo.getOptionId().toString().equals(submittedId.toString())) {
+                            expectedOption = oo;
+                            break;
+                        }
+                    }
+                }
+
+                if (expectedOption != null && expectedOption.getCorrectPosition() == (i + 1)) {
+                    correctCount++;
+                }
+            }
+
+            // Build correct answer
+            for (Option opt : options) {
+                if (opt instanceof OrderingOption) {
+                    OrderingOption oo = (OrderingOption) opt;
+                    correctOrder.add(oo.getItem());
+                }
+            }
+
+            boolean isCorrect = correctCount == options.size();
+            String correctAnswer = String.join(" → ", correctOrder);
+
+            return new AnswerGradingResult(isCorrect, correctAnswer);
+        } catch (Exception e) {
+            log.error("Error grading ordering: {}", e.getMessage());
+            return new AnswerGradingResult(false, "Lỗi khi chấm điểm");
+        }
+    }
+
+    // ==================== 9. DRAG & DROP ====================
+    private AnswerGradingResult gradeDragDrop(Question question, Object answer) {
+        try {
+            if (!(answer instanceof Map)) {
+                return new AnswerGradingResult(false, "Định dạng kéo thả không hợp lệ");
+            }
+
+            Map<?, ?> submitted = (Map<?, ?>) answer;
+
+            // ✅ FIX: Count total drag items properly
+            int totalItems = 0;
+            for (Option opt : question.getOptions()) {
+                if (opt instanceof DragDropOption) {
+                    totalItems++;
+                }
+            }
+
+            int correctCount = 0;
+            List<String> correctPlacements = new ArrayList<>();
+
+            for (Option opt : question.getOptions()) {
+                if (opt instanceof DragDropOption) {
+                    DragDropOption ddo = (DragDropOption) opt;
+                    String expectedZone = ddo.getDropZoneId();
+                    String optionIdStr = ddo.getOptionId().toString();
+
+                    Object submittedZone = submitted.get(optionIdStr);
+
+                    if (submittedZone != null && expectedZone.equals(submittedZone.toString())) {
+                        correctCount++;
+                    }
+
+                    correctPlacements.add(ddo.getDraggableItem() + " → " + expectedZone);
+                }
+            }
+
+            boolean isCorrect = correctCount == totalItems && totalItems > 0;
+            String correctAnswer = String.join("; ", correctPlacements);
+
+            return new AnswerGradingResult(isCorrect, correctAnswer);
+        } catch (Exception e) {
+            log.error("Error grading drag drop: {}", e.getMessage());
+            return new AnswerGradingResult(false, "Lỗi khi chấm điểm");
+        }
+    }
+
+    // ==================== 10. HOTSPOT ====================
+    private AnswerGradingResult gradeHotspot(Question question, Object answer) {
+        try {
+            if (!(answer instanceof Map)) {
+                return new AnswerGradingResult(false, "Định dạng hotspot không hợp lệ");
+            }
+
+            Map<?, ?> submitted = (Map<?, ?>) answer;
+            Integer submittedX = extractIntFromMap(submitted, "x");
+            Integer submittedY = extractIntFromMap(submitted, "y");
+
+            if (submittedX == null || submittedY == null) {
+                return new AnswerGradingResult(false, "Tọa độ không hợp lệ");
+            }
+
+            HotspotOption ho = (HotspotOption) question.getOptions().get(0);
+            String coords = ho.getHotspotCoordinates(); // Format: "x,y" or "x:y"
+
+            // ✅ FIX: Parse coordinates properly
+            String[] parts = coords.contains(",") ? coords.split(",") : coords.split(":");
+            if (parts.length < 2) {
+                return new AnswerGradingResult(false, "Tọa độ hotspot không hợp lệ");
+            }
+
+            int expectedX = Integer.parseInt(parts[0].trim());
+            int expectedY = Integer.parseInt(parts[1].trim());
+
+            // Allow ±10px tolerance
+            boolean isCorrect = Math.abs(submittedX - expectedX) <= 10 &&
+                    Math.abs(submittedY - expectedY) <= 10;
+
+            String correctAnswer = String.format("Tọa độ đúng: (%d, %d)", expectedX, expectedY);
+
+            return new AnswerGradingResult(isCorrect, correctAnswer);
+        } catch (Exception e) {
+            log.error("Error grading hotspot: {}", e.getMessage());
+            return new AnswerGradingResult(false, "Lỗi khi chấm điểm");
+        }
+    }
+
+    // ==================== 11. IMAGE SELECTION ====================
+    private AnswerGradingResult gradeImageSelection(Question question, Object answer) {
+        try {
+            UUID selectedId;
+            if (answer instanceof String) {
+                selectedId = UUID.fromString((String) answer);
+            } else if (answer instanceof UUID) {
+                selectedId = (UUID) answer;
+            } else {
+                throw new IllegalArgumentException("Invalid answer type for image selection");
+            }
+
+            List<String> correctTexts = question.getOptions().stream()
+                    .filter(Option::isCorrect)
+                    .filter(o -> o instanceof ImageSelectionOption)
+                    .map(o -> ((ImageSelectionOption) o).getImageLabel())
+                    .toList();
+
+            boolean isCorrect = question.getOptions().stream()
+                    .filter(Option::isCorrect)
+                    .map(Option::getOptionId)
+                    .anyMatch(id -> id.equals(selectedId));
+
+            String correctAnswer = correctTexts.isEmpty()
+                    ? "Không có hình ảnh đúng"
+                    : String.join(", ", correctTexts);
+
+            return new AnswerGradingResult(isCorrect, correctAnswer);
+        } catch (Exception e) {
+            log.error("Error grading image selection: {}", e.getMessage());
+            return new AnswerGradingResult(false, "Lỗi khi chấm điểm");
+        }
+    }
+
+    // ==================== 12. DROPDOWN ====================
+    private AnswerGradingResult gradeDropdown(Question question, Object answer) {
+        try {
+            UUID selectedId;
+            if (answer instanceof String) {
+                selectedId = UUID.fromString((String) answer);
+            } else if (answer instanceof UUID) {
+                selectedId = (UUID) answer;
+            } else {
+                throw new IllegalArgumentException("Invalid answer type for dropdown");
+            }
+
+            List<String> correctTexts = question.getOptions().stream()
+                    .filter(Option::isCorrect)
+                    .filter(o -> o instanceof DropdownOption)
+                    .map(o -> ((DropdownOption) o).getDisplayLabel())
+                    .toList();
+
+            boolean isCorrect = question.getOptions().stream()
+                    .filter(Option::isCorrect)
+                    .map(Option::getOptionId)
+                    .anyMatch(id -> id.equals(selectedId));
+
+            String correctAnswer = correctTexts.isEmpty()
+                    ? "Không có tùy chọn đúng"
+                    : String.join(", ", correctTexts);
+
+            return new AnswerGradingResult(isCorrect, correctAnswer);
+        } catch (Exception e) {
+            log.error("Error grading dropdown: {}", e.getMessage());
+            return new AnswerGradingResult(false, "Lỗi khi chấm điểm");
+        }
+    }
+
+    // ==================== 13. MATRIX ====================
+    private AnswerGradingResult gradeMatrix(Question question, Object answer) {
+        try {
+            if (!(answer instanceof String)) {
+                return new AnswerGradingResult(false, "Định dạng matrix không hợp lệ");
+            }
+
+            String submitted = (String) answer; // Format: "rowId-columnId"
+            String[] parts = submitted.split("-");
+            if (parts.length != 2) {
+                return new AnswerGradingResult(false, "Định dạng tọa độ không hợp lệ");
+            }
+
+            String submittedRow = parts[0];
+            String submittedCol = parts[1];
+
+            // ✅ FIX: Find correct cell properly
+            MatrixOption correctCell = null;
+            for (Option opt : question.getOptions()) {
+                if (opt instanceof MatrixOption) {
+                    MatrixOption mo = (MatrixOption) opt;
+                    if (mo.isCorrectCell()) {
+                        correctCell = mo;
+                        break;
+                    }
+                }
+            }
+
+            boolean isCorrect = false;
+            String correctAnswer = "Không có ô đúng";
+
+            if (correctCell != null) {
+                isCorrect = correctCell.getRowId().equals(submittedRow) &&
+                        correctCell.getColumnId().equals(submittedCol);
+                correctAnswer = String.format("%s - %s",
+                        correctCell.getRowLabel(),
+                        correctCell.getColumnLabel());
+            }
+
+            return new AnswerGradingResult(isCorrect, correctAnswer);
+        } catch (Exception e) {
+            log.error("Error grading matrix: {}", e.getMessage());
+            return new AnswerGradingResult(false, "Lỗi khi chấm điểm");
+        }
+    }
+
+
+    // ==================== 14. RANKING ====================
+    private AnswerGradingResult gradeRanking(Question question, Object answer) {
+        try {
+            if (!(answer instanceof Map)) {
+                return new AnswerGradingResult(false, "Định dạng xếp hạng không hợp lệ");
+            }
+
+            Map<?, ?> submitted = (Map<?, ?>) answer;
+            int correctCount = 0;
+            int totalItems = 0;
+            List<String> correctRankings = new ArrayList<>();
+
+            for (Option opt : question.getOptions()) {
+                if (opt instanceof RankingOption) {
+                    RankingOption ro = (RankingOption) opt;
+                    totalItems++;
+
+                    Object submittedRankObj = submitted.get(ro.getOptionId().toString());
+
+                    // ✅ FIX: Proper null check with Integer
+                    if (submittedRankObj != null) {
+                        try {
+                            int submittedRank = Integer.parseInt(submittedRankObj.toString());
+                            if (submittedRank == ro.getCorrectRank()) {
+                                correctCount++;
+                            }
+                        } catch (NumberFormatException e) {
+                            log.warn("Invalid rank value: {}", submittedRankObj);
+                        }
+                    }
+
+                    correctRankings.add(ro.getRankableItem() + " (#" + ro.getCorrectRank() + ")");
+                }
+            }
+
+            boolean isCorrect = correctCount == totalItems && totalItems > 0;
+            String correctAnswer = String.join("; ", correctRankings);
+
+            return new AnswerGradingResult(isCorrect, correctAnswer);
+        } catch (Exception e) {
+            log.error("Error grading ranking: {}", e.getMessage());
+            return new AnswerGradingResult(false, "Lỗi khi chấm điểm");
+        }
+    }
+
+
+    // ==================== HELPER METHODS ====================
     private int calculatePoints(boolean isCorrect, int basePoints, long responseTimeMs, int timeLimitSeconds) {
         if (!isCorrect) {
             return 0;
@@ -1327,25 +1860,52 @@ public class GameServiceImpl implements GameService {
         int points = basePoints;
         long timeLimitMs = timeLimitSeconds * 1000L;
 
+        // Bonus for fast correct answers
         if (responseTimeMs < timeLimitMs * 0.25) {
-            points = (int) (points * 1.2);
+            points = (int) (points * 1.2); // 20% bonus
         } else if (responseTimeMs < timeLimitMs * 0.5) {
-            points = (int) (points * 1.1);
+            points = (int) (points * 1.1); // 10% bonus
         }
 
-        return points;
+        return Math.max(0, points);
     }
-    // Hàm helper để lấy text hiển thị theo type option
+
     private String getOptionDisplayText(Option option) {
         return switch (option) {
             case SingleChoiceOption sco -> sco.getText();
             case MultipleChoiceOption mco -> mco.getText();
+            case TrueFalseOption tfo -> tfo.getText();
             case ImageSelectionOption iso -> iso.getImageLabel() != null ? iso.getImageLabel() : "Hình ảnh";
             case DropdownOption dro -> dro.getDisplayLabel() != null ? dro.getDisplayLabel() : dro.getDropdownValue();
-            case TrueFalseOption tfo -> tfo.getText(); // "True" hoặc "False"
             default -> "Đáp án";
         };
     }
+
+    private Integer extractIntFromMap(Map<?, ?> map, String key) {
+        Object val = null;
+        try {
+            val = map.get(key);
+
+            if (val == null) {
+                return null;
+            } else if (val instanceof Integer) {
+                return (Integer) val;
+            } else if (val instanceof Double) {
+                return ((Double) val).intValue();
+            } else if (val instanceof Long) {
+                return ((Long) val).intValue();
+            } else if (val instanceof String) {
+                return Integer.parseInt((String) val);
+            } else if (val instanceof Number) {
+                return ((Number) val).intValue();
+            }
+            return null;
+        } catch (NumberFormatException e) {
+            log.warn("Failed to parse integer from map key '{}': {}", key, val);
+            return null;
+        }
+    }
+
     // ==================== STATISTICS ====================
 
     private void calculateFinalStatistics(Game game) {

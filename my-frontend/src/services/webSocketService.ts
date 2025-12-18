@@ -769,7 +769,6 @@ export class WebSocketService {
             payload,
             participantId
         );
-        log.info("📤 Answer submitted");
     }
 
     /**
@@ -781,7 +780,6 @@ export class WebSocketService {
             {},
             participantId
         );
-        log.info("📤 Question skipped");
     }
 
     /**
@@ -805,7 +803,6 @@ export class WebSocketService {
             {},
             participantId
         );
-        log.debug("📡 Leaderboard requested");
     }
 
     /**
@@ -829,7 +826,6 @@ export class WebSocketService {
             {},
             participantId
         );
-        log.debug("📡 Game details requested");
     }
 
     /**
@@ -841,7 +837,6 @@ export class WebSocketService {
             {},
             participantId
         );
-        log.debug("📡 Game statistics requested");
     }
 
     /**
@@ -853,7 +848,6 @@ export class WebSocketService {
             {},
             participantId
         );
-        log.debug("📡 Final leaderboard requested");
     }
 
     /**

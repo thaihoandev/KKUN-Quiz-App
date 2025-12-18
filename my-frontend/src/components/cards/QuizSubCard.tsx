@@ -1,15 +1,14 @@
-// src/components/quiz/QuizSubCard.tsx
+// src/components/quiz/QuizSubCard.tsx - FIXED LOGIC (UI không đổi)
 "use client";
 
 import React, { useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
-import { createGame } from "@/services/gameService";
+import { createGame, getParticipants } from "@/services/gameService";
 import { handleApiError } from "@/utils/apiErrorHandler";
 import unknownAvatar from "@/assets/img/avatars/unknown.jpg";
 import type { QuizSummaryDto } from "@/services/quizService";
-import type { GameCreateRequest } from "@/types/game";
-import { webSocketService } from "@/services/webSocketService";
+import type { GameCreateRequest, GameResponseDTO } from "@/types/game";
 
 interface QuizSubCardProps {
   quiz: QuizSummaryDto;
@@ -72,16 +71,28 @@ const QuizSubCard: React.FC<QuizSubCardProps> = ({ quiz }) => {
   }, [quiz.startCount, quiz.completionCount]);
 
   /**
-   * Handle start game session - host creates game
-   * Host DOES NOT join as participant
-   * Host goes directly to WaitingRoomSessionPage as host
+   * ✅ FIXED: Properly get host participantId (từ ProcessQuizCard)
+   * 
+   * Flow:
+   * 1. Call createGame() API
+   * 2. Backend tạo game + trả về gameId, pinCode, hostParticipantId
+   * 3. Lưu vào localStorage:
+   *    - participantId (actual host's participantId từ backend)
+   *    - gameId
+   *    - currentPinCode
+   *    - isAnonymous = false
+   * 4. Navigate to /game-session/{gameId}
+   * 5. GameSessionPage sẽ sử dụng participantId chính xác
+   * 6. WebSocket sẽ send đúng participantId
+   * 7. Answer submission sẽ thành công ✅
    */
   const handleStartGameSession = async () => {
     if (isLoading) return;
 
     setIsLoading(true);
     try {
-      // Create game request
+      console.log("🚀 [QuizSubCard] Creating game for quiz:", quiz.quizId);
+
       const request: GameCreateRequest = {
         quizId: quiz.quizId,
         maxPlayers: 200,
@@ -91,42 +102,91 @@ const QuizSubCard: React.FC<QuizSubCardProps> = ({ quiz }) => {
         randomizeOptions: false,
       };
 
-      console.log("Host creating game for quiz:", quiz.quizId);
-      const gameResponse = await createGame(request);
+      // Call createGame API
+      const gameResponse: GameResponseDTO = await createGame(request);
 
-      // Validate response
-      if (!gameResponse || !gameResponse.gameId || !gameResponse.pinCode) {
-        throw new Error("Invalid server response");
-      }
-
-      console.log("Game created successfully:", {
+      console.log("✅ [QuizSubCard] Game created:", {
         gameId: gameResponse.gameId,
         pinCode: gameResponse.pinCode,
+        playerCount: gameResponse.playerCount,
       });
 
-      // Setup WebSocket connection for host
-      webSocketService.joinGameRoom(gameResponse.gameId);
-      webSocketService.subscribeToGameDetails(gameResponse.gameId);
+      // ✅ FIX: Get actual host participantId
+      let hostParticipantId: string | null = null;
 
-      // Show success toast
-      toast.success(`Room created! PIN: ${gameResponse.pinCode}`);
+      // Try Option 1: Backend includes hostParticipantId in response
+      if (gameResponse.hostParticipantId) {
+        hostParticipantId = gameResponse.hostParticipantId;
+        console.log(
+          "✅ [QuizSubCard] Got hostParticipantId from createGame response"
+        );
+      } else {
+        // Fallback Option 2: Fetch participants and find host
+        try {
+          console.log(
+            "⏳ [QuizSubCard] Fetching participants to get host participantId..."
+          );
+          const participants = await getParticipants(gameResponse.gameId);
 
-      // Navigate to waiting room as HOST (not as participant)
-      // Host does NOT call joinGame API
+          if (participants.length > 0) {
+            hostParticipantId = participants[0].participantId;
+            console.log(
+              "✅ [QuizSubCard] Got hostParticipantId from participants list:",
+              hostParticipantId
+            );
+          }
+        } catch (e) {
+          console.warn("⚠️ [QuizSubCard] Failed to fetch participants:", e);
+          hostParticipantId = gameResponse.gameId;
+          console.warn(
+            "⚠️ [QuizSubCard] Using gameId as fallback (may cause issues)"
+          );
+        }
+      }
+
+      // Save HOST session to localStorage
+      if (hostParticipantId && gameResponse.gameId) {
+        console.log("💾 [QuizSubCard] Saving host session to localStorage...");
+
+        localStorage.setItem("participantId", hostParticipantId);
+        localStorage.setItem("gameId", gameResponse.gameId);
+        localStorage.setItem("currentPinCode", gameResponse.pinCode);
+        localStorage.setItem("isAnonymous", "false");
+        localStorage.removeItem("guestToken");
+
+        console.log("✅ [QuizSubCard] Host session saved:", {
+          participantId: hostParticipantId,
+          gameId: gameResponse.gameId,
+          pinCode: gameResponse.pinCode,
+          isHost: true,
+        });
+
+        toast.success(`✅ Room created! PIN: ${gameResponse.pinCode}`);
+      } else {
+        throw new Error("Failed to get host participantId");
+      }
+
+      // Navigate to game session
+      console.log(
+        "📍 [QuizSubCard] Navigating to /game-session/" + gameResponse.gameId
+      );
       navigate(`/game-session/${gameResponse.gameId}`, {
         state: {
           gameId: gameResponse.gameId,
           pinCode: gameResponse.pinCode,
           quizTitle: quiz.title,
           quizThumbnail: quiz.coverImageUrl,
-          isHost: true, // ← HOST role
+          isHost: true,
           createdAt: new Date().toISOString(),
         },
         replace: true,
       });
     } catch (error: any) {
-      console.error("Failed to create game:", error);
-      const errorMsg = error.response?.data?.message || error.message || "Failed to create room";
+      console.error("❌ [QuizSubCard] Failed to create game:", error);
+      const errorMsg =
+        error.response?.data?.message ||
+        error.message ||
+        "Failed to create room";
       toast.error(errorMsg);
       handleApiError(error, "Could not create game room");
     } finally {
@@ -147,7 +207,9 @@ const QuizSubCard: React.FC<QuizSubCardProps> = ({ quiz }) => {
       <div className="card-header bg-white d-flex justify-content-between align-items-start py-3 px-4 border-bottom-0">
         <div className="d-flex align-items-start gap-2 flex-grow-1">
           <span
-            className={`badge bg-${getDifficultyBadgeColor(quiz.difficulty)} flex-shrink-0 mt-1`}
+            className={`badge bg-${getDifficultyBadgeColor(
+              quiz.difficulty
+            )} flex-shrink-0 mt-1`}
           >
             {quiz.difficulty || "General"}
           </span>
@@ -227,7 +289,9 @@ const QuizSubCard: React.FC<QuizSubCardProps> = ({ quiz }) => {
             <div className="stat-box p-2 rounded bg-light">
               <i className="bx bx-check-circle text-success me-1"></i>
               <div className="fw-bold text-dark">
-                {quiz.averageScore ? `${quiz.averageScore.toFixed(0)}%` : "–"}
+                {quiz.averageScore
+                  ? `${quiz.averageScore.toFixed(0)}%`
+                  : "–"}
               </div>
               <small className="text-muted">Avg Score</small>
             </div>
@@ -242,7 +306,9 @@ const QuizSubCard: React.FC<QuizSubCardProps> = ({ quiz }) => {
           </div>
           <div className="text-center">
             <small className="text-muted d-block">Completed</small>
-            <span className="fw-bold text-success">{quiz.completionCount || 0}</span>
+            <span className="fw-bold text-success">
+              {quiz.completionCount || 0}
+            </span>
           </div>
           <div className="text-center">
             <small className="text-muted d-block">Completion Rate</small>

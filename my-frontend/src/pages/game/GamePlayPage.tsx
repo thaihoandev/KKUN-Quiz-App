@@ -1143,6 +1143,8 @@ const AnswerResultRenderer: React.FC<AnswerResultRendererProps> = ({
   result,
   isDark,
 }) => {
+  console.log(result);
+  
   return (
     <div
       style={{
