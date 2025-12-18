@@ -83,6 +83,7 @@ const QuestionEditorCard: React.FC<QuestionEditorCardProps> = ({
 }) => {
   const navigate = useNavigate();
   const [deleting, setDeleting] = useState(false);
+  console.log(question);
 
   /**
    * Handle edit question

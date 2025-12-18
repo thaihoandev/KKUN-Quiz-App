@@ -766,7 +766,9 @@ export const clearParticipantSession = () => {
         localStorage.removeItem("participantId");
         localStorage.removeItem("guestToken");
         localStorage.removeItem("isAnonymous");
-        console.log("✅ Participant session cleared");
+        localStorage.removeItem("gameId");
+        localStorage.removeItem("currentPinCode");
+        console.log("✅ Participant session cleared completely");
     } catch (err) {
         console.error("Lỗi xóa session:", err);
     }

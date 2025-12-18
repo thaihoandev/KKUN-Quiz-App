@@ -13,6 +13,7 @@ import {
   requestGameStatistics,
   setupHostListeners,
   setupParticipantListeners,
+  clearParticipantSession,
 } from "@/services/gameService";
 import { webSocketService } from "@/services/webSocketService";
 import { handleApiError } from "@/utils/apiErrorHandler";
@@ -150,6 +151,7 @@ const GamePlayPage: React.FC = () => {
         console.log("🎮 [HOST] Game event:", event.eventType);
         if (event.eventType === "GAME_ENDED") {
           setState((prev) => ({ ...prev, isGameEnded: true }));
+          clearParticipantSession();
           setTimeout(() => {
             navigate(`/game-results/${gameId}`);
           }, 3000);
@@ -402,6 +404,7 @@ const GamePlayPage: React.FC = () => {
     try {
       await endGame(gameId);
       setState((prev) => ({ ...prev, isGameEnded: true }));
+      clearParticipantSession();
       setTimeout(() => {
         navigate(`/game-results/${gameId}`);
       }, 2000);
