@@ -1,15 +1,16 @@
+import { QuestionResponseDTO } from "@/services/questionService";
 import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
-import type { Question } from "@/interfaces";
 
 type Props = {
   show: boolean;
   loading?: boolean;
-  questions: Question[];
+  loadingMessage?: string;
+  questions: QuestionResponseDTO[];
   onClose: () => void;
-  onAccept: (selected: Question[]) => void;
+  onAccept: (selected: QuestionResponseDTO[]) => void;
 };
 
-const getQKey = (q: Question, idx: number): string => {
+const getQKey = (q: QuestionResponseDTO, idx: number): string => {
   if (!q) return `fallback-${idx}-${Date.now()}`;
   const key = (q as any).clientKey || (q as any).questionId || `idx-${idx}`;
   return String(key);
@@ -18,13 +19,14 @@ const getQKey = (q: Question, idx: number): string => {
 const AiSuggestionModal: React.FC<Props> = ({
   show,
   loading,
+  loadingMessage = "Đang xử lý...",
   questions,
   onClose,
   onAccept,
 }) => {
   const validQuestions = useMemo(() => {
     if (!Array.isArray(questions)) return [];
-    return questions.filter(q => q && typeof q === 'object');
+    return questions.filter((q) => q && typeof q === "object");
   }, [questions]);
 
   const total = validQuestions.length;
@@ -69,22 +71,22 @@ const AiSuggestionModal: React.FC<Props> = ({
     if (total === 0) return [];
     const q = query.trim().toLowerCase();
     const indices: number[] = [];
-    
+
     validQuestions.forEach((item, i) => {
       if (!q) {
         indices.push(i);
         return;
       }
-      
+
       const questionText = item?.questionText || "";
       const optionsText = (item?.options || [])
-        .map((o: any) => o?.optionText || "")
+        .map((o: any) => o?.text || "")
         .join(" ");
-      
+
       const haystack = `${questionText} ${optionsText}`.toLowerCase();
       if (haystack.includes(q)) indices.push(i);
     });
-    
+
     return indices;
   }, [validQuestions, query, total]);
 
@@ -122,11 +124,11 @@ const AiSuggestionModal: React.FC<Props> = ({
       }
 
       const lastKey = lastClickedKeyRef.current;
-      const lastIdx = visibleIndexes.findIndex((i) => 
-        getQKey(validQuestions[i], i) === lastKey
+      const lastIdx = visibleIndexes.findIndex(
+        (i) => getQKey(validQuestions[i], i) === lastKey
       );
-      const curIdx = visibleIndexes.findIndex((i) => 
-        getQKey(validQuestions[i], i) === key
+      const curIdx = visibleIndexes.findIndex(
+        (i) => getQKey(validQuestions[i], i) === key
       );
 
       if (lastIdx === -1 || curIdx === -1) {
@@ -135,7 +137,8 @@ const AiSuggestionModal: React.FC<Props> = ({
         return;
       }
 
-      const [start, end] = lastIdx < curIdx ? [lastIdx, curIdx] : [curIdx, lastIdx];
+      const [start, end] =
+        lastIdx < curIdx ? [lastIdx, curIdx] : [curIdx, lastIdx];
       const rangeKeys = visibleIndexes
         .slice(start, end + 1)
         .map((i) => getQKey(validQuestions[i], i));
@@ -150,16 +153,13 @@ const AiSuggestionModal: React.FC<Props> = ({
     [validQuestions, visibleIndexes, toggle]
   );
 
-  const selectAllVisible = useCallback(() => 
-    setSelectedKeys(allVisibleKeys), 
+  const selectAllVisible = useCallback(
+    () => setSelectedKeys(allVisibleKeys),
     [allVisibleKeys, setSelectedKeys]
   );
-  
-  const clearAll = useCallback(() => 
-    setSelected(new Set()), 
-    []
-  );
-  
+
+  const clearAll = useCallback(() => setSelected(new Set()), []);
+
   const invertVisible = useCallback(() => {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -176,8 +176,8 @@ const AiSuggestionModal: React.FC<Props> = ({
       onAccept([]);
       return;
     }
-    
-    const out: Question[] = [];
+
+    const out: QuestionResponseDTO[] = [];
     validQuestions.forEach((q, i) => {
       if (selected.has(getQKey(q, i))) out.push(q);
     });
@@ -190,11 +190,14 @@ const AiSuggestionModal: React.FC<Props> = ({
     [allVisibleKeys, selected]
   );
 
-  const allVisibleChecked = visibleSelectedCount > 0 && 
-    visibleSelectedCount === allVisibleKeys.length;
+  const allVisibleChecked =
+    visibleSelectedCount > 0 && visibleSelectedCount === allVisibleKeys.length;
   const partiallyChecked = visibleSelectedCount > 0 && !allVisibleChecked;
 
   if (!show) return null;
+
+  // Show loading state if no questions yet
+  const showLoadingState = loading && total === 0;
 
   return (
     <div
@@ -253,8 +256,22 @@ const AiSuggestionModal: React.FC<Props> = ({
             }}
           >
             <div style={{ flex: 1 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.75rem" }}>
-                <span style={{ fontSize: "1.5rem" }}>🤖</span>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.75rem",
+                  marginBottom: "0.75rem",
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: "1.5rem",
+                    animation: loading ? "pulse 1s ease-in-out infinite" : "none",
+                  }}
+                >
+                  🤖
+                </span>
                 <h5
                   style={{
                     margin: 0,
@@ -263,51 +280,78 @@ const AiSuggestionModal: React.FC<Props> = ({
                     color: "white",
                   }}
                 >
-                  Gợi ý câu hỏi (AI)
+                  {showLoadingState ? "Đang sinh câu hỏi..." : "Gợi ý câu hỏi (AI)"}
                 </h5>
               </div>
-              <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-                <span
+
+              {showLoadingState ? (
+                <div
                   style={{
-                    padding: "0.35rem 0.75rem",
-                    borderRadius: "6px",
-                    fontSize: "0.85rem",
-                    fontWeight: 500,
-                    background: "rgba(255, 255, 255, 0.25)",
-                    color: "white",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.5rem",
+                    fontSize: "14px",
+                    color: "rgba(255, 255, 255, 0.8)",
                   }}
                 >
-                  Tổng: {total}
-                </span>
-                <span
-                  style={{
-                    padding: "0.35rem 0.75rem",
-                    borderRadius: "6px",
-                    fontSize: "0.85rem",
-                    fontWeight: 500,
-                    background: filteredIndexes.length > 0 
-                      ? "rgba(255, 255, 255, 0.25)" 
-                      : "rgba(255, 255, 255, 0.1)",
-                    color: "white",
-                  }}
-                >
-                  Khớp bộ lọc: {filteredIndexes.length}
-                </span>
-                <span
-                  style={{
-                    padding: "0.35rem 0.75rem",
-                    borderRadius: "6px",
-                    fontSize: "0.85rem",
-                    fontWeight: 500,
-                    background: selectedCount > 0 
-                      ? "rgba(74, 222, 128, 0.3)" 
-                      : "rgba(255, 255, 255, 0.1)",
-                    color: "white",
-                  }}
-                >
-                  Đã chọn: {selectedCount}
-                </span>
-              </div>
+                  <div
+                    style={{
+                      width: "14px",
+                      height: "14px",
+                      border: "2px solid rgba(255, 255, 255, 0.3)",
+                      borderTop: "2px solid white",
+                      borderRadius: "50%",
+                      animation: "spin 1s linear infinite",
+                    }}
+                  />
+                  <span>{loadingMessage}</span>
+                </div>
+              ) : (
+                <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                  <span
+                    style={{
+                      padding: "0.35rem 0.75rem",
+                      borderRadius: "6px",
+                      fontSize: "0.85rem",
+                      fontWeight: 500,
+                      background: "rgba(255, 255, 255, 0.25)",
+                      color: "white",
+                    }}
+                  >
+                    Tổng: {total}
+                  </span>
+                  <span
+                    style={{
+                      padding: "0.35rem 0.75rem",
+                      borderRadius: "6px",
+                      fontSize: "0.85rem",
+                      fontWeight: 500,
+                      background:
+                        filteredIndexes.length > 0
+                          ? "rgba(255, 255, 255, 0.25)"
+                          : "rgba(255, 255, 255, 0.1)",
+                      color: "white",
+                    }}
+                  >
+                    Khớp bộ lọc: {filteredIndexes.length}
+                  </span>
+                  <span
+                    style={{
+                      padding: "0.35rem 0.75rem",
+                      borderRadius: "6px",
+                      fontSize: "0.85rem",
+                      fontWeight: 500,
+                      background:
+                        selectedCount > 0
+                          ? "rgba(74, 222, 128, 0.3)"
+                          : "rgba(255, 255, 255, 0.1)",
+                      color: "white",
+                    }}
+                  >
+                    Đã chọn: {selectedCount}
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Close Button */}
@@ -326,362 +370,457 @@ const AiSuggestionModal: React.FC<Props> = ({
             />
           </div>
 
-          {/* Toolbar */}
-          <div
-            style={{
-              padding: "1rem 1.5rem",
-              background: "var(--surface-alt)",
-              borderBottom: "2px solid var(--border-color)",
-              display: "flex",
-              alignItems: "center",
-              gap: "1rem",
-              flexWrap: "wrap",
-              flexShrink: 0,
-            }}
-          >
-            <label
+          {/* Show Loading State */}
+          {showLoadingState ? (
+            <div
               style={{
+                flex: 1,
                 display: "flex",
+                flexDirection: "column",
                 alignItems: "center",
-                gap: "0.5rem",
-                cursor: loading || allVisibleKeys.length === 0 ? "not-allowed" : "pointer",
-                opacity: loading || allVisibleKeys.length === 0 ? 0.5 : 1,
+                justifyContent: "center",
+                padding: "3rem",
+                textAlign: "center",
               }}
             >
-              <input
-                type="checkbox"
-                checked={allVisibleChecked}
-                ref={(input) => {
-                  if (input) {
-                    input.indeterminate = partiallyChecked;
-                  }
+              <div
+                style={{
+                  width: "60px",
+                  height: "60px",
+                  border: "4px solid var(--border-color)",
+                  borderTop: "4px solid var(--primary-color)",
+                  borderRadius: "50%",
+                  animation: "spin 1s linear infinite",
+                  marginBottom: "1.5rem",
                 }}
-                onChange={(e) => 
-                  e.target.checked ? selectAllVisible() : invertVisible()
-                }
-                disabled={loading || allVisibleKeys.length === 0}
-                className="form-check-input"
-                style={{ margin: 0 }}
               />
-              <span style={{ fontWeight: 500, fontSize: "14px" }}>
-                Chọn tất cả (đang hiển thị)
-              </span>
-            </label>
-
-            <input
-              type="text"
-              placeholder="Tìm kiếm câu hỏi..."
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              disabled={loading || total === 0}
-              className="form-control"
+              <p style={{ fontSize: "16px", color: "var(--text-color)", margin: 0 }}>
+                {loadingMessage}
+              </p>
+              <p
+                style={{
+                  fontSize: "14px",
+                  color: "var(--text-muted)",
+                  margin: "0.5rem 0 0 0",
+                }}
+              >
+                Vui lòng đợi khi hệ thống AI xử lý...
+              </p>
+            </div>
+          ) : total === 0 ? (
+            <div
               style={{
-                maxWidth: "300px",
-                height: "36px",
-                fontSize: "14px",
-              }}
-            />
-
-            <label
-              style={{
+                flex: 1,
                 display: "flex",
+                flexDirection: "column",
                 alignItems: "center",
-                gap: "0.5rem",
-                cursor: loading || selectedCount === 0 ? "not-allowed" : "pointer",
-                opacity: loading || selectedCount === 0 ? 0.5 : 1,
+                justifyContent: "center",
+                padding: "3rem",
               }}
             >
-              <input
-                type="checkbox"
-                checked={onlySelectedView}
-                onChange={(e) => setOnlySelectedView(e.target.checked)}
-                disabled={loading || selectedCount === 0}
-                className="form-check-input"
-                style={{ margin: 0 }}
-              />
-              <span style={{ fontWeight: 500, fontSize: "14px" }}>
-                📌 Chỉ hiển thị đã chọn
-              </span>
-            </label>
-          </div>
+              <div style={{ fontSize: "3rem", marginBottom: "1rem" }}>📭</div>
+              <p
+                style={{
+                  color: "var(--text-muted)",
+                  fontSize: "16px",
+                  margin: 0,
+                }}
+              >
+                Không có gợi ý nào để hiển thị.
+              </p>
+            </div>
+          ) : (
+            <>
+              {/* Toolbar */}
+              <div
+                style={{
+                  padding: "1rem 1.5rem",
+                  background: "var(--surface-alt)",
+                  borderBottom: "2px solid var(--border-color)",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "1rem",
+                  flexWrap: "wrap",
+                  flexShrink: 0,
+                }}
+              >
+                <label
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.5rem",
+                    cursor:
+                      loading || allVisibleKeys.length === 0
+                        ? "not-allowed"
+                        : "pointer",
+                    opacity:
+                      loading || allVisibleKeys.length === 0 ? 0.5 : 1,
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={allVisibleChecked}
+                    ref={(input) => {
+                      if (input) {
+                        input.indeterminate = partiallyChecked;
+                      }
+                    }}
+                    onChange={(e) =>
+                      e.target.checked ? selectAllVisible() : invertVisible()
+                    }
+                    disabled={loading || allVisibleKeys.length === 0}
+                    className="form-check-input"
+                    style={{ margin: 0 }}
+                  />
+                  <span style={{ fontWeight: 500, fontSize: "14px" }}>
+                    Chọn tất cả (đang hiển thị)
+                  </span>
+                </label>
 
-          {/* Body - Scrollable List */}
-          <div
-            style={{
-              padding: "1rem 1.5rem",
-              overflowY: "auto",
-              flex: 1,
-              minHeight: 0,
-            }}
-          >
-            {total === 0 ? (
+                <input
+                  type="text"
+                  placeholder="Tìm kiếm câu hỏi..."
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  disabled={loading || total === 0}
+                  className="form-control"
+                  style={{
+                    maxWidth: "300px",
+                    height: "36px",
+                    fontSize: "14px",
+                  }}
+                />
+
+                <label
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.5rem",
+                    cursor:
+                      loading || selectedCount === 0 ? "not-allowed" : "pointer",
+                    opacity: loading || selectedCount === 0 ? 0.5 : 1,
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={onlySelectedView}
+                    onChange={(e) => setOnlySelectedView(e.target.checked)}
+                    disabled={loading || selectedCount === 0}
+                    className="form-check-input"
+                    style={{ margin: 0 }}
+                  />
+                  <span style={{ fontWeight: 500, fontSize: "14px" }}>
+                    📌 Chỉ hiển thị đã chọn
+                  </span>
+                </label>
+              </div>
+
+              {/* Body - Scrollable List */}
               <div
                 style={{
-                  padding: "3rem 1.5rem",
-                  textAlign: "center",
-                  background: "var(--surface-alt)",
-                  borderRadius: "var(--border-radius)",
-                  border: "2px dashed var(--border-color)",
+                  padding: "1rem 1.5rem",
+                  overflowY: "auto",
+                  flex: 1,
+                  minHeight: 0,
                 }}
               >
-                <div style={{ fontSize: "3rem", marginBottom: "1rem" }}>📭</div>
-                <p style={{ color: "var(--text-muted)", fontSize: "16px", margin: 0 }}>
-                  Không có gợi ý nào để hiển thị.
-                </p>
-              </div>
-            ) : visibleIndexes.length === 0 ? (
-              <div
-                style={{
-                  padding: "3rem 1.5rem",
-                  textAlign: "center",
-                  background: "var(--surface-alt)",
-                  borderRadius: "var(--border-radius)",
-                  border: "2px dashed var(--border-color)",
-                }}
-              >
-                <div style={{ fontSize: "3rem", marginBottom: "1rem" }}>🔍</div>
-                <p style={{ color: "var(--text-muted)", fontSize: "16px", margin: 0 }}>
-                  Không tìm thấy câu hỏi khớp bộ lọc
-                </p>
-              </div>
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-                {visibleIndexes.map((i) => {
-                  const q = validQuestions[i];
-                  const k = getQKey(q, i);
-                  const checked = selected.has(k);
-                  
-                  return (
-                    <div
-                      key={k}
+                {visibleIndexes.length === 0 ? (
+                  <div
+                    style={{
+                      padding: "3rem 1.5rem",
+                      textAlign: "center",
+                      background: "var(--surface-alt)",
+                      borderRadius: "var(--border-radius)",
+                      border: "2px dashed var(--border-color)",
+                    }}
+                  >
+                    <div style={{ fontSize: "3rem", marginBottom: "1rem" }}>
+                      🔍
+                    </div>
+                    <p
                       style={{
-                        border: `2px solid ${checked ? "var(--success-color)" : "var(--border-color)"}`,
-                        borderRadius: "10px",
-                        overflow: "hidden",
-                        background: "var(--surface-color)",
-                        transition: "all 0.25s ease",
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.borderColor = "var(--primary-color)";
-                        e.currentTarget.style.boxShadow = "0 4px 12px rgba(96, 165, 250, 0.15)";
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.borderColor = checked ? "var(--success-color)" : "var(--border-color)";
-                        e.currentTarget.style.boxShadow = "none";
+                        color: "var(--text-muted)",
+                        fontSize: "16px",
+                        margin: 0,
                       }}
                     >
-                      {/* Question Header */}
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "space-between",
-                          padding: "0.75rem 1rem",
-                          background: "var(--surface-alt)",
-                          borderBottom: "2px solid var(--border-color)",
-                        }}
-                      >
-                        <label
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "0.5rem",
-                            cursor: loading ? "not-allowed" : "pointer",
-                            margin: 0,
-                          }}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            disabled={loading}
-                            onChange={(e) => {
-                              const mouseEvent = e.nativeEvent as MouseEvent;
-                              toggleWithRange(
-                                k, 
-                                i, 
-                                e.target.checked, 
-                                mouseEvent.shiftKey
-                              );
-                            }}
-                            className="form-check-input"
-                            style={{ margin: 0 }}
-                          />
-                          <span style={{ fontSize: "13px", color: "var(--text-muted)", fontWeight: 500 }}>
-                            Câu {i + 1}
-                          </span>
-                        </label>
-                        <span
-                          style={{
-                            padding: "0.25rem 0.75rem",
-                            borderRadius: "6px",
-                            fontSize: "12px",
-                            fontWeight: 500,
-                            background: checked ? "var(--success-color)" : "var(--border-color)",
-                            color: checked ? "white" : "var(--text-muted)",
-                          }}
-                        >
-                          {checked ? "✓ Đã chọn" : "○ Chưa chọn"}
-                        </span>
-                      </div>
+                      Không tìm thấy câu hỏi khớp bộ lọc
+                    </p>
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                    {visibleIndexes.map((i) => {
+                      const q = validQuestions[i];
+                      const k = getQKey(q, i);
+                      const checked = selected.has(k);
 
-                      {/* Question Body */}
-                      <div style={{ padding: "0.75rem 1rem" }}>
+                      return (
                         <div
+                          key={k}
                           style={{
-                            fontSize: "14px",
-                            color: "var(--text-color)",
-                            lineHeight: 1.6,
-                            marginBottom: "0.5rem",
+                            border: `2px solid ${
+                              checked
+                                ? "var(--success-color)"
+                                : "var(--border-color)"
+                            }`,
+                            borderRadius: "10px",
+                            overflow: "hidden",
+                            background: "var(--surface-color)",
+                            transition: "all 0.25s ease",
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.borderColor =
+                              "var(--primary-color)";
+                            e.currentTarget.style.boxShadow =
+                              "0 4px 12px rgba(96, 165, 250, 0.15)";
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.borderColor = checked
+                              ? "var(--success-color)"
+                              : "var(--border-color)";
+                            e.currentTarget.style.boxShadow = "none";
                           }}
                         >
-                          <strong>Câu hỏi:</strong> {q?.questionText || "Không có nội dung"}
-                        </div>
-                        {q?.options && q.options.length > 0 && (
-                          <div style={{ fontSize: "13px", color: "var(--text-light)" }}>
-                            <strong>Đáp án:</strong> {q.options.map((o, idx) => o?.optionText || "").join(" | ")}
+                          {/* Question Header */}
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                              padding: "0.75rem 1rem",
+                              background: "var(--surface-alt)",
+                              borderBottom: "2px solid var(--border-color)",
+                            }}
+                          >
+                            <label
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "0.5rem",
+                                cursor: loading ? "not-allowed" : "pointer",
+                                margin: 0,
+                              }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                disabled={loading}
+                                onChange={(e) => {
+                                  const mouseEvent = e.nativeEvent as MouseEvent;
+                                  toggleWithRange(
+                                    k,
+                                    i,
+                                    e.target.checked,
+                                    mouseEvent.shiftKey
+                                  );
+                                }}
+                                className="form-check-input"
+                                style={{ margin: 0 }}
+                              />
+                              <span
+                                style={{
+                                  fontSize: "13px",
+                                  color: "var(--text-muted)",
+                                  fontWeight: 500,
+                                }}
+                              >
+                                Câu {i + 1}
+                              </span>
+                            </label>
+                            <span
+                              style={{
+                                padding: "0.25rem 0.75rem",
+                                borderRadius: "6px",
+                                fontSize: "12px",
+                                fontWeight: 500,
+                                background: checked
+                                  ? "var(--success-color)"
+                                  : "var(--border-color)",
+                                color: checked ? "white" : "var(--text-muted)",
+                              }}
+                            >
+                              {checked ? "✓ Đã chọn" : "○ Chưa chọn"}
+                            </span>
                           </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
+
+                          {/* Question Body */}
+                          <div style={{ padding: "0.75rem 1rem" }}>
+                            <div
+                              style={{
+                                fontSize: "14px",
+                                color: "var(--text-color)",
+                                lineHeight: 1.6,
+                                marginBottom: "0.5rem",
+                              }}
+                            >
+                              <strong>Câu hỏi:</strong> {q?.questionText || "Không có nội dung"}
+                            </div>
+                            {q?.options && q.options.length > 0 && (
+                              <div
+                                style={{
+                                  fontSize: "13px",
+                                  color: "var(--text-light)",
+                                }}
+                              >
+                                <strong>Đáp án:</strong>{" "}
+                                {q.options
+                                  .map((o) => o?.text || "")
+                                  .join(" | ")}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
 
-          {/* Footer */}
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "flex-end",
-              gap: "0.75rem",
-              padding: "1rem 1.5rem",
-              background: "var(--surface-alt)",
-              borderTop: "1px solid var(--border-color)",
-              flexShrink: 0,
-              flexWrap: "wrap",
-            }}
-          >
-            <button
-              type="button"
-              onClick={selectAllVisible}
-              disabled={loading || allVisibleKeys.length === 0}
-              style={{
-                padding: "0.5rem 1rem",
-                border: "2px solid var(--border-color)",
-                borderRadius: "10px",
-                background: "transparent",
-                color: "var(--text-color)",
-                fontWeight: 500,
-                fontSize: "14px",
-                cursor: loading || allVisibleKeys.length === 0 ? "not-allowed" : "pointer",
-                opacity: loading || allVisibleKeys.length === 0 ? 0.5 : 1,
-                transition: "all 0.25s ease",
-              }}
-              onMouseEnter={(e) => {
-                if (!loading && allVisibleKeys.length > 0) {
-                  e.currentTarget.style.background = "var(--surface-color)";
-                  e.currentTarget.style.borderColor = "var(--primary-color)";
-                }
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = "transparent";
-                e.currentTarget.style.borderColor = "var(--border-color)";
-              }}
-            >
-              ✓ Chọn tất cả
-            </button>
+              {/* Footer */}
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  gap: "0.75rem",
+                  padding: "1rem 1.5rem",
+                  background: "var(--surface-alt)",
+                  borderTop: "1px solid var(--border-color)",
+                  flexShrink: 0,
+                  flexWrap: "wrap",
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={selectAllVisible}
+                  disabled={loading || allVisibleKeys.length === 0}
+                  style={{
+                    padding: "0.5rem 1rem",
+                    border: "2px solid var(--border-color)",
+                    borderRadius: "10px",
+                    background: "transparent",
+                    color: "var(--text-color)",
+                    fontWeight: 500,
+                    fontSize: "14px",
+                    cursor:
+                      loading || allVisibleKeys.length === 0
+                        ? "not-allowed"
+                        : "pointer",
+                    opacity:
+                      loading || allVisibleKeys.length === 0 ? 0.5 : 1,
+                    transition: "all 0.25s ease",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!loading && allVisibleKeys.length > 0) {
+                      e.currentTarget.style.background = "var(--surface-color)";
+                      e.currentTarget.style.borderColor = "var(--primary-color)";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = "transparent";
+                    e.currentTarget.style.borderColor = "var(--border-color)";
+                  }}
+                >
+                  ✓ Chọn tất cả
+                </button>
 
-            <button
-              type="button"
-              onClick={invertVisible}
-              disabled={loading || allVisibleKeys.length === 0}
-              style={{
-                padding: "0.5rem 1rem",
-                border: "2px solid var(--border-color)",
-                borderRadius: "10px",
-                background: "transparent",
-                color: "var(--text-color)",
-                fontWeight: 500,
-                fontSize: "14px",
-                cursor: loading || allVisibleKeys.length === 0 ? "not-allowed" : "pointer",
-                opacity: loading || allVisibleKeys.length === 0 ? 0.5 : 1,
-                transition: "all 0.25s ease",
-              }}
-              onMouseEnter={(e) => {
-                if (!loading && allVisibleKeys.length > 0) {
-                  e.currentTarget.style.background = "var(--surface-color)";
-                  e.currentTarget.style.borderColor = "var(--primary-color)";
-                }
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = "transparent";
-                e.currentTarget.style.borderColor = "var(--border-color)";
-              }}
-            >
-              ⇄ Đảo chọn
-            </button>
+                <button
+                  type="button"
+                  onClick={invertVisible}
+                  disabled={loading || allVisibleKeys.length === 0}
+                  style={{
+                    padding: "0.5rem 1rem",
+                    border: "2px solid var(--border-color)",
+                    borderRadius: "10px",
+                    background: "transparent",
+                    color: "var(--text-color)",
+                    fontWeight: 500,
+                    fontSize: "14px",
+                    cursor:
+                      loading || allVisibleKeys.length === 0
+                        ? "not-allowed"
+                        : "pointer",
+                    opacity:
+                      loading || allVisibleKeys.length === 0 ? 0.5 : 1,
+                    transition: "all 0.25s ease",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!loading && allVisibleKeys.length > 0) {
+                      e.currentTarget.style.background = "var(--surface-color)";
+                      e.currentTarget.style.borderColor = "var(--primary-color)";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = "transparent";
+                    e.currentTarget.style.borderColor = "var(--border-color)";
+                  }}
+                >
+                  ⇄ Đảo chọn
+                </button>
 
-            <button
-              type="button"
-              onClick={clearAll}
-              disabled={loading || selectedCount === 0}
-              style={{
-                padding: "0.5rem 1rem",
-                border: "2px solid var(--border-color)",
-                borderRadius: "10px",
-                background: "transparent",
-                color: "var(--text-color)",
-                fontWeight: 500,
-                fontSize: "14px",
-                cursor: loading || selectedCount === 0 ? "not-allowed" : "pointer",
-                opacity: loading || selectedCount === 0 ? 0.5 : 1,
-                transition: "all 0.25s ease",
-              }}
-              onMouseEnter={(e) => {
-                if (!loading && selectedCount > 0) {
-                  e.currentTarget.style.background = "var(--surface-color)";
-                  e.currentTarget.style.borderColor = "var(--danger-color)";
-                }
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = "transparent";
-                e.currentTarget.style.borderColor = "var(--border-color)";
-              }}
-            >
-              ✕ Bỏ chọn
-            </button>
+                <button
+                  type="button"
+                  onClick={clearAll}
+                  disabled={loading || selectedCount === 0}
+                  style={{
+                    padding: "0.5rem 1rem",
+                    border: "2px solid var(--border-color)",
+                    borderRadius: "10px",
+                    background: "transparent",
+                    color: "var(--text-color)",
+                    fontWeight: 500,
+                    fontSize: "14px",
+                    cursor:
+                      loading || selectedCount === 0 ? "not-allowed" : "pointer",
+                    opacity: loading || selectedCount === 0 ? 0.5 : 1,
+                    transition: "all 0.25s ease",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!loading && selectedCount > 0) {
+                      e.currentTarget.style.background = "var(--surface-color)";
+                      e.currentTarget.style.borderColor = "var(--danger-color)";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = "transparent";
+                    e.currentTarget.style.borderColor = "var(--border-color)";
+                  }}
+                >
+                  ✕ Bỏ chọn
+                </button>
 
-            <button
-              type="button"
-              onClick={acceptSelected}
-              disabled={loading || selectedCount === 0}
-              style={{
-                padding: "0.5rem 1.5rem",
-                border: "none",
-                borderRadius: "10px",
-                background: "var(--gradient-primary)",
-                color: "white",
-                fontWeight: 600,
-                fontSize: "14px",
-                cursor: loading || selectedCount === 0 ? "not-allowed" : "pointer",
-                opacity: loading || selectedCount === 0 ? 0.5 : 1,
-                transition: "all 0.25s ease",
-              }}
-              onMouseEnter={(e) => {
-                if (!loading && selectedCount > 0) {
-                  e.currentTarget.style.boxShadow = "var(--hover-shadow)";
-                  e.currentTarget.style.transform = "translateY(-2px)";
-                }
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.boxShadow = "none";
-                e.currentTarget.style.transform = "translateY(0)";
-              }}
-            >
-              ➕ Thêm ({selectedCount})
-            </button>
-          </div>
+                <button
+                  type="button"
+                  onClick={acceptSelected}
+                  disabled={loading || selectedCount === 0}
+                  style={{
+                    padding: "0.5rem 1.5rem",
+                    border: "none",
+                    borderRadius: "10px",
+                    background: "var(--gradient-primary)",
+                    color: "white",
+                    fontWeight: 600,
+                    fontSize: "14px",
+                    cursor:
+                      loading || selectedCount === 0 ? "not-allowed" : "pointer",
+                    opacity: loading || selectedCount === 0 ? 0.5 : 1,
+                    transition: "all 0.25s ease",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!loading && selectedCount > 0) {
+                      e.currentTarget.style.boxShadow = "var(--hover-shadow)";
+                      e.currentTarget.style.transform = "translateY(-2px)";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.boxShadow = "none";
+                    e.currentTarget.style.transform = "translateY(0)";
+                  }}
+                >
+                  ➕ Thêm ({selectedCount})
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -703,6 +842,24 @@ const AiSuggestionModal: React.FC<Props> = ({
           to {
             opacity: 1;
             transform: translateY(0);
+          }
+        }
+
+        @keyframes spin {
+          from {
+            transform: rotate(0deg);
+          }
+          to {
+            transform: rotate(360deg);
+          }
+        }
+
+        @keyframes pulse {
+          0%, 100% {
+            opacity: 1;
+          }
+          50% {
+            opacity: 0.7;
           }
         }
       `}</style>

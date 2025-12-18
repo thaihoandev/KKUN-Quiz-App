@@ -221,6 +221,40 @@ export interface BulkQuestionImportResponse {
 }
 
 /* =========================
+ * AI GENERATION TYPES
+ * ========================= */
+
+export interface GenerationJobResponse {
+    jobId: string;
+    status: "accepted";
+    message: string;
+    pollUrl: string;
+}
+
+export interface GenerationStatusResponse {
+    jobId: string;
+    status: "processing" | "completed" | "failed";
+    createdAt: string;
+    questions?: QuestionResponseDTO[];
+    count?: number;
+    error?: string;
+    completedAt?: string;
+    duration?: string;
+    message?: string;
+}
+
+export type TopicGenerateRequest = {
+    topic: string;
+    count?: number;
+    questionType?: "AUTO" | "TRUE_FALSE" | "SINGLE_CHOICE" | "MULTIPLE_CHOICE";
+    timeLimit?: number;
+    points?: number;
+    language?: "vi" | "en";
+    quizId?: string;
+    dedupe?: boolean;
+};
+
+/* =========================
  * CREATE QUESTION
  * ========================= */
 
@@ -773,6 +807,303 @@ export async function addAiQuestionsToQuiz(
         return await addQuestionsBulk(quizId, requests);
     } catch (error) {
         handleApiError(error, "Failed to add AI questions to quiz");
+        throw error;
+    }
+}
+
+/* =========================
+ * AI GENERATION - ASYNC ENDPOINTS (RECOMMENDED)
+ * ========================= */
+
+/**
+ * ✅ START async AI generation
+ * Returns jobId immediately, use polling to get results
+ *
+ * FIXED: Corrected endpoint URL to /ai/questions/generate-by-topic-async
+ */
+export async function generateQuestionsByTopicAsync(
+    req: TopicGenerateRequest
+): Promise<string> {
+    try {
+        const payload: TopicGenerateRequest = {
+            topic: (req.topic ?? "").trim(),
+            count: Math.max(1, Math.min(req.count ?? 5, 10)),
+            questionType: (req.questionType ?? "AUTO") as any,
+            timeLimit: Math.max(5, Math.min(req.timeLimit ?? 60, 300)),
+            points: Math.max(1, Math.min(req.points ?? 1000, 100000)),
+            language: req.language ?? "vi",
+            quizId: req.quizId,
+            dedupe: req.dedupe ?? false,
+        };
+
+        if (!payload.topic) throw new Error("TOPIC_EMPTY");
+
+        const res = await axiosInstance.post(
+            `/ai/questions/generate-by-topic-async`, // ✅ FIXED: Added  prefix
+            payload,
+            {
+                headers: { "Content-Type": "application/json" },
+                timeout: 10000, // Short timeout since API returns immediately
+            }
+        );
+
+        const jobId = res.data?.jobId;
+        if (!jobId) {
+            throw new Error("No jobId returned from server");
+        }
+
+        console.log(`📋 Generation job started: ${jobId}`);
+        return jobId;
+    } catch (error) {
+        handleApiError(error, "Failed to start AI generation");
+        throw error;
+    }
+}
+
+/**
+ * ✅ POLL job status
+ * Call this repeatedly to check if generation is complete
+ *
+ * FIXED: Corrected endpoint URL to /ai/questions/status/{jobId}
+ */
+export async function getGenerationStatus(
+    jobId: string
+): Promise<GenerationStatusResponse> {
+    try {
+        const res = await axiosInstance.get(
+            `/ai/questions/status/${jobId}`, // ✅ FIXED: Changed from /generate-status/ to /status/
+            {
+                timeout: 5000,
+            }
+        );
+
+        return res.data as GenerationStatusResponse;
+    } catch (error) {
+        handleApiError(error, "Failed to fetch generation status");
+        throw error;
+    }
+}
+
+/**
+ * ✅ CANCEL job
+ * Removes job from cache on server
+ *
+ * FIXED: Corrected endpoint URL to /ai/questions/status/{jobId}
+ */
+export async function cancelGeneration(jobId: string): Promise<void> {
+    try {
+        await axiosInstance.delete(
+            `/ai/questions/status/${jobId}`, // ✅ FIXED: Changed from /generate-status/ to /status/ and added
+            {
+                timeout: 5000,
+            }
+        );
+        console.log(`🛑 Generation job cancelled: ${jobId}`);
+    } catch (error) {
+        handleApiError(error, "Failed to cancel generation");
+        throw error;
+    }
+}
+
+/**
+ * ✅ LIST all active generation jobs
+ * Use this to see what's currently running
+ */
+export async function listActiveGenerationJobs(): Promise<any> {
+    try {
+        const res = await axiosInstance.get(`/ai/questions/jobs`, {
+            timeout: 5000,
+        });
+        return res.data;
+    } catch (error) {
+        handleApiError(error, "Failed to list active generation jobs");
+        throw error;
+    }
+}
+
+/**
+ * ✅ Helper: Poll until generation completes
+ * Automatically polls with interval, returns questions when done or throws on error
+ *
+ * IMPROVED: Better error handling and logging
+ */
+export async function pollGenerationUntilComplete(
+    jobId: string,
+    maxWaitMs: number = 300000, // 5 minutes default
+    pollIntervalMs: number = 2000 // Poll every 2 seconds
+): Promise<QuestionResponseDTO[]> {
+    const startTime = Date.now();
+    let lastStatus = "processing";
+
+    while (Date.now() - startTime < maxWaitMs) {
+        try {
+            const status = await getGenerationStatus(jobId);
+            lastStatus = status.status;
+
+            if (status.status === "completed") {
+                const count = status.count || status.questions?.length || 0;
+                const duration =
+                    status.duration || `${Date.now() - startTime}ms`;
+                console.log(
+                    `✅ Generation completed: ${count} questions in ${duration}`
+                );
+                return status.questions || [];
+            }
+
+            if (status.status === "failed") {
+                console.error(
+                    `❌ Generation failed: ${status.error || "Unknown error"}`
+                );
+                throw new Error(status.error || "Generation failed");
+            }
+
+            // Still processing, wait and retry
+            const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+            console.log(
+                `⏳ Still generating (${elapsed}s)... Current: ${status.count || 0} questions`
+            );
+
+            await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+        } catch (error) {
+            console.error(`❌ Polling error: ${(error as Error).message}`);
+            throw error;
+        }
+    }
+
+    throw new Error(
+        `⏱️ Generation timeout after ${maxWaitMs}ms (last status: ${lastStatus}). ` +
+            `Try increasing maxWaitMs or check server logs.`
+    );
+}
+
+/**
+ * ✅ Helper: Start generation with automatic polling
+ * Combines generateQuestionsByTopicAsync + pollGenerationUntilComplete
+ * Useful for UI that needs to show loading progress
+ */
+export async function generateQuestionsWithAutoPolling(
+    req: TopicGenerateRequest,
+    onProgress?: (status: GenerationStatusResponse) => void,
+    maxWaitMs?: number,
+    pollIntervalMs?: number
+): Promise<QuestionResponseDTO[]> {
+    // Start generation
+    const jobId = await generateQuestionsByTopicAsync(req);
+
+    // Poll until complete with progress callback
+    const startTime = Date.now();
+    let lastStatus = "processing";
+
+    while (Date.now() - startTime < (maxWaitMs || 300000)) {
+        try {
+            const status = await getGenerationStatus(jobId);
+            lastStatus = status.status;
+
+            // Call progress callback if provided
+            if (onProgress) {
+                onProgress(status);
+            }
+
+            if (status.status === "completed") {
+                console.log(
+                    `✅ Generation completed: ${status.count} questions`
+                );
+                return status.questions || [];
+            }
+
+            if (status.status === "failed") {
+                throw new Error(status.error || "Generation failed");
+            }
+
+            await new Promise((resolve) =>
+                setTimeout(resolve, pollIntervalMs || 2000)
+            );
+        } catch (error) {
+            throw error;
+        }
+    }
+
+    throw new Error(
+        `Generation timeout after ${maxWaitMs}ms (last status: ${lastStatus})`
+    );
+}
+
+/**
+ * ✅ Helper: Generate with retry logic
+ * Retries on failure with exponential backoff
+ */
+export async function generateQuestionsWithRetry(
+    req: TopicGenerateRequest,
+    maxRetries: number = 3,
+    onProgress?: (status: GenerationStatusResponse) => void
+): Promise<QuestionResponseDTO[]> {
+    let lastError: Error | null = null;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            console.log(
+                `🚀 Generation attempt ${attempt}/${maxRetries}: ${req.topic}`
+            );
+            return await generateQuestionsWithAutoPolling(
+                req,
+                onProgress,
+                300000 + attempt * 30000
+            );
+        } catch (error) {
+            lastError = error as Error;
+            console.warn(`⚠️ Attempt ${attempt} failed: ${lastError.message}`);
+
+            if (attempt < maxRetries) {
+                const waitMs = Math.pow(2, attempt - 1) * 1000; // Exponential backoff
+                console.log(`⏳ Waiting ${waitMs}ms before retry...`);
+                await new Promise((resolve) => setTimeout(resolve, waitMs));
+            }
+        }
+    }
+
+    throw new Error(
+        `Failed to generate questions after ${maxRetries} attempts: ${lastError?.message}`
+    );
+}
+
+/**
+ * ❌ DEPRECATED: Sync generation (can timeout)
+ * Use generateQuestionsByTopicAsync + polling instead
+ *
+ * FIXED: Now throws error to force migration to async approach
+ */
+export async function generateQuestionsByTopic(
+    req: TopicGenerateRequest
+): Promise<any[]> {
+    throw new Error(
+        "❌ generateQuestionsByTopic is DEPRECATED and removed to prevent timeouts. " +
+            "Please use one of these alternatives:\n" +
+            "1. generateQuestionsByTopicAsync(req) - returns jobId immediately\n" +
+            "2. pollGenerationUntilComplete(jobId) - polls for results\n" +
+            "3. generateQuestionsWithAutoPolling(req) - combines both\n" +
+            "4. generateQuestionsWithRetry(req) - with automatic retry logic\n\n" +
+            "See documentation for examples."
+    );
+}
+
+/**
+ * Generate similar questions for quiz using AI
+ * (Assuming this endpoint exists on backend)
+ */
+export async function generateSimilarQuestions(
+    quizId: string,
+    count: number = 3,
+    lang: "vi" | "en" = "vi"
+): Promise<any[]> {
+    try {
+        const res = await axiosInstance.post(
+            `/quizzes/${quizId}/questions/ai-similar`,
+            {},
+            { params: { count, lang } }
+        );
+        return res.data;
+    } catch (error) {
+        handleApiError(error, "Failed to generate similar questions (AI)");
         throw error;
     }
 }

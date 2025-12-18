@@ -4,14 +4,15 @@ import { useParams, useNavigate } from "react-router-dom";
 import {
   getQuizById,
   publishQuiz,
-  generateQuestionsByTopic,
-  TopicGenerateRequest,
-  addAiQuestionsToQuiz,
   QuizDetailResponse,
 } from "@/services/quizService";
 import {
   getQuestionsByQuiz,
-  addAiQuestionsToQuiz as addQuestionsToQuiz,
+  addAiQuestionsToQuiz,
+  generateQuestionsByTopicAsync,
+  getGenerationStatus,  // ✅ ADDED - Import directly instead of dynamic import
+  cancelGeneration,
+  TopicGenerateRequest,
   QuestionResponseDTO,
 } from "@/services/questionService";
 
@@ -22,6 +23,11 @@ import AiSuggestionModal from "@/components/modals/AiSuggestionModal";
 import TopicGenerateModal from "@/components/modals/TopicGenerateModal";
 
 import QuizEditList from "./QuizEditList";
+
+// ✅ CONSTANTS - Better than magic numbers
+const POLL_INTERVAL_MS = 2000;  // Poll every 2 seconds
+const PROGRESS_UPDATE_INTERVAL = 3;  // Update message every 3 polls
+const JOB_TIMEOUT_MS = 300000;  // 5 minutes
 
 let clientKeyCounter = 0;
 
@@ -70,7 +76,10 @@ interface QuizEditorState {
   aiModalVisible: boolean;
   aiQuestions: any[];
   aiLoading: boolean;
+  aiLoadingMessage: string;
   savingAi: boolean;
+  currentJobId: string | null;
+  pollInterval: NodeJS.Timeout | null;  // ✅ FIXED - Correct type instead of number
 }
 
 const QuizEditorPage: React.FC = () => {
@@ -89,7 +98,10 @@ const QuizEditorPage: React.FC = () => {
     aiModalVisible: false,
     aiQuestions: [],
     aiLoading: false,
+    aiLoadingMessage: "Đang khởi tạo...",
     savingAi: false,
+    currentJobId: null,
+    pollInterval: null,
   });
 
   const [showModal, setShowModal] = useState(false);
@@ -121,9 +133,7 @@ const QuizEditorPage: React.FC = () => {
     try {
       const response = await getQuestionsByQuiz(quizId, state.page, state.size);
       const content = Array.isArray(response?.content) ? response.content : [];
-      const processed = withClientKey(
-        content as QuestionResponseDTO[]
-      );
+      const processed = withClientKey(content as QuestionResponseDTO[]);
 
       setState((prev) => ({
         ...prev,
@@ -159,6 +169,22 @@ const QuizEditorPage: React.FC = () => {
   useEffect(() => {
     fetchQuestions();
   }, [fetchQuestions]);
+
+  /**
+   * Cleanup: cancel polling and cancel generation on unmount
+   * ✅ IMPROVED - Check aiLoading before canceling, proper dependencies
+   */
+  useEffect(() => {
+    return () => {
+      if (state.pollInterval) {
+        clearInterval(state.pollInterval);
+      }
+      // Only cancel if still loading
+      if (state.currentJobId && state.aiLoading) {
+        cancelGeneration(state.currentJobId).catch(() => {});
+      }
+    };
+  }, [state.aiLoading, state.currentJobId, state.pollInterval]);
 
   /**
    * Handle publish quiz
@@ -203,24 +229,38 @@ const QuizEditorPage: React.FC = () => {
   };
 
   /**
-   * Close AI modal
+   * Close AI modal and cleanup
+   * ✅ IMPROVED - Added state.aiLoading to prevent closing while loading
    */
   const handleCloseAiModal = useCallback(() => {
-    if (state.savingAi) return;
+    // Don't close if saving or loading
+    if (state.savingAi || state.aiLoading) return;
+
+    // Cancel ongoing polling if any
+    if (state.pollInterval) {
+      clearInterval(state.pollInterval);
+    }
+    if (state.currentJobId) {
+      cancelGeneration(state.currentJobId).catch(() => {});
+    }
 
     setState((prev) => ({
       ...prev,
       aiModalVisible: false,
+      aiLoading: false,
+      currentJobId: null,
+      pollInterval: null,
     }));
 
     setTimeout(() => {
       setState((prev) => ({
         ...prev,
         aiQuestions: [],
+        aiLoadingMessage: "Đang khởi tạo...",
         topicModalOpen: false,
       }));
     }, 300);
-  }, [state.savingAi]);
+  }, [state.savingAi, state.aiLoading, state.pollInterval, state.currentJobId]);
 
   /**
    * Handle add similar questions
@@ -235,10 +275,16 @@ const QuizEditorPage: React.FC = () => {
   };
 
   /**
-   * Handle generate questions by topic
+   * Handle generate questions by topic (ASYNC VERSION)
+   * ✅ IMPROVED - Better error handling, constants, direct imports
    */
   const handleSubmitTopic = async (payload: TopicGenerateRequest) => {
-    setState((prev) => ({ ...prev, aiLoading: true }));
+    setState((prev) => ({
+      ...prev,
+      aiLoading: true,
+      aiLoadingMessage: "🚀 Đang khởi tạo...",
+    }));
+
     try {
       const req = {
         ...payload,
@@ -246,51 +292,122 @@ const QuizEditorPage: React.FC = () => {
         dedupe: true,
       } as TopicGenerateRequest;
 
-      const generated = await generateQuestionsByTopic(req);
-
-      if (!Array.isArray(generated)) {
-        throw new Error("Invalid AI response format");
-      }
-
-      const validQuestions = generated.filter((q, idx) => {
-        const isValid = q && typeof q === "object" && q.questionText;
-        if (!isValid) {
-          console.warn(`⚠️ Question #${idx} is invalid:`, q);
-        }
-        return isValid;
-      });
-
-      if (validQuestions.length === 0) {
-        throw {
-          __isEmptyAI: true,
-          message: "No valid questions generated",
-        };
-      }
+      // Step 1: Start async generation
+      const jobId = await generateQuestionsByTopicAsync(req);
+      console.log("✅ Generation started with jobId:", jobId);
 
       setState((prev) => ({
         ...prev,
-        aiQuestions: validQuestions,
+        currentJobId: jobId,
+        aiLoadingMessage: "⏳ Đang xử lý...",
         aiModalVisible: true,
         topicModalOpen: false,
       }));
-    } catch (e: any) {
-      const status = e?.__status;
-      const isEmpty = e?.__isEmptyAI;
-      let description = "Unable to generate questions from AI";
 
-      if (status === 503 || status === 429) {
-        description =
-          "AI system is busy. Please try again in a few seconds.";
-      } else if (isEmpty) {
-        description =
-          "AI returned empty or invalid format. Be more specific or reduce question count.";
-      } else if (e?.message) {
+      // Step 2: Start polling for results
+      let pollCount = 0;
+      const interval = setInterval(async () => {
+        pollCount++;
+        try {
+          // Update message every PROGRESS_UPDATE_INTERVAL polls
+          if (pollCount % PROGRESS_UPDATE_INTERVAL === 0) {
+            setState((prev) => ({
+              ...prev,
+              aiLoadingMessage: `⏳ Đang xử lý... (${pollCount * 2}s)`,
+            }));
+          }
+
+          // ✅ IMPROVED - Direct import instead of dynamic
+          const status = await getGenerationStatus(jobId);
+
+          if (status.status === "completed") {
+            clearInterval(interval);
+            const questions = status.questions || [];
+
+            if (!Array.isArray(questions) || questions.length === 0) {
+              throw new Error("AI returned empty questions");
+            }
+
+            const validQuestions = questions.filter((q, idx) => {
+              const isValid = q && typeof q === "object" && q.questionText;
+              if (!isValid) {
+                console.warn(`⚠️ Question #${idx} is invalid:`, q);
+              }
+              return isValid;
+            });
+
+            if (validQuestions.length === 0) {
+              throw new Error("No valid questions generated");
+            }
+
+            setState((prev) => ({
+              ...prev,
+              aiQuestions: validQuestions,
+              aiLoading: false,
+              aiLoadingMessage: "✅ Hoàn thành!",
+              currentJobId: null,
+              pollInterval: null,
+            }));
+
+            console.log(
+              "✅ Generation completed:",
+              validQuestions.length,
+              "questions"
+            );
+          } else if (status.status === "failed") {
+            clearInterval(interval);
+            throw new Error(status.error || "Generation failed");
+          }
+        } catch (err) {
+          console.error("❌ Poll error:", err);
+
+          // ✅ IMPROVED - Better error handling
+          if (err instanceof Error) {
+            const msg = err.message.toLowerCase();
+            // Stop polling for permanent errors
+            if (
+              msg.includes("not found") ||
+              msg.includes("expired") ||
+              msg.includes("no longer exists")
+            ) {
+              clearInterval(interval);
+              setState((prev) => ({
+                ...prev,
+                aiLoading: false,
+                currentJobId: null,
+                aiLoadingMessage: "❌ Job không tồn tại",
+              }));
+              notification.error({
+                message: "Error",
+                description: "Job không còn hoặc đã hết hạn. Thử lại?",
+              });
+              return;
+            }
+          }
+          // Continue polling on temporary errors
+        }
+      }, POLL_INTERVAL_MS);  // ✅ Use constant instead of magic number
+
+      setState((prev) => ({
+        ...prev,
+        pollInterval: interval,  // ✅ Correct type
+      }));
+    } catch (e: any) {
+      console.error("❌ Generation failed:", e);
+
+      setState((prev) => ({
+        ...prev,
+        aiLoading: false,
+        currentJobId: null,
+      }));
+
+      let description = "Không thể sinh câu hỏi từ AI";
+
+      if (e?.message) {
         description = e.message;
       }
 
       notification.error({ message: "Error", description });
-    } finally {
-      setState((prev) => ({ ...prev, aiLoading: false }));
     }
   };
 
@@ -301,22 +418,18 @@ const QuizEditorPage: React.FC = () => {
     if (!quizId) return;
 
     if (!Array.isArray(selected) || selected.length === 0) {
-      setState((prev) => ({
-        ...prev,
-        aiModalVisible: false,
-      }));
-      setTimeout(() => {
-        setState((prev) => ({
-          ...prev,
-          aiQuestions: [],
-        }));
-      }, 300);
+      handleCloseAiModal();
       return;
     }
 
     setState((prev) => ({ ...prev, savingAi: true }));
+
+    // Clear polling when accepting
+    if (state.pollInterval) {
+      clearInterval(state.pollInterval);
+    }
+
     try {
-      // Use addAiQuestionsToQuiz from quizService which delegates to questionService
       const saved = await addAiQuestionsToQuiz(quizId, selected);
 
       if (!Array.isArray(saved)) {
@@ -331,6 +444,9 @@ const QuizEditorPage: React.FC = () => {
         total: prev.total + prepared.length,
         aiModalVisible: false,
         savingAi: false,
+        aiLoading: false,
+        currentJobId: null,
+        pollInterval: null,
       }));
 
       notification.success({
@@ -342,7 +458,7 @@ const QuizEditorPage: React.FC = () => {
         setState((prev) => ({
           ...prev,
           aiQuestions: [],
-          aiLoading: false,
+          aiLoadingMessage: "Đang khởi tạo...",
         }));
       }, 300);
     } catch (e: any) {
@@ -353,20 +469,17 @@ const QuizEditorPage: React.FC = () => {
         savingAi: false,
       }));
 
-      const status = e?.__status || e?.response?.status;
-      let description =
-        e?.message || "Error adding questions (bulk operation)";
+      const status = e?.response?.status;
+      let description = e?.message || "Error adding questions (bulk operation)";
 
       if (status === 400) {
-        description =
-          "Invalid data. Check question/answer format.";
+        description = "Invalid data. Check question/answer format.";
       }
       if (status === 404) {
         description = "Quiz not found";
       }
 
       notification.error({ message: "Error", description });
-      console.error("[AI] addAiQuestionsToQuiz error:", e);
     }
   };
 
@@ -416,7 +529,7 @@ const QuizEditorPage: React.FC = () => {
       .filter(Boolean)
       .join("; ") ||
     ""
-  ).substring(0, 200); // Limit to 200 chars
+  ).substring(0, 200);
 
   return (
     <div
@@ -510,10 +623,11 @@ const QuizEditorPage: React.FC = () => {
         onSubmit={handleSubmitTopic}
       />
 
-      {/* AI Suggestion Modal */}
+      {/* AI Suggestion Modal (with loading state) */}
       <AiSuggestionModal
         show={state.aiModalVisible}
         loading={state.aiLoading || state.savingAi}
+        loadingMessage={state.aiLoadingMessage}
         questions={state.aiQuestions}
         onClose={handleCloseAiModal}
         onAccept={handleAcceptAiQuestions}

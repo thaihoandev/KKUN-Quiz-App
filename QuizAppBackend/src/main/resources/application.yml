@@ -189,6 +189,10 @@ gemini:
       initial-backoff-ms: ${GEMINI_RETRY_INITIAL_MS:400}
       max-backoff-ms: ${GEMINI_RETRY_MAX_MS:4000}
       jitter: ${GEMINI_RETRY_JITTER:true}
+  client:
+    timeout-seconds: 50
+    max-connections: 10
+    max-pending-requests: 100
 
 limits:
   max-questions: ${MAX_QUESTIONS:10}
