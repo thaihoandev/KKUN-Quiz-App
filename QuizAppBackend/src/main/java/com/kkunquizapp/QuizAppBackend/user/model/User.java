@@ -1,5 +1,6 @@
 package com.kkunquizapp.QuizAppBackend.user.model;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.kkunquizapp.QuizAppBackend.user.model.enums.UserRole;
 import jakarta.persistence.*;
@@ -54,9 +55,11 @@ public class User {
     private String school;
 
     @Column(nullable = false, updatable = false)
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss")
     private LocalDateTime createdAt = LocalDateTime.now();
 
     @Column(nullable = false)
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss")
     private LocalDateTime updatedAt = LocalDateTime.now();
 
     @Column(nullable = false)

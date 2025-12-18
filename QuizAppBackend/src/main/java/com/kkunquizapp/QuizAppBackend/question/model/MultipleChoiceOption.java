@@ -1,14 +1,17 @@
 package com.kkunquizapp.QuizAppBackend.question.model;
 
-import com.kkunquizapp.QuizAppBackend.question.model.enums.QuestionType;
-import jakarta.persistence.*;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Table;
 import lombok.Data;
-import lombok.EqualsAndHashCode;
+import lombok.NoArgsConstructor;
+import lombok.experimental.SuperBuilder;
 
-@Data
+// ==================== 2. MultipleChoiceOption ====================
 @Entity
-@DiscriminatorValue(QuestionType.MULTIPLE_CHOICE_TYPE)
-@EqualsAndHashCode(callSuper = true)
+@Table(name = "multiple_choice_options")
+@Data
+@NoArgsConstructor
+@SuperBuilder(toBuilder = true)
 public class MultipleChoiceOption extends Option {
-    // Không có gì thêm – dùng optionText và correct từ Option
+    // Inherits common fields from Option
 }

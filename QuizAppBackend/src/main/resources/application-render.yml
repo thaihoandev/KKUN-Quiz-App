@@ -1,99 +1,26 @@
 spring:
   config:
     activate:
-      on-profile: render
+      on-profile: prod
 
-  # ────────────────────── DATABASE & JPA ──────────────────────
-  datasource:
-    url: ${SPRING_DATASOURCE_URL}
-    username: ${SPRING_DATASOURCE_USERNAME}
-    password: ${SPRING_DATASOURCE_PASSWORD}
-    driver-class-name: org.postgresql.Driver
-    hikari:
-      connection-timeout: 20000
-      maximum-pool-size: 15
-      minimum-idle: 5
-
-  jpa:
-    show-sql: false
-    open-in-view: false
-    hibernate:
-      ddl-auto: update
-    properties:
-      hibernate:
-        temp.use_jdbc_metadata_defaults: false
-        jdbc.lob.non_contextual_creation: true
-        format_sql: false
-        generate_statistics: false
-
-  # ────────────────────── REDIS ──────────────────────
   data:
     redis:
-      host: ${REDIS_HOST}
-      port: ${REDIS_PORT:6379}
-      password: ${REDIS_PASSWORD:}
-      ssl.enabled: true
-      connect-timeout: 5000ms
-      timeout: 5000ms
-      lettuce.pool:
-        max-active: 10
-        max-idle: 5
-        min-idle: 2
+      ssl:
+        enabled: true
+      lettuce:
+        pool:
+          max-active: 50
+          max-idle: 20
+          min-idle: 10
 
-  # ────────────────────── KAFKA (ĐÃ SỬA TRÙNG KEY) ──────────────────────
-  kafka:
-    bootstrap-servers: ${KAFKA_BOOTSTRAP:source.gateway.apim.event-mock-kafka.gravitee.xyz:9092}
-    client-id: ${spring.application.name:kkun-quiz}
+  cache:
+    redis:
+      time-to-live: 600000
 
-    # Quan trọng: tắt auto-create + không block startup khi Kafka chết
-    admin:
-      auto-create: false
-      fail-fast: false
-
-    producer:
-      key-serializer: org.apache.kafka.common.serialization.StringSerializer
-      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
-      acks: 1
-      properties:
-        spring.json.add.type.headers: false
-
-    consumer:
-      group-id: ${KAFKA_GROUP_ID:kkun-quiz-writer}
-      auto-offset-reset: earliest
-      enable-auto-commit: false
-      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
-      properties:
-        spring.json.trusted.packages: "com.kkunquizapp.QuizAppBackend.*"
-
-    # TẤT CẢ properties Kafka gom chung vào đây (chỉ khai báo 1 lần!)
-    properties:
-      security.protocol: ${KAFKA_SECURITY_PROTOCOL:PLAINTEXT}
-      sasl.mechanism: ${KAFKA_SASL_MECHANISM:}
-      sasl.jaas.config: ${KAFKA_SASL_JAAS:}
-      ssl.endpoint.identification.algorithm: https
-
-      # Giảm timeout để không treo 30–60s khi Kafka không phản hồi
-      request.timeout.ms: 8000
-      default.api.timeout.ms: 10000
-      metadata.max.age.ms: 60000
-      session.timeout.ms: 30000
-      heartbeat.interval.ms: 3000
-
-  # ────────────────────── Tối ưu chung cho Render ──────────────────────
-  main:
-    lazy-initialization: false   # bật true nếu muốn nhanh hơn nữa (cẩn thận NPE)
-
-  devtools:
-    restart.enabled: false
-    livereload.enabled: false
-
-# Logging nhẹ hơn lúc khởi động
 logging:
   level:
-    org.springframework: WARN
-    org.hibernate.SQL: OFF
-    org.hibernate.type.descriptor.sql: OFF
-    com.zaxxer.hikari: WARN
-    org.apache.kafka: WARN
     root: INFO
+    org.hibernate.SQL: WARN
+    org.hibernate.type.descriptor.sql: OFF
+    io.lettuce.core: WARN
+    org.springframework: WARN

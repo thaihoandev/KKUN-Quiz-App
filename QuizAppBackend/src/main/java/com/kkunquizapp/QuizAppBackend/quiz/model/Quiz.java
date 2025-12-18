@@ -1,10 +1,18 @@
 package com.kkunquizapp.QuizAppBackend.quiz.model;
 
-
-import com.kkunquizapp.QuizAppBackend.quiz.model.enums.QuizStatus;
+import com.kkunquizapp.QuizAppBackend.question.model.Question;
+import com.kkunquizapp.QuizAppBackend.quiz.model.enums.Difficulty;
+import com.kkunquizapp.QuizAppBackend.quiz.model.enums.Visibility;
 import com.kkunquizapp.QuizAppBackend.user.model.User;
 import jakarta.persistence.*;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
+import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.annotations.UpdateTimestamp;
+import org.hibernate.type.SqlTypes;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -12,49 +20,114 @@ import java.util.List;
 import java.util.UUID;
 
 @Entity
+@Table(name = "quizzes", indexes = {
+        @Index(name = "idx_quizzes_deleted", columnList = "deleted"),
+        @Index(name = "idx_quizzes_creator_published", columnList = "creator_id, published"),
+        @Index(name = "idx_quizzes_visibility", columnList = "visibility"),
+        @Index(name = "idx_quizzes_created_at", columnList = "created_at DESC"),
+        @Index(name = "idx_quizzes_slug", columnList = "slug"),
+        @Index(name = "idx_quizzes_created_by", columnList = "created_by")
+})
 @Data
-@Table(name = "quiz")
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class Quiz {
+
     @Id
-    @GeneratedValue(strategy = GenerationType.AUTO)
-    @Column(updatable = false, nullable = false, unique = true)
+    @GeneratedValue(strategy = GenerationType.UUID)
     private UUID quizId;
 
-    @Column(nullable = false, length = 100)
+    @Column(nullable = false, length = 200)
     private String title;
 
-    @Column(length = 500)
+    @Column(length = 1000)
     private String description;
 
-    @ManyToOne
-    @JoinColumn(name = "host_id", nullable = false)
-    private User host;
+    @Column(length = 200, unique = true)
+    private String slug;
 
-    @Column(nullable = false)
-    private LocalDateTime createdAt = LocalDateTime.now();
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "creator_id", nullable = false)
+    private User creator;
 
-    @Column(nullable = false)
-    private LocalDateTime updatedAt = LocalDateTime.now();
+    private String coverImageUrl;
 
-    @Enumerated(EnumType.STRING) // Lưu giá trị enum dưới dạng chuỗi
-    @Column(nullable = false, length = 20)
-    private QuizStatus status; // "PUBLISHED", "ACHIEVED", "CLOSED", "DRAFT"
-
-    @ManyToMany(fetch = FetchType.EAGER)
-    @JoinTable(
-            name = "quiz_viewers",
-            joinColumns = @JoinColumn(name = "quiz_id"),
-            inverseJoinColumns = @JoinColumn(name = "user_id")
+    @OneToMany(
+            mappedBy = "quiz",
+            cascade = CascadeType.ALL,
+            orphanRemoval = true,
+            fetch = FetchType.LAZY
     )
-    private List<User> viewers = new ArrayList<>();; // Danh sách người dùng được phép xem
+    @OrderBy("orderIndex ASC")
+    private List<Question> questions = new ArrayList<>();
 
-    @ManyToMany(fetch = FetchType.EAGER)
-    @JoinTable(
-            name = "quiz_editors",
-            joinColumns = @JoinColumn(name = "quiz_id"),
-            inverseJoinColumns = @JoinColumn(name = "user_id")
-    )
-    private List<User> editors = new ArrayList<>();; // Danh sách người dùng được phép chỉnh sửa
+    @Column(columnDefinition = "JSONB")
+    @JdbcTypeCode(SqlTypes.JSON)
+    private String tagsJson = "[]";
+
+    @Enumerated(EnumType.STRING)
+    private Difficulty difficulty = Difficulty.MEDIUM;
+
+    private Integer estimatedMinutes;
+
     @Column(nullable = false)
-    private double recommendationScore = 0.0;
+    private boolean published = false;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private Visibility visibility = Visibility.PUBLIC;
+
+    private String accessPassword;
+
+    @Column(columnDefinition = "JSONB")
+    @JdbcTypeCode(SqlTypes.JSON)
+    private String allowedUserIdsJson = "[]";
+
+    // Soft delete
+    @Column(nullable = false)
+    private boolean deleted = false;
+
+    private LocalDateTime deletedAt;
+    private UUID deletedBy;
+
+    // Audit
+    private UUID createdBy;
+    private UUID updatedBy;
+
+    // Analytics (denormalized)
+    @Column(nullable = false)
+    private int totalQuestions = 0;
+
+    @Column(nullable = false)
+    private int totalSessions = 0;
+
+    @Column(nullable = false)
+    private int totalLivePlays = 0;
+
+    @Column(nullable = false)
+    private double averageScore = 0.0;
+
+    @Column(nullable = false)
+    private int averageTimeSpent = 0;
+
+    @Column(nullable = false)
+    private int viewCount = 0;
+
+    @Column(nullable = false)
+    private int startCount = 0;
+
+    @Column(nullable = false)
+    private int completionCount = 0;
+
+    // Timestamps
+    @CreationTimestamp
+    @Column(nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @UpdateTimestamp
+    @Column(nullable = false)
+    private LocalDateTime updatedAt;
+
+    private Integer categoryId;
 }

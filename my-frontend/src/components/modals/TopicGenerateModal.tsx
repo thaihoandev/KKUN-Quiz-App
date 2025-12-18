@@ -1,5 +1,5 @@
+import { TopicGenerateRequest } from "@/services/questionService";
 import React, { useState, useEffect } from "react";
-import { TopicGenerateRequest } from "@/services/quizService";
 
 type Props = {
   open: boolean;

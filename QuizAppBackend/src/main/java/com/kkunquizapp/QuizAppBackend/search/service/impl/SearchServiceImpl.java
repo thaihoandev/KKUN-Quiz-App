@@ -1,7 +1,7 @@
 package com.kkunquizapp.QuizAppBackend.search.service.impl;
 
 import com.kkunquizapp.QuizAppBackend.common.utils.StringUtils;
-import com.kkunquizapp.QuizAppBackend.quiz.dto.QuizResponseDTO;
+import com.kkunquizapp.QuizAppBackend.quiz.dto.QuizDetailResponse;
 import com.kkunquizapp.QuizAppBackend.quiz.model.Quiz;
 import com.kkunquizapp.QuizAppBackend.quiz.model.enums.QuizStatus;
 import com.kkunquizapp.QuizAppBackend.quiz.repository.QuizRepo;
@@ -23,12 +23,12 @@ public class SearchServiceImpl implements SearchService {
         this.modelMapper = modelMapper;
     }
     // Tìm kiếm quiz theo title (không phân biệt chữ hoa/thường)
-    public List<QuizResponseDTO> searchQuizzesByTitle(String title) {
+    public List<QuizDetailResponse> searchQuizzesByTitle(String title) {
         String titleNoAccent = StringUtils.removeAccents(title);
         List<Quiz> quizzes = quizRepository.findAll(); // Lấy toàn bộ quiz
 
         return quizzes.stream()
-                .filter(q -> q.getStatus() == QuizStatus.PUBLISHED) // Chỉ lấy quiz có status PUBLISHED
+                .filter(Quiz::isPublished) // Chỉ lấy quiz có status PUBLISHED
                 .filter(q -> StringUtils.removeAccents(q.getTitle()).toLowerCase()
                         .contains(titleNoAccent.toLowerCase())) // Tìm kiếm không dấu
                 .map(this::convertToDTO)
@@ -37,7 +37,7 @@ public class SearchServiceImpl implements SearchService {
 
 
     // Chuyển đổi Quiz entity sang QuizResponseDTO
-    private QuizResponseDTO convertToDTO(Quiz quiz) {
-        return modelMapper.map(quiz, QuizResponseDTO.class);
+    private QuizDetailResponse convertToDTO(Quiz quiz) {
+        return modelMapper.map(quiz, QuizDetailResponse.class);
     }
 }

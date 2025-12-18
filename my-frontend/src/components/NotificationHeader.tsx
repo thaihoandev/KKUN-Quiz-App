@@ -148,9 +148,9 @@ const NotificationHeader: React.FC<NotificationHeaderProps> = ({ profile }) => {
       setNotifications((prev) => [n, ...prev.filter((x) => x.id !== n.id)]);
       setTotalCount((c) => c + 1);
     };
-    webSocketService.registerNotificationCallback(cb);
+    webSocketService.onNotification(cb);
     return () => {
-      webSocketService.unregisterNotificationCallback(cb);
+      webSocketService.offNotification(cb);
     };
   }, [profile?.userId]);
 

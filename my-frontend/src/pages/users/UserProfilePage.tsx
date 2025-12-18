@@ -18,7 +18,6 @@ const UserProfilePage = () => {
   const { userId: routeUserId } = useParams<{ userId?: string }>();
 
   const storeUser = useAuthStore((s) => s.user); // current logged-in user
-  console.log("store user:", storeUser);
   
   const refreshMe = useAuthStore((s) => s.refreshMe);
 

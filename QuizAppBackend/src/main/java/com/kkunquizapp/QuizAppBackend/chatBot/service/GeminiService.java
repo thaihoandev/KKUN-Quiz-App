@@ -1,18 +1,22 @@
-// com.kkunquizapp.QuizAppBackend.service.GeminiService
+// ==================== SERVICE INTERFACE ====================
 package com.kkunquizapp.QuizAppBackend.chatBot.service;
 
-import com.kkunquizapp.QuizAppBackend.question.dto.QuestionRequestDTO;
-import com.kkunquizapp.QuizAppBackend.question.dto.QuestionResponseDTO;
 import com.kkunquizapp.QuizAppBackend.chatBot.dto.TopicGenerateRequest;
+import com.kkunquizapp.QuizAppBackend.question.dto.QuestionResponseDTO;
 
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 public interface GeminiService {
-    QuestionRequestDTO generateOptionsForQuestion(QuestionRequestDTO request) throws Exception;
 
-    // NEW: trả về DTO cho preview (khớp Controller)
-    List<QuestionResponseDTO> generateByTopic(TopicGenerateRequest req);
+    /**
+     * ✅ Synchronous generation (use only for small requests)
+     */
+    List<QuestionResponseDTO> generateByTopic(TopicGenerateRequest request);
 
-    // (tuỳ chọn) nếu bạn dùng ở nơi khác:
-    // List<QuestionRequestDTO> generateQuestionsByTopic(TopicGenerateRequest req) throws Exception;
+    /**
+     * ✅ Asynchronous generation (RECOMMENDED)
+     * Returns CompletableFuture so it doesn't block
+     */
+    CompletableFuture<List<QuestionResponseDTO>> generateByTopicAsync(TopicGenerateRequest request);
 }

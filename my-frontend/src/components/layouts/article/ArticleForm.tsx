@@ -186,7 +186,8 @@ const ArticleForm: React.FC = () => {
       });
       return;
     }
-
+    console.log();
+    
     if (!contentMarkdown.trim()) {
       notification.error({
         message: "Thiếu nội dung",

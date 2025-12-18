@@ -31,7 +31,7 @@ public class MessageCommandConsumer {
     private final MediaRepo mediaRepo;
     private final KafkaProducers producers;
 
-    @KafkaListener(topics = "${app.kafka.topics.chatSend}", groupId = "chat-writer")
+    @KafkaListener(topics = "${app.kafka.topics.chat-send}", groupId = "chat-writer")
     @Transactional
     public void handle(ChatMessageCommand cmd) {
         // 1) Validate đầy đủ

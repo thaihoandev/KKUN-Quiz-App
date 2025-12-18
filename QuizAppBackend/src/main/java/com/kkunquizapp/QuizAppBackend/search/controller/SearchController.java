@@ -1,6 +1,6 @@
 package com.kkunquizapp.QuizAppBackend.search.controller;
 
-import com.kkunquizapp.QuizAppBackend.quiz.dto.QuizResponseDTO;
+import com.kkunquizapp.QuizAppBackend.quiz.dto.QuizDetailResponse;
 import com.kkunquizapp.QuizAppBackend.search.service.SearchService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,13 +21,13 @@ public class SearchController {
 
     // Endpoint tìm kiếm quiz theo title
     @GetMapping
-    public ResponseEntity<List<QuizResponseDTO>> searchQuizzes(
+    public ResponseEntity<List<QuizDetailResponse>> searchQuizzes(
             @RequestParam(value = "q", required = false) String query) {
         if (query == null || query.trim().isEmpty()) {
             return ResponseEntity.ok(List.of()); // Trả về danh sách rỗng nếu query trống
         }
 
-        List<QuizResponseDTO> results = searchService.searchQuizzesByTitle(query);
+        List<QuizDetailResponse> results = searchService.searchQuizzesByTitle(query);
         return ResponseEntity.ok(results);
     }
 }

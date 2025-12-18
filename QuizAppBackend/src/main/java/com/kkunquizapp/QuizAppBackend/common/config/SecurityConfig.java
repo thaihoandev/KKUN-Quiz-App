@@ -12,6 +12,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.*;
 import org.springframework.core.io.Resource;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.authentication.*;
@@ -78,98 +79,38 @@ public class SecurityConfig {
 
                 // ========== AUTHORIZATION RULES ==========
                 .authorizeHttpRequests(auth -> auth
+                        // Public endpoints
+                        .requestMatchers("/ws/**", "/api/auth/**").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/games/join-anonymous").permitAll()
 
-                        // ============ PUBLIC AUTH / WS ============
-                        .requestMatchers(
-                                "/ws/**",
-                                "/api/auth/**"
-                        ).permitAll()
+                        // Participant actions (không cần auth, chỉ cần participantId header)
+                        .requestMatchers(HttpMethod.POST, "/api/games/*/leave").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/games/{gameId}/answer").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/games/{gameId}/skip").permitAll()
 
-                        // ============ PUBLIC QUIZZES / ARTICLES / SEARCH ============
+                        // Public read-only
                         .requestMatchers(
                                 "/api/quizzes/published",
                                 "/api/quizzes/users/**",
-                                "/api/articles",
-                                "/api/articles/category/**",
-                                "/api/articles/{slug}",
-                                "/api/article-categories/**",
-                                "/api/tags/**",
-                                "/api/search/**",
-                                "/api/games/join",
-                                "/api/games/{gameId}/answer",
-                                "/api/games/{gameId}/players",
-                                "/api/games/{gameId}/details",
-                                "/api/games/{gameId}/leaderboard"
+                                "/api/articles", "/api/articles/**",
+                                "/api/article-categories/**", "/api/tags/**", "/api/search/**",
+                                "/api/games/join", "/api/games/pin/**",
+                                "/api/games/{gameId}/participants", "/api/games/{gameId}/details",
+                                "/api/games/{gameId}/leaderboard", "/api/games/{gameId}/final-leaderboard",
+                                "/api/games/{gameId}"
                         ).permitAll()
 
-                        // ============ PRIVATE USER (me) ============
-                        .requestMatchers(
-                                "/api/users/me/**",
-                                "/api/users/me/friends/**",
-                                "/api/users/me/friend-requests/**"
-                        ).hasAnyAuthority(UserRole.USER.name(), UserRole.ADMIN.name())
+                        // ✅ OPTIONS permit all - đặt trước anyRequest
+                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 
-                        // ============ PUBLIC USER PROFILE (by id) ============
-                        .requestMatchers(
-                                "/api/users/{id}",
-                                "/api/users/{id}/**"
-                        ).permitAll()
+                        // Authenticated endpoints
+                        .requestMatchers("/api/users/me/**", "/api/ai/**", "/api/quizzes/**").hasAnyAuthority(UserRole.USER.name(), UserRole.ADMIN.name())
 
-                        // ============ AI ============
-                        .requestMatchers("/api/ai/**")
-                        .hasAnyAuthority(UserRole.USER.name(), UserRole.ADMIN.name())
+                        // Admin
+                        .requestMatchers("/api/admin/**").hasAuthority(UserRole.ADMIN.name())
 
-                        // ============ QUIZ & QUESTIONS ============
-                        .requestMatchers(
-                                "/api/quizzes/**",
-                                "/api/questions/**"
-                        ).hasAnyAuthority(UserRole.USER.name(), UserRole.ADMIN.name())
-
-                        // ============ PUBLIC POSTS ============
-                        .requestMatchers(
-                                "/api/posts/public",
-                                "/api/posts/{postId}",
-                                "/api/comments/post/**"
-                        ).permitAll()
-
-                        // ============ PRIVATE POSTS ============
-                        .requestMatchers(
-                                "/api/posts/**",
-                                "/api/comments/**"
-                        ).hasAnyAuthority(UserRole.USER.name(), UserRole.ADMIN.name())
-
-                        // ============ SERIES / FILE upload ============
-                        .requestMatchers(
-                                "/api/series/**",
-                                "/api/articles/**",
-                                "/api/files/upload/**"
-                        ).hasAnyAuthority(UserRole.USER.name(), UserRole.ADMIN.name())
-
-                        // ============ CHAT ============
-                        .requestMatchers("/api/chat/**")
-                        .hasAnyAuthority(UserRole.USER.name(), UserRole.ADMIN.name())
-
-                        // ============ GAME (host actions) ============
-                        .requestMatchers(
-                                "/api/games/create",
-                                "/api/games/{gameId}/start",
-                                "/api/games/{gameId}/end"
-                        ).hasAnyAuthority(UserRole.USER.name(), UserRole.ADMIN.name())
-
-                        // ============ NOTIFICATIONS ============
-                        .requestMatchers("/api/notifications/**")
-                        .hasAnyAuthority(UserRole.USER.name(), UserRole.ADMIN.name())
-
-                        // ============ PLAYERS ============
-                        .requestMatchers("/api/players/**")
-                        .hasAnyAuthority(UserRole.USER.name(), UserRole.ADMIN.name())
-
-                        // ============ ADMIN ONLY ============
-                        .requestMatchers("/api/admin/**")
-                        .hasAuthority(UserRole.ADMIN.name())
-
-                        // ============ DEFAULT ============
-                        .anyRequest().permitAll()
+                        // Default
+                        .anyRequest().authenticated()
                 )
 
                 // ========== EXCEPTION HANDLING - 401/403 ==========
@@ -306,7 +247,7 @@ public class SecurityConfig {
 
         cfg.setAllowedOrigins(origins);
         cfg.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        cfg.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"));
+        cfg.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With","X-Participant-Id"));
         cfg.setExposedHeaders(List.of("Set-Cookie")); // ✅ IMPORTANT: Expose Set-Cookie header for refresh token
         cfg.setAllowCredentials(true); // ✅ IMPORTANT: Allow credentials (cookies)
         cfg.setMaxAge(3600L);

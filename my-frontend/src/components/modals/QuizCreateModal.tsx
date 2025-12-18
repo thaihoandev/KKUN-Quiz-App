@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import ReactDOM from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { QuizStatus } from "@/interfaces";
-import { createQuiz, createQuizFromFile } from "@/services/quizService";
+import { createQuiz } from "@/services/quizService";
 import { UserProfile } from "@/types/users";
 
 interface QuizCreateModalProps {
@@ -48,21 +48,19 @@ const QuizCreateModal: React.FC<QuizCreateModalProps> = ({ open, onClose, profil
       const quizMeta = {
         title: title.trim(),
         description: description.trim(),
-        status: QuizStatus.DRAFT,
-        userId: profile?.userId,
       };
 
       let createdQuiz;
-      if (file) {
-        const formData = new FormData();
-        formData.append("file", file);
-        formData.append("quiz", new Blob([JSON.stringify(quizMeta)], { type: "application/json" }));
-        createdQuiz = await createQuizFromFile(formData);
-      } else {
+      // if (file) {
+      //   const formData = new FormData();
+      //   formData.append("file", file);
+      //   formData.append("quiz", new Blob([JSON.stringify(quizMeta)], { type: "application/json" }));
+      //   createdQuiz = await createQuizFromFile(formData);
+      // } else {
         createdQuiz = await createQuiz(quizMeta);
-      }
+      // }
 
-      navigate(`/quizzes/${createdQuiz.quizId}`);
+      navigate(`/quiz/${createdQuiz.quizId}`);
       setLoading(false);
       onClose();
     } catch (err) {

@@ -40,7 +40,7 @@ public class TopicGenerateRequest {
     @Min(value = 5, message = "timeLimit tối thiểu là 5 giây")
     @Max(value = 300, message = "timeLimit tối đa là 300 giây")
     @Builder.Default
-    private Integer timeLimit = 60;
+    private Integer timeLimit = 10;
 
     /**
      * Điểm cho mỗi câu. Mặc định 1000.

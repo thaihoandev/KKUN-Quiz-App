@@ -1,24 +1,89 @@
 package com.kkunquizapp.QuizAppBackend.game.service;
 
 import com.kkunquizapp.QuizAppBackend.game.dto.*;
-import com.kkunquizapp.QuizAppBackend.game.model.enums.GameStatus;
-import com.kkunquizapp.QuizAppBackend.player.dto.PlayerRequestDTO;
-import com.kkunquizapp.QuizAppBackend.player.dto.PlayerResponseDTO;
-import com.kkunquizapp.QuizAppBackend.question.dto.AnswerRequestDTO;
+import com.kkunquizapp.QuizAppBackend.game.model.Game;
+import com.kkunquizapp.QuizAppBackend.question.model.Question;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
 import java.util.List;
 import java.util.UUID;
 
+/**
+ * Game Service Interface
+ * Defines the full contract for real-time multiplayer quiz games.
+ */
 public interface GameService {
-    GameResponseDTO startGameFromQuiz(UUID quizId, String token);
-    PlayerResponseDTO joinGame(String pinCode, String token, PlayerRequestDTO request);
-    GameResponseDTO startGame(UUID gameId, String token);
-    GameResponseDTO endGame(UUID gameId, String token, boolean isAutoEnd);
-    GameDetailsResponseDTO getGameDetails(UUID gameId);
-    void playerExitBeforeStart(UUID gameId, UUID playerId);
-    void playerExit(UUID gameId, UUID playerId);
-    GameStatus getGameStatus(UUID gameId);
-    List<PlayerResponseDTO> getPlayersInGame(UUID gameId);
-    List<PlayerResponseDTO> getLeaderboard(UUID gameId); // New method for leaderboard
-    boolean processPlayerAnswer(UUID gameId, AnswerRequestDTO answerRequest);
+
+    // ==================== GAME LIFECYCLE ====================
+
+    GameResponseDTO createGame(GameCreateRequest request, UUID hostId);
+
+    void startGame(UUID gameId, UUID hostId);
+
+    void pauseGame(UUID gameId, UUID hostId);
+
+    void resumeGame(UUID gameId, UUID hostId);
+
+    void endGame(UUID gameId, UUID hostId);
+
+    void cancelGame(UUID gameId, UUID hostId);
+
+
+    // ==================== PLAYER JOINING ====================
+
+    GameParticipantDTO joinGame(String pinCode, JoinGameRequest request, UUID userId);
+
+    GameParticipantDTO joinGameAnonymous(String pinCode, JoinGameRequest request);
+
+    void leaveGame(UUID gameId, UUID participantId);
+
+    void kickParticipant(UUID gameId, UUID participantId, UUID hostId, String reason);
+
+//    void actuallyStartGame(UUID gameId, UUID hostId);
+    // ==================== QUESTION FLOW ====================
+
+    QuestionResponseDTO moveToNextQuestion(UUID gameId, UUID hostId);
+
+    void broadcastQuestionFromGameSession(UUID gameId, Question currentQuestion);
+
+    void endQuestion(UUID gameId);
+
+
+    // ==================== ANSWER SUBMISSION ====================
+
+    AnswerResultDTO submitAnswer(UUID gameId, UUID participantId, SubmitAnswerRequest request);
+
+    void skipQuestion(UUID gameId, UUID participantId);
+
+
+    // ==================== GAME INFORMATION ====================
+
+    GameResponseDTO getGameByPin(String pinCode);
+
+    Game findGameEntityById(UUID gameId);
+
+    GameResponseDTO getGameById(UUID gameId);
+
+    GameDetailDTO getGameDetails(UUID gameId, UUID userId);
+
+    List<GameParticipantDTO> getParticipants(UUID gameId);
+
+    Page<GameResponseDTO> getMyGames(UUID userId, Pageable pageable);
+
+
+    // ==================== LEADERBOARD ====================
+
+    List<LeaderboardEntryDTO> getLeaderboard(UUID gameId);
+
+    List<LeaderboardEntryDTO> getFinalLeaderboard(UUID gameId);
+
+
+    // ==================== STATISTICS ====================
+
+    GameStatisticsDTO getGameStatistics(UUID gameId);
+
+    UserQuizStatsDTO getUserStatistics(UUID userId, UUID quizId);
+
+    CurrentQuestionResponseDTO getCurrentQuestion(UUID gameId);
 }

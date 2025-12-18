@@ -1,821 +1,1224 @@
-"use client";
-
-import React, { useState, useEffect, useMemo, useRef } from "react";
-import { useParams, useNavigate } from "react-router-dom";
-import SockJS from "sockjs-client";
-import { Client } from "@stomp/stompjs";
-import { toast } from "react-toastify";
-import { useAuth } from "@/hooks/useAuth";
-import { submitAnswer, fetchLeaderboard, fetchGameDetails } from "@/services/gameService";
+// src/pages/game/GamePlayPage.tsx - FIXED VERSION
+import React, { useState, useEffect, useRef } from "react";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import {
-  GameResponseDTO,
-  PlayerResponseDTO,
+  nextQuestion,
+  endGame,
+  getGameDetails,
+  submitAnswer,
+  skipQuestion,
+  sendHeartbeat,
+  requestLeaderboard,
+  requestGameDetails,
+  requestGameStatistics,
+  setupHostListeners,
+  setupParticipantListeners,
+  clearParticipantSession,
+} from "@/services/gameService";
+import { webSocketService } from "@/services/webSocketService";
+import { handleApiError } from "@/utils/apiErrorHandler";
+import type {
+  GameDetailDTO,
+  GameParticipantDTO,
   QuestionResponseDTO,
+  QuestionUpdateDTO,
   LeaderboardEntryDTO,
-} from "@/interfaces";
-import styles from "./GamePlayPage.module.css";
-import { WifiOutlined, DisconnectOutlined } from "@ant-design/icons";
-import unknownAvatar from "@/assets/img/avatars/unknown.jpg";
-import avatar1 from "@/assets/img/avatars/1.png";
-import avatar2 from "@/assets/img/avatars/2.png";
-import avatar3 from "@/assets/img/avatars/3.png";
-import avatar4 from "@/assets/img/avatars/4.png";
-import avatar5 from "@/assets/img/avatars/5.png";
-import avatar6 from "@/assets/img/avatars/6.png";
-import avatar7 from "@/assets/img/avatars/7.png";
-import avatar8 from "@/assets/img/avatars/8.png";
-import avatar9 from "@/assets/img/avatars/9.png";
-import avatar10 from "@/assets/img/avatars/10.png";
-import avatar11 from "@/assets/img/avatars/11.png";
-import avatar12 from "@/assets/img/avatars/12.png";
-import avatar13 from "@/assets/img/avatars/13.png";
-import avatar14 from "@/assets/img/avatars/14.png";
-import avatar15 from "@/assets/img/avatars/15.png";
+  GameEvent,
+  GameStatisticsDTO,
+} from "@/types/game";
+import OptionsRenderer from "@/components/layouts/question/OptionsRenderer";
 
-// Avatar list
-const AVATAR_LIST = [
-  avatar1,
-  avatar2,
-  avatar3,
-  avatar4,
-  avatar5,
-  avatar6,
-  avatar7,
-  avatar8,
-  avatar9,
-  avatar10,
-  avatar11,
-  avatar12,
-  avatar13,
-  avatar14,
-  avatar15,
-];
-
-interface Option {
-  optionId: string;
-  optionText: string;
-  correct: boolean;
-  correctAnswer?: string; // For FILL_IN_THE_BLANK
-}
-
-interface ExtendedQuestionResponseDTO extends QuestionResponseDTO {
-  imageUrl?: string;
-  options: Option[];
-}
-
-interface ExtendedPlayerResponseDTO extends PlayerResponseDTO {
-  avatar?: string;
+interface GamePlayState {
+  isHost: boolean;
+  gameInfo: GameDetailDTO | null;
+  gameDetails: GameDetailDTO | null;
+  gameStatistics: GameStatisticsDTO | null;
+  currentQuestion: QuestionResponseDTO | null;
+  participants: GameParticipantDTO[];
+  leaderboard: LeaderboardEntryDTO[];
+  answerResult: any | null;
+  participantId: string | null;
+  isKicked: boolean;
+  isDisconnected: boolean;
+  isGameEnded: boolean;
+  gameEndReason: string | null;
 }
 
 const GamePlayPage: React.FC = () => {
-  const { gameId } = useParams<{ gameId: string }>();
   const navigate = useNavigate();
-  const WS_ENDPOINT = import.meta.env.VITE_WS_URL || "http://localhost:8080/ws";
-  const { user } = useAuth();
+  const { gameId } = useParams();
 
-  const [currentQuestion, setCurrentQuestion] = useState<ExtendedQuestionResponseDTO | null>(null);
-  const [pendingQuestion, setPendingQuestion] = useState<ExtendedQuestionResponseDTO | null>(null);
-  const [pendingLeaderboard, setPendingLeaderboard] = useState<ExtendedPlayerResponseDTO[] | null>(null);
-  const [selectedOptionIds, setSelectedOptionIds] = useState<string[]>([]);
-  const [fillInAnswer, setFillInAnswer] = useState<string>("");
-  const [timeLeft, setTimeLeft] = useState<number>(0);
-  const [imageUrl, setImageUrl] = useState<string>("");
-  const [leaderboard, setLeaderboard] = useState<ExtendedPlayerResponseDTO[]>([]);
-  const [stompClient, setStompClient] = useState<Client | null>(null);
-  const [wsConnected, setWsConnected] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
-  const [hasAnswered, setHasAnswered] = useState<boolean>(false);
-  const [hostId, setHostId] = useState<string | null>(null);
-  const [players, setPlayers] = useState<ExtendedPlayerResponseDTO[]>([]);
-  const [gameEnded, setGameEnded] = useState<boolean>(false);
-  const [showCorrectAnswer, setShowCorrectAnswer] = useState<boolean>(false);
-  const [isShowingCorrectAnswer, setIsShowingCorrectAnswer] = useState<boolean>(false);
-  const [usedAvatars, setUsedAvatars] = useState<Set<string>>(new Set());
-  const [canProceed, setCanProceed] = useState<boolean>(false); // ✅ chỉ bật WS & gameplay khi qua guard
+  const participantId = useRef(localStorage.getItem("participantId"));
+  const isAnonymous = useRef(localStorage.getItem("isAnonymous") === "true");
 
-  const playersRef = useRef<ExtendedPlayerResponseDTO[]>([]);
+  const [state, setState] = useState<GamePlayState>({
+    isHost: false,
+    gameInfo: null,
+    gameDetails: null,
+    gameStatistics: null,
+    currentQuestion: null,
+    participants: [],
+    leaderboard: [],
+    answerResult: null,
+    participantId: participantId.current,
+    isKicked: false,
+    isDisconnected: false,
+    isGameEnded: false,
+    gameEndReason: null,
+  });
+  
+  const [isAnswering, setIsAnswering] = useState(false);
+  const [selectedAnswer, setSelectedAnswer] = useState<any>(null);
+  const [timeRemaining, setTimeRemaining] = useState(0);
+  const [isSubmittingAnswer, setIsSubmittingAnswer] = useState(false);
+  const [isDark, setIsDark] = useState(false);
+  const [hostNextLoading, setHostNextLoading] = useState(false);
+  const [hostEndLoading, setHostEndLoading] = useState(false);
+
+  const unsubscribeRef = useRef<(() => void) | null>(null);
+  const heartbeatRef = useRef<NodeJS.Timeout | null>(null);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const [isCatchUp, setIsCatchUp] = useState(false);
+  const location = useLocation();
+  const initialQuestionFromState =
+    location.state?.initialQuestion as QuestionUpdateDTO | null;
+
+  // Dark mode detection
   useEffect(() => {
-    playersRef.current = players;
-  }, [players]);
+    const checkDarkMode = () => {
+      setIsDark(document.body.classList.contains("dark-mode"));
+    };
+    checkDarkMode();
+    const observer = new MutationObserver(checkDarkMode);
+    observer.observe(document.body, {
+      attributes: true,
+      attributeFilter: ["class"],
+    });
+    return () => observer.disconnect();
+  }, []);
 
-  const currentQuestionRef = useRef<ExtendedQuestionResponseDTO | null>(null);
+  // Load game data
   useEffect(() => {
-    currentQuestionRef.current = currentQuestion;
-  }, [currentQuestion]);
-
-  const isHost = useMemo(() => {
-    return user?.userId !== undefined && hostId !== null && user.userId === hostId;
-  }, [user, hostId]);
-
-  const assignRandomAvatar = (): string => {
-    const availableAvatars = AVATAR_LIST.filter((avatar) => !usedAvatars.has(avatar.toString()));
-    if (availableAvatars.length === 0) {
-      setUsedAvatars(new Set());
-      return (AVATAR_LIST[Math.floor(Math.random() * AVATAR_LIST.length)] || unknownAvatar).toString();
-    }
-    const randomAvatar = availableAvatars[Math.floor(Math.random() * availableAvatars.length)] || unknownAvatar;
-    setUsedAvatars((prev) => new Set(prev).add(randomAvatar.toString()));
-    return randomAvatar.toString();
-  };
-
-  // ===== 1) Initial fetch + DEEP-LINK GUARD =====
-  useEffect(() => {
-    if (!gameId) {
-      setError("No game ID provided");
-      toast.error("No game ID provided");
+    if (!gameId || !participantId.current) {
+      console.error("❌ Missing gameId or participantId");
       return;
     }
 
-    let cancelled = false;
-
-    (async () => {
+    const loadGameData = async () => {
       try {
-        const gameDetails = await fetchGameDetails(gameId);
-        if (cancelled) return;
+        console.log("📥 Loading game data...");
+        const gameInfo = await getGameDetails(gameId);
 
-        setHostId(gameDetails.game.hostId);
+        setState((prev) => ({
+          ...prev,
+          gameInfo,
+          isHost: gameInfo.isHost || false,
+        }));
 
-        // — Guard theo status
-        if (gameDetails.game.status === "WAITING") {
-          navigate(`/game-session/${gameId}`, { replace: true });
-          return;
+        console.log("✅ Game data loaded");
+
+        if (participantId.current) {
+          try {
+            requestGameStatistics(gameId, participantId.current);
+          } catch (err) {
+            console.warn("⚠️ Failed to request game statistics:", err);
+          }
         }
-        if (gameDetails.game.status === "COMPLETED" || gameDetails.game.status === "CANCELED") {
-          setGameEnded(true);
-          localStorage.removeItem("playerSession");
-          localStorage.removeItem("gameId");
-          toast.info(
-            gameDetails.game.status === "CANCELED" ? "The game has been canceled by the host." : "The game has finished."
-          );
-          navigate("/", { replace: true });
-          return;
-        }
-
-        // — Guard theo session (người chơi)
-        const isCurrentUserHost = user?.userId && gameDetails.game.hostId ? user.userId === gameDetails.game.hostId : false;
-        const sessionId = localStorage.getItem("playerSession");
-        const isInThisGame = sessionId ? gameDetails.players.some((p) => p.playerId === sessionId) : false;
-
-        if (!isCurrentUserHost && (!sessionId || !isInThisGame)) {
-          // Chưa join hợp lệ → về trang join-game kèm PIN
-          navigate(`/join-game/${gameDetails.game.pinCode}`, {
-            replace: true,
-            state: { from: "game-play", gameId: gameDetails.game.gameId },
-          });
-          return;
-        }
-
-        // — Nếu qua guard: hydrate dữ liệu ban đầu
-        setPlayers(
-          gameDetails.players.map((p) => ({
-            ...p,
-            avatar: assignRandomAvatar(),
-          }))
-        );
-
-        const initialLeaderboard = await fetchLeaderboard(gameId);
-        if (cancelled) return;
-
-        setLeaderboard(
-          initialLeaderboard.map((p) => ({
-            ...p,
-            avatar: assignRandomAvatar(),
-          }))
-        );
-
-        setCanProceed(true); // ✅ Cho phép setup WS & render gameplay
-      } catch {
-        if (!cancelled) {
-          toast.error("Failed to load game details");
-          setError("Failed to load game details");
-        }
+      } catch (err) {
+        console.error("❌ Failed to load game data:", err);
+        handleApiError(err);
       }
-    })();
-
-    return () => {
-      cancelled = true;
     };
-  }, [gameId, navigate, user?.userId]);
 
-  // ===== 2) WebSocket subscriptions (chỉ khi canProceed) =====
+    loadGameData();
+  }, [gameId]);
+
+  // Setup host listeners
   useEffect(() => {
-    if (!gameId || !canProceed) return;
+    if (
+      !state.isHost ||
+      !gameId ||
+      !participantId.current ||
+      !state.gameInfo
+    ) {
+      return;
+    }
 
-    const client = new Client({
-      webSocketFactory: () => new SockJS(WS_ENDPOINT),
-      reconnectDelay: 5000,
-      heartbeatIncoming: 4000,
-      heartbeatOutgoing: 4000,
+    console.log("🔌 [HOST] Setting up WebSocket listeners...");
+
+    unsubscribeRef.current = setupHostListeners(gameId, {
+      onGameEvent: (event: GameEvent) => {
+        console.log("🎮 [HOST] Game event:", event.eventType);
+        if (event.eventType === "GAME_ENDED") {
+          setState((prev) => ({ ...prev, isGameEnded: true }));
+          clearParticipantSession();
+          setTimeout(() => {
+            navigate(`/game-results/${gameId}`);
+          }, 3000);
+        }
+      },
+
+      onQuestion: (questionUpdate: QuestionUpdateDTO) => {
+        console.log("❓ [HOST] New question:", questionUpdate.questionNumber);
+        setSelectedAnswer(null);
+        setIsSubmittingAnswer(false);
+        setIsAnswering(true);
+        setTimeRemaining(questionUpdate.timeLimitSeconds);
+        setState((prev) => ({
+          ...prev,
+          currentQuestion: questionUpdate.question,
+          answerResult: null,
+        }));
+        setIsCatchUp(false);
+      },
+
+      onParticipants: (participants: GameParticipantDTO[]) => {
+        console.log("👥 [HOST] Participants updated:", participants?.length || 0);
+        setState((prev) => ({ ...prev, participants: participants || [] }));
+      },
+
+      onLeaderboard: (leaderboard: LeaderboardEntryDTO[]) => {
+        console.log("🏆 [HOST] Leaderboard updated");
+        setState((prev) => ({ ...prev, leaderboard: leaderboard || [] }));
+      },
+
+      onGameDetails: (details: GameDetailDTO) => {
+        console.log("ℹ️ [HOST] Game details updated");
+        setState((prev) => ({ ...prev, gameDetails: details }));
+      },
+
+      onGameStatistics: (stats: GameStatisticsDTO) => {
+        console.log("📈 [HOST] Game statistics updated");
+        setState((prev) => ({ ...prev, gameStatistics: stats }));
+      },
+
+      onConnectionChange: (connected: boolean) => {
+        console.log("🔌 Connection:", connected ? "CONNECTED" : "DISCONNECTED");
+        setState((prev) => ({ ...prev, isDisconnected: !connected }));
+
+        if (connected && gameId && participantId.current) {
+          requestGameDetails(gameId, participantId.current);
+          requestGameStatistics(gameId, participantId.current);
+          requestLeaderboard(gameId, participantId.current);
+          webSocketService.requestCurrentQuestion(gameId, participantId.current);
+        }
+      },
     });
 
-    client.onConnect = () => {
-      setWsConnected(true);
-      setError(null);
-
-      if (!isHost) {
-        client.subscribe(`/topic/game/${gameId}/question`, (msg) => {
-          try {
-            const question: ExtendedQuestionResponseDTO = JSON.parse(msg.body);
-            if (isShowingCorrectAnswer) {
-              setPendingQuestion(question);
-            } else {
-              setCurrentQuestion(question);
-              setImageUrl(question.imageUrl || "");
-              setTimeLeft(question.timeLimit || 5);
-              setSelectedOptionIds([]);
-              setFillInAnswer("");
-              setHasAnswered(false);
-              setIsSubmitting(false);
-              setShowCorrectAnswer(false);
-            }
-          } catch {
-            toast.error("Failed to load question");
-          }
-        });
+    return () => {
+      if (unsubscribeRef.current) {
+        console.log("🧹 [HOST] Cleaning up listeners");
+        unsubscribeRef.current();
       }
+    };
+  }, [state.isHost, gameId, state.gameInfo]);
 
-      client.subscribe(`/topic/game/${gameId}/leaderboard`, (msg) => {
-        try {
-          const entries: LeaderboardEntryDTO[] = JSON.parse(msg.body);
-          const updated = entries.map((e) => {
-            const p = playersRef.current.find((pl) => pl.playerId === e.playerId);
-            return {
-              playerId: e.playerId,
-              nickname: p?.nickname ?? "Unknown",
-              gameId: e.gameId,
-              score: e.totalScore,
-              inGame: p?.inGame ?? true,
-              isAnonymous: p?.isAnonymous ?? true,
-              avatar: p?.avatar ?? assignRandomAvatar(),
-            } as ExtendedPlayerResponseDTO;
-          });
-          if (isShowingCorrectAnswer) {
-            setPendingLeaderboard(updated);
-          } else {
-            setLeaderboard(updated);
-            if (!isHost) {
-              setCurrentQuestion(null);
-              setPendingQuestion(null);
-            }
-          }
-        } catch {
-          toast.error("Failed to load leaderboard");
-        }
-      });
+  // Setup participant listeners
+  useEffect(() => {
+    if (state.isHost || !gameId || !participantId.current || !state.gameInfo) {
+      return;
+    }
 
-      client.subscribe(`/topic/game/${gameId}/status`, (msg) => {
-        try {
-          const status: GameResponseDTO = JSON.parse(msg.body);
+    console.log("🔌 [PARTICIPANT] Setting up WebSocket listeners...");
 
-          if (status.status === "WAITING") {
-            // Nếu host lỡ mở gameplay trước, quay lại waiting
-            navigate(`/game-session/${gameId}`, { replace: true });
-            return;
-          }
-
-          if (status.status === "IN_PROGRESS") {
-            // đảm bảo người chơi ở trang gameplay
-            return;
-          }
-
-          if (status.status === "COMPLETED" || status.status === "CANCELED") {
-            setGameEnded(true);
-            localStorage.removeItem("playerSession");
-            localStorage.removeItem("gameId");
-          }
-        } catch {
-          toast.error("Failed to process game status");
-        }
-      });
-
-      client.subscribe(`/topic/game/${gameId}/correct-answer`, (msg) => {
-        try {
-          const payload = JSON.parse(msg.body) as {
-            questionId: string;
-            correctOptions: Option[];
-          };
-
-          if (currentQuestionRef.current?.questionId === payload.questionId) {
-            setCurrentQuestion((prev) => {
-              if (!prev || prev.questionId !== payload.questionId) return prev;
-              const updatedOptions = prev.options.map((opt) => {
-                const correctOpt = payload.correctOptions.find((c) => c.optionId === opt.optionId);
-                return {
-                  ...opt,
-                  correct: correctOpt?.correct ?? opt.correct,
-                  correctAnswer: correctOpt?.correctAnswer ?? opt.correctAnswer,
-                };
-              });
-              return { ...prev, options: updatedOptions };
-            });
-
-            setShowCorrectAnswer(true);
-            setIsShowingCorrectAnswer(true);
+    unsubscribeRef.current = setupParticipantListeners(
+      gameId,
+      participantId.current,
+      {
+        onGameEvent: (event: GameEvent) => {
+          console.log("🎮 [HOST] Game event:", event.eventType);
+          if (event.eventType === "GAME_ENDED") {
+            setState((prev) => ({ ...prev, isGameEnded: true }));
+            clearParticipantSession();
             setTimeout(() => {
-              setShowCorrectAnswer(false);
-              setIsShowingCorrectAnswer(false);
-              setCurrentQuestion(null);
-              if (pendingQuestion) {
-                setCurrentQuestion(pendingQuestion);
-                setImageUrl(pendingQuestion.imageUrl || "");
-                setTimeLeft(pendingQuestion.timeLimit || 5);
-                setSelectedOptionIds([]);
-                setFillInAnswer("");
-                setHasAnswered(false);
-                setIsSubmitting(false);
-                setShowCorrectAnswer(false);
-                setPendingQuestion(null);
-              }
-              if (pendingLeaderboard) {
-                setLeaderboard(pendingLeaderboard);
-                setPendingLeaderboard(null);
-              }
-            }, 2000);
+              navigate(`/game-results/${gameId}`);
+            }, 3000);
           }
-        } catch (e) {
-          console.error("[DEBUG] correct-answer handler error:", e);
-          toast.error("Failed to load correct answer");
-        }
-      });
-    };
+        },
+        onQuestion: (question: QuestionUpdateDTO) => {
+          console.log("❓ [PARTICIPANT] Question received");
+          setTimeRemaining(question.timeLimitSeconds || 0);
+          setState((prev) => ({
+            ...prev,
+            currentQuestion: question.question,
+            answerResult: null,
+          }));
+          setIsAnswering(true);
+          setSelectedAnswer(null);
+          setIsSubmittingAnswer(false);
+          setIsCatchUp(question.catchUp || false);
+        },
 
-    client.onStompError = () => {
-      setWsConnected(false);
-      setError("Real-time connection error.");
-      toast.error("Real-time connection error.");
-    };
-    client.onWebSocketError = () => {
-      setWsConnected(false);
-      setError("Failed to establish real-time connection.");
-      toast.error("Failed to establish real-time connection.");
-    };
-    client.onDisconnect = () => {
-      setWsConnected(false);
-    };
+        onLeaderboard: (leaderboard: LeaderboardEntryDTO[]) => {
+          console.log("✅ leaderboard result received:", leaderboard);
+          setState((prev) => ({ ...prev, leaderboard: leaderboard || [] }));
+        },
 
-    client.activate();
-    setStompClient(client);
+        onParticipants: (participants: GameParticipantDTO[]) => {
+          setState((prev) => ({ ...prev, participants: participants || [] }));
+        },
+
+        onAnswerResult: (result) => {
+          setState((prev) => ({ ...prev, answerResult: result }));
+          setIsSubmittingAnswer(false);
+          setIsAnswering(false); // Stop showing answer options
+        },
+
+        onGameDetails: (details: GameDetailDTO) => {
+          setState((prev) => ({ ...prev, gameDetails: details }));
+        },
+
+        onGameStatistics: (stats: GameStatisticsDTO) => {
+          setState((prev) => ({ ...prev, gameStatistics: stats }));
+        },
+
+        onKicked: (notification) => {
+          console.warn("🚫 [PARTICIPANT] Kicked");
+          setState((prev) => ({ ...prev, isKicked: true }));
+          clearParticipantSession();
+          setTimeout(() => {
+            navigate("/", { replace: true });
+          }, 3000);
+        },
+
+        onConnectionChange: (connected: boolean) => {
+          setState((prev) => ({ ...prev, isDisconnected: !connected }));
+
+          if (connected && gameId && participantId.current) {
+            requestGameDetails(gameId, participantId.current);
+            requestGameStatistics(gameId, participantId.current);
+            requestLeaderboard(gameId, participantId.current);
+            webSocketService.requestCurrentQuestion(gameId, participantId.current);
+          }
+        },
+      }
+    );
 
     return () => {
-      if (client.active) client.deactivate();
-      setWsConnected(false);
-      setStompClient(null);
-    };
-  }, [WS_ENDPOINT, gameId, canProceed, isHost, isShowingCorrectAnswer, navigate, pendingLeaderboard, pendingQuestion]);
-
-  // ===== 3) Polling fallback (chỉ khi canProceed & WS chưa kết nối) =====
-  useEffect(() => {
-    if (!gameId || !canProceed || wsConnected) return;
-    const interval = setInterval(async () => {
-      try {
-        const data = await fetchLeaderboard(gameId);
-        setLeaderboard(
-          data.map((p) => ({
-            ...p,
-            avatar: assignRandomAvatar(),
-          }))
-        );
-      } catch {
-        toast.error("Failed to fetch leaderboard");
+      if (unsubscribeRef.current) {
+        console.log("🧹 [PARTICIPANT] Cleaning up listeners");
+        unsubscribeRef.current();
       }
-    }, 10000);
-    return () => clearInterval(interval);
-  }, [gameId, canProceed, wsConnected]);
+    };
+  }, [state.isHost, gameId, state.gameInfo]);
 
-  // ===== 4) Local timers cho câu hỏi =====
+  // Heartbeat
   useEffect(() => {
-    if (currentQuestion && !isHost) {
-      const startTime = Date.now();
-      const timeLimit = currentQuestion.timeLimit || 5;
-      const endTime = startTime + timeLimit * 1000;
+    if (state.isHost || !gameId || !participantId.current) return;
 
-      const timer = setInterval(() => {
-        const now = Date.now();
-        const timeLeftMs = endTime - now;
-        const timeLeftSec = Math.max(0, Math.ceil(timeLeftMs / 1000));
-        setTimeLeft(timeLeftSec);
-        if (timeLeftSec <= 0) {
-          clearInterval(timer);
-          setIsShowingCorrectAnswer(true);
+    heartbeatRef.current = setInterval(() => {
+      sendHeartbeat(gameId, participantId.current!);
+    }, 30000);
+
+    return () => {
+      if (heartbeatRef.current) clearInterval(heartbeatRef.current);
+    };
+  }, [gameId, state.isHost]);
+
+  // Timer
+  useEffect(() => {
+    if (!isAnswering || timeRemaining <= 0) return;
+
+    timerRef.current = setInterval(() => {
+      setTimeRemaining((prev) => {
+        const next = prev - 1;
+        if (next <= 0) {
+          setIsAnswering(false);
+          return 0;
         }
-      }, 100);
-
-      return () => clearInterval(timer);
-    }
-  }, [currentQuestion, isHost]);
-
-  // ===== Handlers =====
-  const handleMultipleChoiceSelect = async (optionId: string) => {
-    if (hasAnswered || timeLeft === 0 || isHost) return;
-    let newSelectedOptionIds: string[] = [];
-    if (currentQuestion?.questionType === "MULTIPLE_CHOICE") {
-      newSelectedOptionIds = selectedOptionIds.includes(optionId)
-        ? selectedOptionIds.filter((id) => id !== optionId)
-        : [...selectedOptionIds, optionId];
-    } else {
-      newSelectedOptionIds = [optionId];
-    }
-    setSelectedOptionIds(newSelectedOptionIds);
-
-    // Auto-submit for MULTIPLE_CHOICE/SINGLE_CHOICE
-    if (!gameId || !currentQuestion || newSelectedOptionIds.length === 0 || isSubmitting || hasAnswered) return;
-    setIsSubmitting(true);
-    try {
-      const playerId = localStorage.getItem("playerSession");
-      if (!playerId) throw new Error("Player session not found");
-      const res = await submitAnswer(gameId, {
-        playerId,
-        questionId: currentQuestion.questionId,
-        selectedOptionIds: newSelectedOptionIds,
-        answerStr: "",
+        return next;
       });
-      setHasAnswered(true);
-      toast.success(res.message);
-    } catch (err) {
-      toast.error(`Failed to submit answer: ${err instanceof Error ? err.message : "Unknown error"}`);
-    } finally {
-      setIsSubmitting(false);
+    }, 1000);
+
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [isAnswering, timeRemaining]);
+
+  // Initial question from navigate state
+  useEffect(() => {
+    if (initialQuestionFromState && state.gameInfo) {
+      console.log("🎯 Using initial question from state");
+      setState((prev) => ({
+        ...prev,
+        currentQuestion: initialQuestionFromState.question,
+      }));
+      setTimeRemaining(initialQuestionFromState.timeLimitSeconds || 30);
+      setIsAnswering(true);
+      setSelectedAnswer(null);
+      setIsCatchUp(false);
     }
-  };
+  }, [initialQuestionFromState, state.gameInfo]);
 
-  const handleFillInInput = (val: string) => {
-    if (hasAnswered || timeLeft === 0 || isHost) return;
-    setFillInAnswer(val);
-  };
+  // Request current question on load
+  useEffect(() => {
+    if (gameId && participantId.current && state.gameInfo) {
+      console.log("🔄 Requesting current question");
+      webSocketService.requestCurrentQuestion(gameId, participantId.current);
+    }
+  }, [gameId, participantId.current, state.gameInfo]);
 
-  const handleFillInSubmit = async () => {
-    if (hasAnswered || timeLeft === 0 || isHost || !currentQuestion || !gameId || !fillInAnswer.trim()) return;
-    setIsSubmitting(true);
+  // Handlers
+
+  const handleSubmitAnswer = async () => {
+    if (!gameId || !participantId.current || !state.currentQuestion) return;
+
+    setIsSubmittingAnswer(true);
     try {
-      const playerId = localStorage.getItem("playerSession");
-      if (!playerId) throw new Error("Player session not found");
-      const res = await submitAnswer(gameId, {
-        playerId,
-        questionId: currentQuestion.questionId,
-        selectedOptionIds: [],
-        answerStr: fillInAnswer.trim(),
-      });
-      setHasAnswered(true);
-      toast.success(res.message);
+      submitAnswer(gameId, participantId.current, selectedAnswer);
+      console.log("✅ Answer submitted");
     } catch (err) {
-      toast.error(`Failed to submit answer: ${err instanceof Error ? err.message : "Unknown error"}`);
+      console.error("❌ Failed to submit:", err);
+      handleApiError(err);
+      setIsSubmittingAnswer(false);
+    }
+  };
+
+  const handleSkipQuestion = async () => {
+    if (!gameId || !participantId.current) return;
+
+    setIsSubmittingAnswer(true);
+    try {
+      skipQuestion(gameId, participantId.current);
+      setIsAnswering(false);
+      setSelectedAnswer(null);
+    } catch (err) {
+      console.error("❌ Failed to skip:", err);
+      handleApiError(err);
     } finally {
-      setIsSubmitting(false);
+      setIsSubmittingAnswer(false);
     }
   };
 
-  const getRankIcon = (index: number) => {
-    switch (index) {
-      case 0:
-        return <i className="bx bx-trophy text-warning" style={{ fontSize: "1.5rem" }}></i>;
-      case 1:
-        return <i className="bx bx-medal text-gray-400" style={{ fontSize: "1.5rem" }}></i>;
-      case 2:
-        return <i className="bx bx-medal text-orange-600" style={{ fontSize: "1.5rem" }}></i>;
+  const handleNextQuestion = async () => {
+    if (!gameId || !state.isHost) return;
+
+    setHostNextLoading(true);
+    try {
+      await nextQuestion(gameId);
+      console.log("✅ Next question loaded");
+    } catch (err) {
+      console.error("❌ Failed:", err);
+      handleApiError(err);
+    } finally {
+      setHostNextLoading(false);
+    }
+  };
+
+  const handleEndGame = async () => {
+    if (!gameId || !state.isHost) return;
+
+    const confirmed = window.confirm("Kết thúc game?");
+    if (!confirmed) return;
+
+    setHostEndLoading(true);
+    try {
+      await endGame(gameId);
+      setState((prev) => ({ ...prev, isGameEnded: true }));
+      clearParticipantSession();
+      setTimeout(() => {
+        navigate(`/game-results/${gameId}`);
+      }, 2000);
+    } catch (err) {
+      console.error("❌ Failed:", err);
+      handleApiError(err);
+    } finally {
+      setHostEndLoading(false);
+    }
+  };
+
+  // Helpers
+
+  const getTimerColor = (): string => {
+    if (timeRemaining > 10) return "#22c55e";
+    if (timeRemaining > 5) return "#f59e0b";
+    return "#ef4444";
+  };
+
+  const getTimerPercent = (): number => {
+    const total = state.currentQuestion?.timeLimitSeconds || 30;
+    return (timeRemaining / total) * 100;
+  };
+
+  const getDifficultyLabel = (difficulty: string): string => {
+    switch (difficulty) {
+      case "EASY":
+        return "Dễ";
+      case "MEDIUM":
+        return "Trung bình";
+      case "HARD":
+        return "Khó";
       default:
-        return <span className="font-bold">#{index + 1}</span>;
+        return difficulty;
     }
   };
 
-  const getRankBackground = (index: number) => {
-    switch (index) {
-      case 0:
-        return styles.rankGold;
-      case 1:
-        return styles.rankSilver;
-      case 2:
-        return styles.rankBronze;
-      default:
-        return styles.rankDefault;
-    }
-  };
+  // Render
 
-  // ===== Renders =====
-  if (error) {
+  if (!state.gameInfo) {
     return (
-      <div className={`min-vh-100 d-flex justify-content-center align-items-center ${styles.errorContainer}`}>
-        <div className="card shadow-lg rounded-4 p-5 text-center w-100" style={{ maxWidth: "400px" }}>
-          <i className="bx bx-error-circle text-danger mb-3" style={{ fontSize: "4rem" }}></i>
-          <h4 className="text-dark fw-bold mb-3">An Error Occurred</h4>
-          <p className="text-muted mb-4">{error}</p>
-          <div className="d-flex gap-3 justify-content-center">
-            <button className="btn btn-primary rounded-pill px-4 py-2" onClick={() => navigate(-1)}>
-              <i className="bx bx-refresh me-2"></i>
-              Try Again
-            </button>
-            <button className="btn btn-outline-secondary rounded-pill px-4 py-2" onClick={() => navigate("/")}>
-              <i className="bx bx-home me-2"></i>
-              Home
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (gameEnded) {
-    return (
-      <div className={`min-vh-100 d-flex justify-content-center align-items-center ${styles.gameOverContainer}`}>
-        <div className="card shadow-lg rounded-4 p-4 text-center w-100" style={{ maxWidth: "600px" }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          height: "100vh",
+          backgroundColor: isDark ? "#1a1a1a" : "#f5f5f5",
+          color: isDark ? "#fff" : "#000",
+        }}
+      >
+        <div style={{ textAlign: "center" }}>
           <div
-            className="position-relative"
             style={{
-              background: "linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)",
-              padding: "2rem 1rem",
-              borderRadius: "15px 15px 0 0",
+              fontSize: "2rem",
+              marginBottom: "1rem",
+              animation: "spin 1s linear infinite",
             }}
           >
-            <h2 className="mb-0 text-white fw-bold">🎉 Game Complete! 🎉</h2>
-            <p className="mb-0 text-white opacity-75">Final Leaderboard</p>
+            ⚙️
           </div>
-          <div className="card-body p-4">
-            {leaderboard
-              .slice()
-              .sort((a, b) => b.score - a.score)
-              .map((player, index) => (
-                <div
-                  key={player.playerId}
-                  className={`card mb-2 ${getRankBackground(index)} text-white p-3 d-flex justify-content-between align-items-center ${styles.leaderboardItem}`}
-                >
-                  <div className="d-flex align-items-center">
-                    <img
-                      src={player.avatar || unknownAvatar}
-                      alt={player.nickname}
-                      className="rounded-circle border border-light border-2 me-3"
-                      width="48"
-                      height="48"
-                      style={{ objectFit: "cover" }}
-                      onError={(e) => {
-                        const target = e.target as HTMLImageElement;
-                        if (target.src !== unknownAvatar) target.src = unknownAvatar;
-                      }}
-                    />
-                    <span className="me-3">{getRankIcon(index)}</span>
-                    <span className="fw-bold">{player.nickname}</span>
-                  </div>
-                  <span className="badge bg-light text-dark p-2">{player.score} pts</span>
-                </div>
-              ))}
-          </div>
-          <div className="card-footer p-3">
-            <button className="btn btn-primary rounded-pill px-4 py-2 w-100" onClick={() => navigate("/")}>
-              <i className="bx bx-home me-2"></i>
-              Back to Home
-            </button>
-          </div>
+          <p>Đang tải trò chơi...</p>
         </div>
+        <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
       </div>
     );
   }
 
-  // Nếu chưa qua guard xong thì đừng render gameplay (tránh flicker)
-  if (!canProceed) {
+  if (state.isKicked) {
     return (
-      <div className={`min-vh-100 d-flex justify-content-center align-items-center ${styles.container}`}>
-        <div className="text-center p-4">
-          <div className="spinner-border mb-3" role="status" />
-          <p className="text-muted mb-0">Preparing game...</p>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          height: "100vh",
+          backgroundColor: isDark ? "#1a1a1a" : "#f5f5f5",
+          color: isDark ? "#fff" : "#000",
+        }}
+      >
+        <div style={{ textAlign: "center" }}>
+          <div style={{ fontSize: "3rem", marginBottom: "1rem" }}>🚫</div>
+          <h2>Bạn đã bị kick khỏi trò chơi</h2>
         </div>
       </div>
     );
   }
 
   return (
-    <div className={`min-vh-100 py-4 w-100 ${styles.container}`}>
-      <div className="container">
-        <div className="row justify-content-center">
-          <div className="col-lg-11 col-xl-10">
-            <div className="card border-0 shadow-lg rounded-4 overflow-hidden">
-              <div
-                className="position-relative"
+    <div
+      style={{
+        backgroundColor: isDark ? "#1a1a1a" : "#fff",
+        color: isDark ? "#fff" : "#000",
+        minHeight: "100vh",
+        padding: "1rem",
+        fontFamily: "system-ui, -apple-system, sans-serif",
+      }}
+    >
+      {state.isDisconnected && (
+        <div
+          style={{
+            backgroundColor: "#ef4444",
+            color: "#fff",
+            padding: "1rem",
+            borderRadius: "8px",
+            marginBottom: "1rem",
+            textAlign: "center",
+            fontWeight: 600,
+          }}
+        >
+          ⚠️ Kết nối bị mất - Đang kết nối lại...
+        </div>
+      )}
+
+      <div
+        style={{
+          maxWidth: "1400px",
+          margin: "0 auto",
+          display: "grid",
+          gridTemplateColumns: "1fr 350px",
+          gap: "2rem",
+        }}
+      >
+        {/* MAIN CONTENT */}
+        <div>
+          {/* HEADER */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "flex-start",
+              marginBottom: "2rem",
+              flexWrap: "wrap",
+              gap: "1rem",
+            }}
+          >
+            <div>
+              <h1
                 style={{
-                  background: "linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)",
-                  padding: "2rem 1rem",
+                  fontSize: "1.8rem",
+                  fontWeight: 700,
+                  margin: 0,
+                  marginBottom: "0.75rem",
                 }}
               >
-                <div className="text-center text-white">
-                  <h1 className="mb-2 fw-bold" style={{ fontSize: "2.2rem" }}>
-                    <i className="bx bx-game me-3"></i>
-                    Quiz Game
-                  </h1>
-                  <div className="d-flex justify-content-center align-items-center gap-2">
-                    <span className="opacity-75" style={{ fontSize: "1.1rem" }}>
-                      {isHost ? "🎯 Host View" : "👤 Player View"}
-                    </span>
-                    <span className={`badge ${wsConnected ? "bg-success" : "bg-danger"} py-2 px-3 rounded-pill`}>
-                      {wsConnected ? <WifiOutlined /> : <DisconnectOutlined />}
-                      {wsConnected ? " Connected" : " Offline"}
-                    </span>
-                  </div>
-                </div>
-              </div>
-              <div className="card-body p-4 p-md-5">
-                {isHost ? (
-                  leaderboard.length > 0 ? (
-                    <div>
-                      <h3 className="mb-4 fw-bold text-dark d-flex align-items-center" style={{ fontSize: "1.8rem" }}>
-                        <i className="bx bx-bar-chart-alt-2 me-2 text-primary"></i>
-                        Live Leaderboard
-                      </h3>
-                      <div className="row g-3">
-                        {leaderboard
-                          .slice()
-                          .sort((a, b) => b.score - a.score)
-                          .map((player, index) => (
-                            <div key={player.playerId} className="col-md-6 col-lg-4">
-                              <div
-                                className={`card border-0 rounded-3 p-3 h-100 ${getRankBackground(index)} text-white ${styles.leaderboardItem}`}
-                              >
-                                <div className="d-flex align-items-center">
-                                  <img
-                                    src={player.avatar || unknownAvatar}
-                                    alt={player.nickname}
-                                    className="rounded-circle border border-light border-2 me-3"
-                                    width="48"
-                                    height="48"
-                                    style={{ objectFit: "cover" }}
-                                    onError={(e) => {
-                                      const target = e.target as HTMLImageElement;
-                                      if (target.src !== unknownAvatar) target.src = unknownAvatar;
-                                    }}
-                                  />
-                                  <span className="me-3">{getRankIcon(index)}</span>
-                                  <div>
-                                    <h5 className="mb-1 fw-bold">{player.nickname}</h5>
-                                    <span className="badge bg-light text-dark p-2">{player.score} pts</span>
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                      </div>
-                      <p className="text-center mt-4 text-muted">📡 Monitoring game progress...</p>
-                    </div>
-                  ) : (
-                    <div
-                      className="text-center py-5 rounded-3"
-                      style={{
-                        background: "linear-gradient(135deg, #f8f9ff 0%, #e3f2fd 100%)",
-                        border: "2px dashed #2196f3",
-                      }}
-                    >
-                      <i className="bx bx-bar-chart-alt-2 text-primary mb-3" style={{ fontSize: "4rem" }}></i>
-                      <h5 className="text-primary fw-bold mb-2">No Leaderboard Data Yet</h5>
-                      <p className="text-muted mb-0">Waiting for players to submit answers...</p>
-                    </div>
-                  )
-                ) : (
-                  <>
-                    {currentQuestion ? (
-                      <div>
-                        {imageUrl && (
-                          <div className="text-center mb-4">
-                            <img
-                              src={imageUrl}
-                              alt="Question image"
-                              className="rounded-3 shadow-sm"
-                              style={{ maxWidth: "100%", maxHeight: "300px", objectFit: "contain" }}
-                              onError={(e) => {
-                                const target = e.target as HTMLImageElement;
-                                target.style.display = "none";
-                              }}
-                            />
-                          </div>
-                        )}
-                        <h3 className="text-center mb-3 fw-bold text-dark" style={{ fontSize: "1.8rem" }}>
-                          {currentQuestion.questionText}
-                        </h3>
-                        <p className="text-center mb-4">
-                          <strong>
-                            <i className="bx bx-time me-2"></i>
-                            Time left: {timeLeft} seconds
-                          </strong>
-                        </p>
-                        <div className="progress mb-4">
-                          <div
-                            className="progress-bar progress-bar-striped progress-bar-animated"
-                            role="progressbar"
-                            style={{ width: `${(timeLeft / (currentQuestion.timeLimit || 5)) * 100}%` }}
-                            aria-valuenow={timeLeft}
-                            aria-valuemin={0}
-                            aria-valuemax={currentQuestion.timeLimit || 5}
-                          ></div>
-                        </div>
-                        {currentQuestion.questionType === "FILL_IN_THE_BLANK" ? (
-                          <div className="d-flex gap-3 align-items-center">
-                            <input
-                              type="text"
-                              className={`form-control mb-3 rounded-pill px-4 py-2 ${
-                                showCorrectAnswer &&
-                                currentQuestion.options.some((opt) => opt.correctAnswer === fillInAnswer.trim())
-                                  ? styles.correctInput
-                                  : showCorrectAnswer && fillInAnswer.trim()
-                                  ? styles.wrongInput
-                                  : ""
-                              }`}
-                              value={fillInAnswer}
-                              onChange={(e) => handleFillInInput(e.target.value)}
-                              disabled={timeLeft === 0 || hasAnswered || isSubmitting}
-                              placeholder="Type your answer here..."
-                            />
-                            <button
-                              className="btn btn-primary rounded-pill px-4 py-2"
-                              onClick={handleFillInSubmit}
-                              disabled={timeLeft === 0 || hasAnswered || isSubmitting || !fillInAnswer.trim()}
-                            >
-                              Submit
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="row g-3">
-                            {currentQuestion.options.map((opt) => (
-                              <div key={opt.optionId} className="col-md-6">
-                                <button
-                                  className={`btn w-100 rounded-pill px-4 py-2 ${
-                                    showCorrectAnswer
-                                      ? opt.correct
-                                        ? `${styles.correctAnswer} btn-success`
-                                        : selectedOptionIds.includes(opt.optionId)
-                                        ? `${styles.wrongAnswer} btn-danger`
-                                        : "btn-outline-primary"
-                                      : selectedOptionIds.includes(opt.optionId)
-                                      ? "btn-primary"
-                                      : "btn-outline-primary"
-                                  }`}
-                                  onClick={() => handleMultipleChoiceSelect(opt.optionId)}
-                                  disabled={timeLeft === 0 || hasAnswered || isSubmitting}
-                                >
-                                  {opt.optionText}
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    ) : leaderboard.length > 0 ? (
-                      <div>
-                        <h3 className="mb-4 fw-bold text-dark d-flex align-items-center" style={{ fontSize: "1.8rem" }}>
-                          <i className="bx bx-bar-chart-alt-2 me-2 text-primary"></i>
-                          Current Standings
-                        </h3>
-                        <div className="row g-3">
-                          {leaderboard
-                            .slice()
-                            .sort((a, b) => b.score - a.score)
-                            .map((player, index) => (
-                              <div key={player.playerId} className="col-md-6 col-lg-4">
-                                <div
-                                  className={`card border-0 rounded-3 p-3 h-100 ${getRankBackground(index)} text-white ${styles.leaderboardItem}`}
-                                >
-                                  <div className="d-flex align-items-center">
-                                    <img
-                                      src={player.avatar || unknownAvatar}
-                                      alt={player.nickname}
-                                      className="rounded-circle border border-light border-2 me-3"
-                                      width="48"
-                                      height="48"
-                                      style={{ objectFit: "cover" }}
-                                      onError={(e) => {
-                                        const target = e.target as HTMLImageElement;
-                                        if (target.src !== unknownAvatar) target.src = unknownAvatar;
-                                      }}
-                                    />
-                                    <span className="me-3">{getRankIcon(index)}</span>
-                                    <div>
-                                      <h5 className="mb-1 fw-bold">{player.nickname}</h5>
-                                      <span className="badge bg-light text-dark p-2">{player.score} pts</span>
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                            ))}
-                        </div>
-                        <p className="text-center mt-4 text-muted">
-                          <i className="bx bx-time me-2"></i>
-                          Waiting for the next question...
-                        </p>
-                      </div>
-                    ) : (
-                      <div
-                        className="text-center py-5 rounded-3"
-                        style={{
-                          background: "linear-gradient(135deg, #f8f9ff 0%, #e3f2fd 100%)",
-                          border: "2px dashed #2196f3",
-                        }}
-                      >
-                        <i className="bx bx-hourglass text-primary mb-3" style={{ fontSize: "4rem" }}></i>
-                        <h5 className="text-primary fw-bold mb-2">Waiting for the First Question</h5>
-                        <p className="text-muted mb-0">Get ready, the game will start soon!</p>
-                      </div>
-                    )}
-                  </>
-                )}
+                {state.gameInfo.quiz.title}
+              </h1>
+
+              {/* Question progress and participant count */}
+              <div style={{ display: "flex", gap: "2rem", flexWrap: "wrap" }}>
+                <p
+                  style={{
+                    margin: 0,
+                    fontSize: "0.95rem",
+                    color: isDark ? "#9ca3af" : "#6b7280",
+                  }}
+                >
+                  ❓ Câu hỏi <strong>{(state.gameInfo.currentQuestionIndex || 0) + 1}</strong> /{" "}
+                  <strong>{state.gameInfo.totalQuestions}</strong>
+                </p>
+                <p
+                  style={{
+                    margin: 0,
+                    fontSize: "0.95rem",
+                    color: isDark ? "#9ca3af" : "#6b7280",
+                  }}
+                >
+                  👥 <strong>{state.participants.length + 1}</strong> người chơi
+                </p>
               </div>
             </div>
+
+            {/* Host buttons */}
+            {state.isHost && (
+              <div style={{ display: "flex", gap: "1rem" }}>
+                <button
+                  onClick={handleNextQuestion}
+                  disabled={hostNextLoading}
+                  style={{
+                    padding: "0.75rem 1.5rem",
+                    backgroundColor: "#3b82f6",
+                    color: "#fff",
+                    border: "none",
+                    borderRadius: "8px",
+                    cursor: hostNextLoading ? "not-allowed" : "pointer",
+                    fontWeight: 600,
+                    fontSize: "0.9rem",
+                    opacity: hostNextLoading ? 0.6 : 1,
+                  }}
+                >
+                  {hostNextLoading ? "Đang chuyển..." : "Câu tiếp theo ➡️"}
+                </button>
+                <button
+                  onClick={handleEndGame}
+                  disabled={hostEndLoading}
+                  style={{
+                    padding: "0.75rem 1.5rem",
+                    backgroundColor: "#ef4444",
+                    color: "#fff",
+                    border: "none",
+                    borderRadius: "8px",
+                    cursor: hostEndLoading ? "not-allowed" : "pointer",
+                    fontWeight: 600,
+                    fontSize: "0.9rem",
+                    opacity: hostEndLoading ? 0.6 : 1,
+                  }}
+                >
+                  {hostEndLoading ? "Đang kết thúc..." : "Kết thúc 🏁"}
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* QUESTION CONTENT */}
+          {state.currentQuestion ? (
+            <div>
+              {/* Timer */}
+              {!state.isHost && isAnswering && (
+                <div
+                  style={{
+                    padding: "1rem",
+                    backgroundColor: isDark ? "#2a2a2a" : "#f5f5f5",
+                    borderRadius: "12px",
+                    marginBottom: "2rem",
+                    border: isDark ? "1px solid #404040" : "1px solid #e5e5e5",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "1rem",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: "2rem",
+                        fontWeight: 700,
+                        color: getTimerColor(),
+                        minWidth: "80px",
+                        textAlign: "center",
+                      }}
+                    >
+                      {timeRemaining}s
+                    </div>
+                    <div
+                      style={{
+                        flex: 1,
+                        height: "8px",
+                        backgroundColor: isDark ? "#1a1a1a" : "#e5e5e5",
+                        borderRadius: "4px",
+                        overflow: "hidden",
+                      }}
+                    >
+                      <div
+                        style={{
+                          height: "100%",
+                          backgroundColor: getTimerColor(),
+                          width: `${getTimerPercent()}%`,
+                          transition: "width 0.3s ease",
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Question Box */}
+              <div
+                style={{
+                  padding: "2rem",
+                  backgroundColor: isDark ? "#2a2a2a" : "#f9f9f9",
+                  borderRadius: "12px",
+                  marginBottom: "2rem",
+                  border: isDark ? "1px solid #404040" : "1px solid #e5e5e5",
+                }}
+              >
+                <h2
+                  style={{
+                    fontSize: "1.4rem",
+                    fontWeight: 600,
+                    margin: "0 0 1rem 0",
+                    lineHeight: 1.5,
+                  }}
+                >
+                  {state.currentQuestion.questionText}
+                </h2>
+
+                {state.currentQuestion.imageUrl && (
+                  <img
+                    src={state.currentQuestion.imageUrl}
+                    alt="Question"
+                    style={{
+                      maxWidth: "100%",
+                      height: "auto",
+                      borderRadius: "8px",
+                      marginBottom: "1rem",
+                    }}
+                  />
+                )}
+
+                {/* Question Metadata */}
+                <div
+                  style={{
+                    display: "flex",
+                    gap: "1.5rem",
+                    flexWrap: "wrap",
+                    paddingTop: "1rem",
+                    borderTop: `1px solid ${isDark ? "#404040" : "#e5e5e5"}`,
+                    marginTop: "1rem",
+                  }}
+                >
+                  {state.currentQuestion.difficulty && (
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "0.5rem",
+                        fontSize: "0.9rem",
+                      }}
+                    >
+                      <span>📊</span>
+                      <span style={{ color: isDark ? "#9ca3af" : "#6b7280" }}>
+                        Độ khó:{" "}
+                        <strong>
+                          {getDifficultyLabel(state.currentQuestion.difficulty)}
+                        </strong>
+                      </span>
+                    </div>
+                  )}
+
+                  {state.currentQuestion.timeLimitSeconds && (
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "0.5rem",
+                        fontSize: "0.9rem",
+                      }}
+                    >
+                      <span>⏱️</span>
+                      <span style={{ color: isDark ? "#9ca3af" : "#6b7280" }}>
+                        <strong>{state.currentQuestion.timeLimitSeconds}s</strong> để trả lời
+                      </span>
+                    </div>
+                  )}
+
+                  {state.currentQuestion.type && (
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "0.5rem",
+                        fontSize: "0.9rem",
+                      }}
+                    >
+                      <span>🎯</span>
+                      <span style={{ color: isDark ? "#9ca3af" : "#6b7280" }}>
+                        <strong>{state.currentQuestion.type}</strong>
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Hint */}
+                {state.currentQuestion.hint && (
+                  <div
+                    style={{
+                      marginTop: "1rem",
+                      padding: "1rem",
+                      backgroundColor: isDark ? "#2a2a1a" : "#fffbeb",
+                      borderLeft: "4px solid #f59e0b",
+                      borderRadius: "4px",
+                    }}
+                  >
+                    <p
+                      style={{
+                        margin: "0 0 0.5rem 0",
+                        fontSize: "0.85rem",
+                        fontWeight: 600,
+                        color: isDark ? "#fbbf24" : "#d97706",
+                      }}
+                    >
+                      💡 Gợi ý
+                    </p>
+                    <p
+                      style={{
+                        margin: 0,
+                        fontSize: "0.9rem",
+                        color: isDark ? "#fcd34d" : "#92400e",
+                      }}
+                    >
+                      {state.currentQuestion.hint}
+                    </p>
+                  </div>
+                )}
+
+                {/* Tags */}
+                {state.currentQuestion.tags &&
+                  state.currentQuestion.tags.length > 0 && (
+                    <div
+                      style={{
+                        marginTop: "1rem",
+                        display: "flex",
+                        gap: "0.5rem",
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      {state.currentQuestion.tags.map((tag: string) => (
+                        <span
+                          key={tag}
+                          style={{
+                            backgroundColor: "#3b82f6",
+                            color: "#fff",
+                            padding: "0.25rem 0.75rem",
+                            borderRadius: "12px",
+                            fontSize: "0.8rem",
+                            fontWeight: 600,
+                          }}
+                        >
+                          #{tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+              </div>
+
+              {/* Answer Result - Show FIRST if exists */}
+              {state.answerResult && !state.isHost && (
+                <AnswerResultRenderer result={state.answerResult} isDark={isDark} />
+              )}
+
+              {/* Answer Options - Only show if no result yet */}
+              {!state.answerResult && isAnswering && !state.isHost && (
+                <div style={{ marginBottom: "2rem" }}>
+                  <OptionsRenderer
+                    question={state.currentQuestion}
+                    selectedAnswer={selectedAnswer}
+                    onSelectAnswer={setSelectedAnswer}
+                  />
+
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "1rem",
+                      marginTop: "2rem",
+                    }}
+                  >
+                    <button
+                      onClick={handleSubmitAnswer}
+                      disabled={
+                        !selectedAnswer ||
+                        isSubmittingAnswer
+                      }
+                      style={{
+                        flex: 1,
+                        padding: "1rem",
+                        backgroundColor: "#3b82f6",
+                        color: "#fff",
+                        border: "none",
+                        borderRadius: "8px",
+                        cursor: (!selectedAnswer || isSubmittingAnswer) ? "not-allowed" : "pointer",
+                        fontWeight: 600,
+                        fontSize: "1rem",
+                        opacity: (!selectedAnswer || isSubmittingAnswer) ? 0.5 : 1,
+                      }}
+                    >
+                      {isSubmittingAnswer ? "Đang gửi..." : "Gửi câu trả lời ✓"}
+                    </button>
+                    <button
+                      onClick={handleSkipQuestion}
+                      disabled={isSubmittingAnswer}
+                      style={{
+                        padding: "1rem 2rem",
+                        backgroundColor: isDark ? "#404040" : "#e5e7eb",
+                        color: isDark ? "#fff" : "#000",
+                        border: "none",
+                        borderRadius: "8px",
+                        cursor: isSubmittingAnswer ? "not-allowed" : "pointer",
+                        fontWeight: 600,
+                        opacity: isSubmittingAnswer ? 0.5 : 1,
+                      }}
+                    >
+                      Bỏ qua ⏭️
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Host Stats */}
+              {state.isHost && (
+                <div
+                  style={{
+                    padding: "2rem",
+                    backgroundColor: isDark ? "#2a2a2a" : "#f9f9f9",
+                    borderRadius: "12px",
+                    border: isDark ? "1px solid #404040" : "1px solid #e5e5e5",
+                  }}
+                >
+                  <h3 style={{ marginTop: 0, marginBottom: "1.5rem" }}>
+                    👥 Trạng thái người chơi
+                  </h3>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+                      gap: "1rem",
+                    }}
+                  >
+                    {/* Total */}
+                    <div
+                      style={{
+                        padding: "1rem",
+                        backgroundColor: isDark ? "#1a1a1a" : "#fff",
+                        borderRadius: "8px",
+                        border: isDark ? "1px solid #404040" : "1px solid #e5e5e5",
+                        textAlign: "center",
+                      }}
+                    >
+                      <p style={{ margin: "0 0 0.5rem 0", fontSize: "2rem" }}>
+                        👥
+                      </p>
+                      <p
+                        style={{
+                          margin: "0 0 0.25rem 0",
+                          fontSize: "0.8rem",
+                          color: isDark ? "#9ca3af" : "#6b7280",
+                        }}
+                      >
+                        Tổng cộng
+                      </p>
+                      <p
+                        style={{
+                          margin: 0,
+                          fontSize: "1.5rem",
+                          fontWeight: 700,
+                          color: "#3b82f6",
+                        }}
+                      >
+                        {state.participants.length + 1}
+                      </p>
+                    </div>
+
+                    {/* Answered */}
+                    {state.gameStatistics && (
+                      <>
+                        <div
+                          style={{
+                            padding: "1rem",
+                            backgroundColor: isDark ? "#1a1a1a" : "#fff",
+                            borderRadius: "8px",
+                            border: isDark ? "1px solid #404040" : "1px solid #e5e5e5",
+                            textAlign: "center",
+                          }}
+                        >
+                          <p style={{ margin: "0 0 0.5rem 0", fontSize: "2rem" }}>
+                            ✅
+                          </p>
+                          <p
+                            style={{
+                              margin: "0 0 0.25rem 0",
+                              fontSize: "0.8rem",
+                              color: isDark ? "#9ca3af" : "#6b7280",
+                            }}
+                          >
+                            Đã trả lời
+                          </p>
+                          <p
+                            style={{
+                              margin: 0,
+                              fontSize: "1.5rem",
+                              fontWeight: 700,
+                              color: "#22c55e",
+                            }}
+                          >
+                            {state.gameStatistics.completedPlayers || 0}
+                          </p>
+                        </div>
+
+                        {/* Correct */}
+                        <div
+                          style={{
+                            padding: "1rem",
+                            backgroundColor: isDark ? "#1a1a1a" : "#fff",
+                            borderRadius: "8px",
+                            border: isDark ? "1px solid #404040" : "1px solid #e5e5e5",
+                            textAlign: "center",
+                          }}
+                        >
+                          <p style={{ margin: "0 0 0.5rem 0", fontSize: "2rem" }}>
+                            🎯
+                          </p>
+                          <p
+                            style={{
+                              margin: "0 0 0.25rem 0",
+                              fontSize: "0.8rem",
+                              color: isDark ? "#9ca3af" : "#6b7280",
+                            }}
+                          >
+                            Đúng
+                          </p>
+                          <p
+                            style={{
+                              margin: 0,
+                              fontSize: "1.5rem",
+                              fontWeight: 700,
+                              color: "#3b82f6",
+                            }}
+                          >
+                            {state.gameStatistics.correctAnswers || 0}
+                          </p>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div style={{ textAlign: "center", padding: "3rem" }}>
+              <p style={{ color: isDark ? "#9ca3af" : "#6b7280" }}>
+                Chờ câu hỏi tiếp theo...
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* SIDEBAR - LEADERBOARD */}
+        <div>
+          <div
+            style={{
+              backgroundColor: isDark ? "#2a2a2a" : "#f9f9f9",
+              borderRadius: "12px",
+              padding: "1.5rem",
+              maxHeight: "600px",
+              overflowY: "auto",
+              border: isDark ? "1px solid #404040" : "1px solid #e5e5e5",
+            }}
+          >
+            <h3 style={{ marginTop: 0, marginBottom: "1rem" }}>
+              🏆 Bảng xếp hạng
+            </h3>
+
+            {state.leaderboard && state.leaderboard.length > 0 ? (
+              <div>
+                {state.leaderboard.slice(0, 10).map((entry, idx) => (
+                  <div
+                    key={entry.participantId}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      padding: "0.75rem",
+                      backgroundColor: isDark ? "#1a1a1a" : "#fff",
+                      borderRadius: "8px",
+                      marginBottom: "0.5rem",
+                      borderLeft: `4px solid ${
+                        idx === 0
+                          ? "#fbbf24"
+                          : idx === 1
+                          ? "#9ca3af"
+                          : idx === 2
+                          ? "#d4a574"
+                          : "transparent"
+                      }`,
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontWeight: 700,
+                        minWidth: "30px",
+                        fontSize: "0.9rem",
+                      }}
+                    >
+                      {entry.rank}
+                    </div>
+                    <div style={{ flex: 1, marginLeft: "0.5rem" }}>
+                      <div style={{ fontWeight: 600, fontSize: "0.9rem" }}>
+                        {entry.nickname}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: "0.8rem",
+                          color: isDark ? "#9ca3af" : "#6b7280",
+                        }}
+                      >
+                        {entry.correctCount} đúng
+                      </div>
+                    </div>
+                    <div
+                      style={{
+                        fontWeight: 700,
+                        color: "#3b82f6",
+                        fontSize: "1rem",
+                      }}
+                    >
+                      {entry.score}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p
+                style={{
+                  color: isDark ? "#9ca3af" : "#6b7280",
+                  textAlign: "center",
+                }}
+              >
+                Chưa có dữ liệu
+              </p>
+            )}
           </div>
         </div>
       </div>
+    </div>
+  );
+};
+
+// Answer Result Component
+interface AnswerResultRendererProps {
+  result: any;
+  isDark: boolean;
+}
+
+const AnswerResultRenderer: React.FC<AnswerResultRendererProps> = ({
+  result,
+  isDark,
+}) => {
+  console.log(result);
+  
+  return (
+    <div
+      style={{
+        padding: "2rem",
+        borderRadius: "12px",
+        backgroundColor: result.correct
+          ? "rgba(34, 197, 94, 0.15)"
+          : "rgba(239, 68, 68, 0.15)",
+        border: `2px solid ${
+          result.correct ? "#22c55e" : "#ef4444"
+        }`,
+        textAlign: "center",
+        marginBottom: "2rem",
+      }}
+    >
+      <div style={{ fontSize: "3rem", marginBottom: "1rem" }}>
+        {result.correct ? "✅ Đúng!" : "❌ Sai"}
+      </div>
+      <p
+        style={{
+          color: isDark ? "#fff" : "#000",
+          fontWeight: 600,
+          marginBottom: "0.5rem",
+          fontSize: "1.2rem",
+        }}
+      >
+        +{result.pointsEarned || 0} điểm
+      </p>
+
+      {result.correctAnswer && (
+        <div
+          style={{
+            padding: "1rem",
+            backgroundColor: isDark ? "#1a1a1a" : "#f0fdf4",
+            borderRadius: "8px",
+            marginTop: "1rem",
+            marginBottom: "1rem",
+            textAlign: "left",
+            borderLeft: "4px solid #22c55e",
+          }}
+        >
+          <p
+            style={{
+              color: isDark ? "#9ca3af" : "#6b7280",
+              fontSize: "0.85rem",
+              margin: "0 0 0.5rem 0",
+            }}
+          >
+            💡 Đáp án đúng:
+          </p>
+          <p
+            style={{
+              color: "#22c55e",
+              fontWeight: 600,
+              margin: 0,
+            }}
+          >
+            {result.correctAnswer}
+          </p>
+        </div>
+      )}
+
+      {result.explanation && (
+        <p
+          style={{
+            color: isDark ? "#9ca3af" : "#6b7280",
+            fontSize: "0.9rem",
+            marginTop: "1rem",
+            lineHeight: 1.5,
+          }}
+        >
+          <strong>📚 Giải thích:</strong> {result.explanation}
+        </p>
+      )}
     </div>
   );
 };

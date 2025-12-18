@@ -1,676 +1,751 @@
-"use client";
+// src/pages/WaitingRoomSessionPage.tsx - ENHANCED WITH QR CODE
 
-import React, { useState, useEffect, useMemo } from "react";
-import { useParams, useNavigate } from "react-router-dom";
-import SockJS from "sockjs-client";
-import { Client } from "@stomp/stompjs";
-import { toast } from "react-toastify";
-import { cancelGame, startGame, fetchGameData } from "@/services/gameService";
-import unknownAvatar from "@/assets/img/avatars/unknown.jpg";
-import avatar1 from "@/assets/img/avatars/1.png";
-import avatar2 from "@/assets/img/avatars/2.png";
-import avatar3 from "@/assets/img/avatars/3.png";
-import avatar4 from "@/assets/img/avatars/4.png";
-import avatar5 from "@/assets/img/avatars/5.png";
-import avatar6 from "@/assets/img/avatars/6.png";
-import avatar7 from "@/assets/img/avatars/7.png";
-import avatar8 from "@/assets/img/avatars/8.png";
-import avatar9 from "@/assets/img/avatars/9.png";
-import avatar10 from "@/assets/img/avatars/10.png";
-import avatar11 from "@/assets/img/avatars/11.png";
-import avatar12 from "@/assets/img/avatars/12.png";
-import avatar13 from "@/assets/img/avatars/13.png";
-import avatar14 from "@/assets/img/avatars/14.png";
-import avatar15 from "@/assets/img/avatars/15.png";
-import { useAuth } from "@/hooks/useAuth";
-import { GameDetailsResponseDTO, GameResponseDTO } from "@/interfaces";
+import { useState, useEffect, useRef } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import QRCode, { QRCodeCanvas, QRCodeSVG } from "qrcode.react"; // Thêm thư viện QR Code
+import {
+  startGame,
+  cancelGame,
+  leaveGame,
+  kickParticipant,
+  getParticipants,
+  setupHostListeners,
+  setupParticipantListeners,
+  clearParticipantSession,
+} from "@/services/gameService";
+import { webSocketService } from "@/services/webSocketService";
+import { useGameSessionValidator } from "@/hooks/useGameSessionValidator";
+import { handleApiError } from "@/utils/apiErrorHandler";
 
-// ========= Avatar pool =========
-const AVATAR_LIST = [
-  avatar1,
-  avatar2,
-  avatar3,
-  avatar4,
-  avatar5,
-  avatar6,
-  avatar7,
-  avatar8,
-  avatar9,
-  avatar10,
-  avatar11,
-  avatar12,
-  avatar13,
-  avatar14,
-  avatar15,
-];
-
-// ========= Local DTOs nếu cần tách biệt =========
-interface PlayerResponseDTO {
-  playerId: string;
-  nickname: string;
-  gameId: string;
-  score: number;
-  inGame: boolean;
-  userId?: string;
-  isAnonymous: boolean;
-}
-
-interface Player {
-  playerId: string;
-  nickname: string;
-  avatar?: string;
-  joinedAt: string;
-  userId?: string;
-}
-
-// ========= QR Code nho gọn sử dụng Google Charts =========
-const QRCode: React.FC<{ value: string; size?: number }> = ({ value, size = 150 }) => {
-  const [qrCodeUrl, setQrCodeUrl] = useState<string>("");
-  const [qrError, setQrError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!value) {
-      setQrError("No PIN code provided for QR code");
-      return;
-    }
-    const qrUrl = `https://chart.googleapis.com/chart?chs=${size}x${size}&cht=qr&chl=${encodeURIComponent(
-      value
-    )}`;
-    setQrCodeUrl(qrUrl);
-  }, [value, size]);
-
-  if (qrError) {
-    return (
-      <div className="qr-code-container d-flex flex-column align-items-center">
-        <div className="bg-white p-3 rounded-lg shadow-sm border">
-          <p className="text-danger mb-0">Error: {qrError}</p>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="qr-code-container d-flex flex-column align-items-center">
-      <div className="bg-white p-3 rounded-lg shadow-sm border">
-        <img
-          src={qrCodeUrl}
-          alt={`QR Code`}
-          className="d-block"
-          width={size}
-          height={size}
-          style={{ imageRendering: "pixelated" }}
-          onError={() => setQrError("Failed to load QR code")}
-        />
-      </div>
-      <small className="text-muted mt-2 text-center">Scan to join</small>
-    </div>
-  );
-};
-
-const WaitingRoomSessionPage: React.FC = () => {
-  const { gameId } = useParams<{ gameId: string }>();
+const WaitingRoomSessionPage = () => {
   const navigate = useNavigate();
-  const WS_ENDPOINT = import.meta.env.VITE_WS_URL || "http://localhost:8080/ws";
-  const { user } = useAuth();
+  const { gameId } = useParams();
 
-  const [gameData, setGameData] = useState<GameResponseDTO | null>(null);
-  const [players, setPlayers] = useState<Player[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
-  const [quizTitle, setQuizTitle] = useState<string>("");
-  const [stompClient, setStompClient] = useState<Client | null>(null);
-  const [usedAvatars, setUsedAvatars] = useState<Set<string>>(new Set());
-  const [showQR, setShowQR] = useState<boolean>(false);
+  const {
+    isValid,
+    isValidating,
+    error: validationError,
+    gameInfo,
+    participants: initialParticipants,
+    participantId,
+    pinCode,
+  } = useGameSessionValidator(gameId);
 
-  const isHost = useMemo(() => {
-    return user?.userId && gameData?.hostId ? user.userId === gameData.hostId : false;
-  }, [user, gameData]);
+  const [participants, setParticipants] = useState(initialParticipants);
+  const [isHost, setIsHost] = useState(false);
+  const [lastUpdate, setLastUpdate] = useState(Date.now());
+  const [isDark, setIsDark] = useState(false);
+  const [isStarting, setIsStarting] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
+  const [isLeaving, setIsLeaving] = useState(false);
+  const [showCopyFeedback, setShowCopyFeedback] = useState(false);
+  const [actionError, setActionError] = useState("");
 
-  const currentPlayer = useMemo(() => {
-    return players.find((p) => p.userId === user?.userId);
-  }, [players, user?.userId]);
+  const unsubscribeRef = useRef<(() => void) | null>(null);
+  const questionListenerRef = useRef<(() => void) | null>(null);
 
-  // ========= Helpers =========
-  const assignRandomAvatar = (): string => {
-    const available = AVATAR_LIST.filter((a) => !usedAvatars.has(a.toString()));
-    if (available.length === 0) {
-      setUsedAvatars(new Set());
-      const randomAvatar = AVATAR_LIST[Math.floor(Math.random() * AVATAR_LIST.length)] || unknownAvatar;
-      return randomAvatar.toString();
-    }
-    const pick = available[Math.floor(Math.random() * available.length)] || unknownAvatar;
-    setUsedAvatars((prev) => new Set(prev).add(pick.toString()));
-    return pick.toString();
-  };
+  // URL để người chơi tham gia (dùng cho QR Code)
+  const joinUrl = pinCode ? `${window.location.origin}/join/${pinCode}` : "";
 
-  const arraysEqual = (arr1: Player[], arr2: Player[]): boolean => {
-    if (arr1.length !== arr2.length) return false;
-    return arr1.every((item, idx) => JSON.stringify(item) === JSON.stringify(arr2[idx]));
-  };
-
-  // ========= Initial fetch + GUARD deep-link =========
+  // Dark mode detection
   useEffect(() => {
-    if (!gameId) {
-      setError("No game ID provided");
-      setIsLoading(false);
+    const checkDarkMode = () => {
+      setIsDark(document.body.classList.contains("dark-mode"));
+    };
+    checkDarkMode();
+    const observer = new MutationObserver(checkDarkMode);
+    observer.observe(document.body, {
+      attributes: true,
+      attributeFilter: ["class"],
+    });
+    return () => observer.disconnect();
+  }, []);
+
+  // Sync participants from validator
+  useEffect(() => {
+    if (initialParticipants.length > 0) {
+      setParticipants(initialParticipants);
+    }
+  }, [initialParticipants]);
+
+  // Detect host
+  useEffect(() => {
+    if (gameInfo) {
+      setIsHost(gameInfo.isHost || false);
+    }
+  }, [gameInfo]);
+
+  // Load participants manually (backup)
+  const loadParticipants = async () => {
+    if (!gameId) return;
+    try {
+      const participantsList = await getParticipants(gameId);
+      setParticipants(participantsList || []);
+      setLastUpdate(Date.now());
+    } catch (err) {
+      console.error("Failed to load participants:", err);
+    }
+  };
+
+  // ==================== WEBSOCKET SETUP ====================
+  useEffect(() => {
+    if (!gameId || isValidating || !isValid || !gameInfo) {
       return;
     }
 
-    const load = async () => {
-      try {
-        const data: GameDetailsResponseDTO = await fetchGameData(gameId);
-
-        // Map players đang inGame
-        const mappedPlayers: Player[] = data.players
-          .filter((p) => p.inGame)
-          .map((p) => ({
-            playerId: p.playerId,
-            nickname: p.nickname || "Unknown Player",
-            avatar: assignRandomAvatar(),
-            joinedAt: new Date().toISOString(),
-            userId: p.userId ?? undefined,
-          }));
-
-        setGameData(data.game);
-        setQuizTitle(data.title || "Quiz Game");
-        setPlayers(mappedPlayers);
-
-        // ---- Deep-link guard ----
-        const playerSession = localStorage.getItem("playerSession");
-        const isCurrentUserHost =
-          user?.userId && data.game?.hostId ? user.userId === data.game.hostId : false;
-
-        const isInThisGame = playerSession
-          ? data.players.some((p) => p.playerId === playerSession)
-          : false;
-
-        // Nếu không phải host: yêu cầu đã join (có playerSession và thuộc game này)
-        if (!isCurrentUserHost) {
-          if (!playerSession || !isInThisGame) {
-            if (data.game.status === "WAITING" && data.game.pinCode) {
-              navigate(`/join-game/${data.game.pinCode}`, {
-                replace: true,
-                state: { from: "waiting-room", gameId: data.game.gameId },
-              });
-              return; // dừng render trang này
-            }
-          }
-        }
-
-        // Chuyển hướng theo status
-        if (data.game.status === "IN_PROGRESS") {
-          navigate(`/game-play/${data.game.gameId}`, { replace: true });
-          return;
-        }
-        if (data.game.status === "COMPLETED" || data.game.status === "CANCELED") {
-          localStorage.removeItem("playerSession");
-          localStorage.removeItem("gameId");
-          if (!isCurrentUserHost) toast.info("The game has been canceled by the host.");
-          navigate("/", { replace: true });
-          return;
-        }
-
-        setIsLoading(false);
-      } catch (err) {
-        console.error(err);
-        setError("Failed to load game data");
-        setIsLoading(false);
-      }
-    };
-
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gameId, navigate, user?.userId]);
-
-  // ========= WebSocket subscriptions =========
-  useEffect(() => {
-    if (!gameId) return;
-
-    const client = new Client({
-      webSocketFactory: () => new SockJS(WS_ENDPOINT),
-      reconnectDelay: 5000,
-      heartbeatIncoming: 4000,
-      heartbeatOutgoing: 4000,
+    console.log("🔌 [WAITING ROOM] Setting up WebSocket listeners...", {
+      gameId,
+      participantId,
+      isHost,
     });
 
-    client.onConnect = () => {
-      // Players topic
-      client.subscribe(`/topic/game/${gameId}/players`, (message) => {
-        try {
-          const parsed: PlayerResponseDTO[] | unknown = JSON.parse(message.body);
-          if (Array.isArray(parsed)) {
-            const newPlayers: Player[] = (parsed as PlayerResponseDTO[])
-              .filter((p) => p.inGame)
-              .map((p) => ({
-                playerId: p.playerId,
-                nickname: p.nickname || "Unknown Player",
-                avatar: assignRandomAvatar(),
-                joinedAt: new Date().toISOString(),
-                userId: p.userId,
-              }));
+    webSocketService.subscribeToQuestions(gameId);
 
-            setPlayers((prev) => {
-              if (!arraysEqual(prev, newPlayers)) return newPlayers;
-              return prev;
-            });
-          }
-        } catch (e) {
-          console.error("Error parsing player message:", e);
-        }
+    questionListenerRef.current = webSocketService.onQuestion((question) => {
+      console.log(
+        "✅ [WAITING ROOM] First question received! Navigating to GamePlay...",
+        question.questionNumber
+      );
+
+      navigate(`/game-play/${gameId}`, {
+        replace: true,
+        state: { initialQuestion: question },
       });
+    });
 
-      // Status topic
-      client.subscribe(`/topic/game/${gameId}/status`, (message) => {
-        try {
-          const statusUpdate: GameResponseDTO = JSON.parse(message.body);
-          if (statusUpdate.status === "IN_PROGRESS") {
-            navigate(`/game-play/${gameId}`, { replace: true });
-          } else if (statusUpdate.status === "COMPLETED" || statusUpdate.status === "CANCELED") {
-            localStorage.removeItem("playerSession");
-            localStorage.removeItem("gameId");
-            if (!isHost) toast.info("The game has been canceled by the host.");
-            navigate("/", { replace: true });
+    if (isHost) {
+      unsubscribeRef.current = setupHostListeners(gameId, {
+        onGameEvent: (event) => {
+          if (
+            ["PARTICIPANT_JOINED", "PARTICIPANT_LEFT", "PARTICIPANT_KICKED"].includes(
+              event.eventType
+            )
+          ) {
+            loadParticipants();
           }
-        } catch (e) {
-          console.error("Error parsing status message:", e);
-        }
+        },
+        onParticipants: (participantsList) => {
+          setParticipants(participantsList || []);
+          setLastUpdate(Date.now());
+        },
+        onConnectionChange: (connected) => {
+          console.log("🔌 [HOST - WAITING] Connection:", connected);
+        },
       });
-    };
+        } else {
+      unsubscribeRef.current = setupParticipantListeners(
+        gameId,
+        participantId!,
+        {
+          // === THÊM MỚI: Xử lý khi có người join/leave/kick ===
+          onGameEvent: (event) => {
+            if (
+              ["PARTICIPANT_JOINED", "PARTICIPANT_LEFT", "PARTICIPANT_KICKED"].includes(
+                event.eventType
+              )
+            ) {
+              loadParticipants();
+            }
+          },
+          // ====================================================
 
-    client.onStompError = (err) => console.error("STOMP error:", err);
-    client.onWebSocketError = (err) => console.error("WS error:", err);
-    client.activate();
-    setStompClient(client);
+          onParticipants: (participantsList) => {
+            setParticipants(participantsList || []);
+            setLastUpdate(Date.now());
+          },
+          onKicked: () => {
+            setActionError("Bạn đã bị host kick khỏi phòng");
+            setTimeout(() => {
+              localStorage.removeItem("participantId");
+              localStorage.removeItem("isAnonymous");
+              navigate("/", { replace: true });
+            }, 3000);
+          },
+          onConnectionChange: (connected) => {
+            console.log("🔌 [PARTICIPANT - WAITING] Connection:", connected);
+          },
+        }
+      );
+    }
 
     return () => {
-      if (client.active) client.deactivate();
-      setStompClient(null);
+      console.log("🧹 [WAITING ROOM] Cleaning up listeners");
+      if (questionListenerRef.current) {
+        questionListenerRef.current();
+        questionListenerRef.current = null;
+      }
+      if (unsubscribeRef.current) {
+        unsubscribeRef.current();
+        unsubscribeRef.current = null;
+      }
     };
-  }, [WS_ENDPOINT, gameId, navigate, isHost]);
+  }, [gameId, participantId, isValidating, isValid, gameInfo, isHost, navigate]);
 
-  // ========= Polling an toàn (fallback) =========
-  useEffect(() => {
-    if (!gameId) return;
-
-    const t = setInterval(async () => {
-      try {
-        const data = await fetchGameData(gameId);
-
-        if (data.game.status === "COMPLETED" || data.game.status === "CANCELED") {
-          localStorage.removeItem("playerSession");
-          localStorage.removeItem("gameId");
-          if (!isHost) toast.info("The game has been canceled by the host.");
-          navigate("/", { replace: true });
-        } else if (data.game.status === "IN_PROGRESS") {
-          navigate(`/game-play/${gameId}`, { replace: true });
-        }
-      } catch (e) {
-        console.error("Polling error:", e);
-      }
-    }, 10000);
-
-    return () => clearInterval(t);
-  }, [gameId, navigate, isHost]);
-
-  // ========= Actions =========
-  const handleCancelGame = async () => {
-    if (!gameData) {
-      toast.error("Cannot cancel game: missing game data");
-      return;
-    }
-    try {
-      await cancelGame(gameData.gameId);
-      localStorage.removeItem("playerSession");
-      localStorage.removeItem("gameId");
-      navigate("/", { replace: true });
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "Unknown error occurred";
-      toast.error(`Failed to cancel game: ${msg}`);
-    }
-  };
-
+  // ==================== HOST ACTIONS ====================
   const handleStartGame = async () => {
-    if (!gameData) {
-      toast.error("Cannot start game: missing game data");
-      return;
-    }
+    if (!gameId || isStarting || participants.length === 0) return;
+    setIsStarting(true);
+    setActionError("");
+
     try {
-      await startGame(gameData.gameId);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "Unknown error occurred";
-      toast.error(`Failed to start game: ${msg}`);
+      await startGame(gameId);
+      console.log("🎬 [HOST] Start game called - waiting for first question...");
+    } catch (err: any) {
+      handleApiError(err);
+      setActionError("Không thể bắt đầu trò chơi. Vui lòng thử lại.");
+      setIsStarting(false);
     }
   };
 
-  const copyPinCode = async () => {
-    if (!gameData) {
-      toast.error("Cannot copy PIN code: missing game data");
-      return;
-    }
+  const handleCancelGame = async () => {
+    if (!gameId || isCancelling) return;
+    if (!window.confirm("Bạn có chắc chắn muốn hủy trò chơi này?")) return;
+
+    setIsCancelling(true);
     try {
-      await navigator.clipboard.writeText(gameData.pinCode);
-      toast.success("PIN code copied successfully!");
-    } catch {
-      // Fallback cho môi trường không hỗ trợ clipboard
-      const ta = document.createElement("textarea");
-      ta.value = gameData.pinCode;
-      document.body.appendChild(ta);
-      ta.select();
-      try {
-        document.execCommand("copy");
-        toast.success("PIN code copied successfully!");
-      } catch {
-        toast.error(`Failed to copy PIN code: ${gameData.pinCode}`);
-      }
-      document.body.removeChild(ta);
+      await cancelGame(gameId);
+      localStorage.removeItem("participantId");
+      localStorage.removeItem("isAnonymous");
+      navigate("/", { replace: true });
+    } catch (err: any) {
+      handleApiError(err);
+      setActionError("Không thể hủy trò chơi");
+    } finally {
+      setIsCancelling(false);
     }
   };
 
-  // Link QR mới về trang join-game
-  const joinUrl = gameData?.pinCode
-    ? `${window.location.origin}/join-game/${gameData.pinCode}`
-    : "";
+  // ==================== PARTICIPANT ACTIONS ====================
+  const handleLeaveGame = async () => {
+    if (!gameId || !participantId || isLeaving) return;
+    if (!window.confirm("Bạn có chắc chắn muốn rời phòng chơi?")) return;
 
-  const memoizedPlayers = useMemo(() => players, [players]);
+    setIsLeaving(true);
+    try {
+      await leaveGame(gameId, participantId);
+      clearParticipantSession();
+      navigate("/", { replace: true });
+    } catch (err: any) {
+      handleApiError(err);
+      setActionError("Không thể rời phòng");
+    } finally {
+      setIsLeaving(false);
+    }
+  };
 
-  // ========= Renders =========
-  if (isLoading) {
+  const handleKickPlayer = async (participantToKick: string, nickname: string) => {
+    if (!gameId) return;
+    if (!window.confirm(`Kick ${nickname} khỏi phòng?`)) return;
+
+    try {
+      await kickParticipant(gameId, participantToKick);
+      await loadParticipants();
+    } catch (err: any) {
+      handleApiError(err);
+    }
+  };
+
+  const copyToClipboard = () => {
+    navigator.clipboard.writeText(pinCode || "");
+    setShowCopyFeedback(true);
+    setTimeout(() => setShowCopyFeedback(false), 2000);
+  };
+
+  // ==================== RENDER ====================
+  if (isValidating) {
     return (
       <div
-        className="d-flex justify-content-center align-items-center min-vh-100"
-        style={{ background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)" }}
+        style={{
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          height: "100vh",
+          backgroundColor: isDark ? "#0f172a" : "#f8fafc",
+          flexDirection: "column",
+          gap: "1rem",
+        }}
       >
-        <div className="text-center p-4">
-          <div className="spinner-border text-white mb-3" role="status" style={{ width: "3rem", height: "3rem" }}>
-            <span className="visually-hidden">Loading...</span>
-          </div>
-          <p className="text-white fs-5 fw-medium">Loading waiting room...</p>
+        <div style={{ fontSize: "3rem", animation: "spin 1s linear infinite" }}>
+          ⚙️
+        </div>
+        <p style={{ color: isDark ? "#cbd5e1" : "#475569", fontSize: "1.1rem" }}>
+          Đang xác thực phiên chơi...
+        </p>
+      </div>
+    );
+  }
+
+  if (!isValid || validationError) {
+    return (
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          height: "100vh",
+          backgroundColor: isDark ? "#0f172a" : "#f8fafc",
+          padding: "2rem",
+        }}
+      >
+        <div
+          style={{
+            textAlign: "center",
+            backgroundColor: isDark ? "#1e293b" : "#fff",
+            padding: "3rem",
+            borderRadius: "16px",
+            boxShadow: isDark
+              ? "0 20px 25px rgba(0,0,0,0.3)"
+              : "0 20px 25px rgba(0,0,0,0.1)",
+            maxWidth: "400px",
+          }}
+        >
+          <div style={{ fontSize: "3rem", marginBottom: "1rem" }}>❌</div>
+          <h2 style={{ color: isDark ? "#f1f5f9" : "#1e293b", marginBottom: "0.5rem" }}>
+            Không thể tham gia phòng chơi
+          </h2>
+          <p style={{ color: isDark ? "#cbd5e1" : "#64748b" }}>
+            {validationError || "Phiên chơi không hợp lệ"}
+          </p>
         </div>
       </div>
     );
   }
 
-  if (error) {
+  if (!gameInfo) {
     return (
       <div
-        className="d-flex justify-content-center align-items-center min-vh-100 w-100"
-        style={{ background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)" }}
+        style={{
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          height: "100vh",
+          backgroundColor: isDark ? "#0f172a" : "#f8fafc",
+        }}
       >
-        <div className="card shadow-lg rounded-4 p-5 text-center w-100">
-          <i className="bx bx-error-circle text-danger mb-3" style={{ fontSize: "4rem" }} />
-          <h4 className="text-dark fw-bold mb-3">An error occurred</h4>
-          <p className="text-muted mb-4">{error}</p>
-          <div className="d-flex gap-3 justify-content-center">
-            <button className="btn btn-primary rounded-pill px-4 py-2" onClick={() => navigate(-1)}>
-              <i className="bx bx-refresh me-2" />
-              Try Again
-            </button>
-            <button className="btn btn-outline-secondary rounded-pill px-4 py-2" onClick={() => navigate("/")}>
-              <i className="bx bx-home me-2" />
-              Home
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!gameData) {
-    return (
-      <div
-        className="d-flex justify-content-center align-items-center min-vh-100"
-        style={{ background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)" }}
-      >
-        <div className="card shadow-lg rounded-4 p-5 text-center w-100">
-          <i className="bx bx-info-circle text-warning mb-3" style={{ fontSize: "4rem" }} />
-          <h4 className="text-dark fw-bold mb-3">Game not found</h4>
-          <p className="text-muted mb-4">This game session could not be found.</p>
-          <button className="btn btn-primary rounded-pill px-4 py-2" onClick={() => navigate("/")}>
-            <i className="bx bx-home me-2" />
-            Home
-          </button>
-        </div>
+        <h2 style={{ color: isDark ? "#f1f5f9" : "#1e293b" }}>Không tìm thấy trò chơi</h2>
       </div>
     );
   }
 
   return (
     <div
-      className="min-vh-100 py-4 w-100"
-      style={{ background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)" }}
+      style={{
+        minHeight: "100vh",
+        backgroundColor: isDark ? "#0f172a" : "#f8fafc",
+        color: isDark ? "#f1f5f9" : "#1e293b",
+        fontFamily: "system-ui, -apple-system, sans-serif",
+      }}
     >
-      <div className="container">
-        <div className="row justify-content-center">
-          <div className="col-lg-11 col-xl-10">
-            <div className="card border-0 shadow-lg rounded-4 overflow-hidden">
-              {/* Header */}
-              <div
-                className="position-relative"
-                style={{ background: "linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)", padding: "2rem 1rem" }}
-              >
-                <div className="text-center text-white">
-                  <h1 className="mb-2 fw-bold" style={{ fontSize: "2.2rem" }}>
-                    <i className="bx bx-game me-3" />
-                    {quizTitle}
-                  </h1>
-                  <p className="mb-0 opacity-75" style={{ fontSize: "1.1rem" }}>
-                    {isHost ? "🎮 Host Room" : "⏳ Waiting Room"}
-                  </p>
-                </div>
-              </div>
+      {/* Error Banner */}
+      {actionError && (
+        <div
+          style={{
+            backgroundColor: "#ef4444",
+            color: "#fff",
+            padding: "1rem",
+            textAlign: "center",
+            fontSize: "0.95rem",
+            fontWeight: 500,
+            animation: "slideDown 0.3s ease",
+          }}
+        >
+          ⚠️ {actionError}
+        </div>
+      )}
 
-              <div className="card-body p-4 p-md-5">
-                {/* PIN Section */}
-                <div className="row align-items-center mb-5">
-                  <div className="col-lg-8">
-                    <div className="text-center text-lg-start">
-                      <h3 className="mb-3 fw-bold text-primary" style={{ fontSize: "1.8rem" }}>
-                        <i className="bx bx-key me-2" />
-                        Join PIN
-                      </h3>
+      {/* Header */}
+      <div
+        style={{
+          backgroundColor: isDark ? "#1e293b" : "#fff",
+          borderBottom: isDark ? "1px solid #334155" : "1px solid #e2e8f0",
+          padding: "2rem 1rem",
+          boxShadow: isDark ? "0 4px 20px rgba(0,0,0,0.3)" : "0 4px 20px rgba(0,0,0,0.08)",
+        }}
+      >
+        <div style={{ maxWidth: "1200px", margin: "0 auto" }}>
+          <h1
+            style={{
+              margin: "0 0 2rem 0",
+              fontSize: "2.4rem",
+              fontWeight: 800,
+              textAlign: "center",
+              color: isDark ? "#f1f5f9" : "#0f172a",
+            }}
+          >
+            {gameInfo.quiz.title}
+          </h1>
 
-                      <div className="d-flex flex-column flex-sm-row align-items-center justify-content-center justify-content-lg-start gap-3 mb-3">
-                        <div className="pin-display position-relative">
-                          <div
-                            className="bg-gradient-primary text-white py-3 px-5 rounded-3 shadow-lg"
-                            style={{
-                              background: "linear-gradient(45deg, #ff6b6b, #ee5a24)",
-                              fontSize: "2.5rem",
-                              fontWeight: "bold",
-                              letterSpacing: "0.2em",
-                              border: "3px solid rgba(255,255,255,0.3)",
-                            }}
-                          >
-                            {gameData.pinCode}
-                          </div>
-                        </div>
-
-                        <div className="d-flex gap-2">
-                          <button className="btn btn-outline-primary rounded-circle p-2" onClick={copyPinCode} title="Copy PIN code">
-                            <i className="bx bx-copy" style={{ fontSize: "1.3rem" }} />
-                          </button>
-
-                          {isHost && (
-                            <button
-                              className="btn btn-outline-info rounded-circle p-2"
-                              onClick={() => setShowQR((s) => !s)}
-                              title="Show/Hide QR Code"
-                            >
-                              <i className="bx bx-qr" style={{ fontSize: "1.3rem" }} />
-                            </button>
-                          )}
-                        </div>
-                      </div>
-
-                      <p className="text-muted mb-0" style={{ fontSize: "1rem" }}>
-                        {isHost
-                          ? "📱 Share this PIN code with players to join the game"
-                          : `✅ Joined game with PIN: ${gameData.pinCode}`}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* QR Code Section */}
-                  <div className="col-lg-4">
-                    {isHost && (showQR || window.innerWidth >= 992) && (
-                      <div className="text-center">
-                        <QRCode value={joinUrl} size={120} />
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Players Section */}
-                <div className="mb-4">
-                  <div className="d-flex justify-content-between align-items-center mb-4">
-                    <h3 className="mb-0 fw-bold text-dark d-flex align-items-center" style={{ fontSize: "1.8rem" }}>
-                      <i className="bx bx-group me-2 text-primary" />
-                      Players ({memoizedPlayers.length})
-                    </h3>
-                    <div className="d-flex align-items-center gap-2">
-                      <div className="pulse-dot bg-success rounded-circle" style={{ width: "12px", height: "12px" }} />
-                      <span className="badge bg-success-soft text-success py-2 px-3 rounded-pill fw-medium">
-                        {isHost ? "🎯 Waiting for players..." : "⏱️ Waiting for host to start..."}
-                      </span>
-                    </div>
-                  </div>
-
-                  {memoizedPlayers.length === 0 ? (
-                    <div
-                      className="text-center py-5 rounded-3"
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: "2rem",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            {/* Host Info */}
+            <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+              <span style={{ fontSize: "2rem" }}>👑</span>
+              <div>
+                <p style={{ margin: 0, fontSize: "0.9rem", opacity: 0.7 }}>Host</p>
+                <p style={{ margin: 0, fontWeight: 700, fontSize: "1.2rem" }}>
+                  {gameInfo.host.nickname || gameInfo.host.username}
+                  {isHost && (
+                    <span
                       style={{
-                        background: "linear-gradient(135deg, #f8f9ff 0%, #e3f2fd 100%)",
-                        border: "2px dashed #2196f3",
+                        marginLeft: "0.75rem",
+                        backgroundColor: "#3b82f6",
+                        color: "#fff",
+                        padding: "0.3rem 0.9rem",
+                        borderRadius: "12px",
+                        fontSize: "0.8rem",
+                        fontWeight: 600,
                       }}
                     >
-                      <i className="bx bx-user-plus text-primary mb-3" style={{ fontSize: "4rem" }} />
-                      <h5 className="text-primary fw-bold mb-2">No players yet</h5>
-                      <p className="text-muted mb-0">Share the PIN code or QR code to invite friends to join!</p>
-                    </div>
-                  ) : (
-                    <div className="row g-3">
-                      {memoizedPlayers.map((player, index) => {
-                        const isCurrentUser = player.userId === user?.userId;
-                        return (
-                          <div key={player.playerId} className="col-md-6 col-lg-4">
-                            <div
-                              className={`card border-0 rounded-3 p-3 h-100 position-relative transition-all ${
-                                isCurrentUser ? "bg-primary-soft border-primary shadow-lg transform-scale-105" : "bg-white shadow-sm hover-lift"
-                              }`}
-                              style={{
-                                border: isCurrentUser ? "2px solid #4facfe" : "1px solid #e9ecef",
-                                transform: isCurrentUser ? "scale(1.02)" : "scale(1)",
-                                transition: "all 0.3s ease",
-                              }}
-                            >
-                              {isCurrentUser && (
-                                <div className="position-absolute top-0 end-0 translate-middle">
-                                  <span className="badge bg-primary rounded-pill px-2 py-1">
-                                    <i className="bx bx-user-check me-1" />
-                                    You
-                                  </span>
-                                </div>
-                              )}
-
-                              <div className="d-flex align-items-center">
-                                <div className="position-relative">
-                                  <img
-                                    src={player.avatar || unknownAvatar}
-                                    alt={player.nickname}
-                                    className={`rounded-circle border ${
-                                      isCurrentUser ? "border-primary border-3" : "border-light border-2"
-                                    }`}
-                                    width={isCurrentUser ? 56 : 48}
-                                    height={isCurrentUser ? 56 : 48}
-                                    style={{ objectFit: "cover" }}
-                                    onError={(e) => {
-                                      const target = e.target as HTMLImageElement;
-                                      if (target.src !== unknownAvatar) target.src = unknownAvatar;
-                                    }}
-                                  />
-                                  {isCurrentUser && (
-                                    <div className="position-absolute bottom-0 end-0">
-                                      <i className="bx bx-crown text-warning bg-white rounded-circle p-1" style={{ fontSize: "1rem" }} />
-                                    </div>
-                                  )}
-                                </div>
-
-                                <div className="ms-3 flex-grow-1">
-                                  <h5
-                                    className={`mb-1 fw-bold ${isCurrentUser ? "text-primary" : "text-dark"}`}
-                                    style={{ fontSize: isCurrentUser ? "1.3rem" : "1.1rem" }}
-                                  >
-                                    {player.nickname}
-                                    {isCurrentUser && <i className="bx bx-star text-warning ms-2" />}
-                                  </h5>
-                                  <div className="d-flex align-items-center gap-2">
-                                    <small className="text-muted d-flex align-items-center">
-                                      <i className="bx bx-time me-1" />
-                                      {new Date(player.joinedAt).toLocaleTimeString("en-US", {
-                                        hour: "2-digit",
-                                        minute: "2-digit",
-                                      })}
-                                    </small>
-                                    <span className="badge bg-success-soft text-success rounded-pill px-2 py-1" style={{ fontSize: "0.7rem" }}>
-                                      #{index + 1}
-                                    </span>
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
+                      YOU
+                    </span>
                   )}
+                </p>
+              </div>
+            </div>
+
+            {/* PIN + QR Code Card */}
+            <div
+              style={{
+                backgroundColor: isDark ? "#1e293b" : "#ffffff",
+                padding: "2rem",
+                borderRadius: "20px",
+                border: isDark ? "1px solid #334155" : "1px solid #e2e8f0",
+                boxShadow: isDark
+                  ? "0 10px 30px rgba(0,0,0,0.4)"
+                  : "0 10px 30px rgba(0,0,0,0.1)",
+                display: "flex",
+                alignItems: "center",
+                gap: "2rem",
+                flexWrap: "wrap",
+                justifyContent: "center",
+              }}
+            >
+              {/* QR Code */}
+              <div style={{ textAlign: "center" }}>
+                <div
+                  style={{
+                    padding: "1rem",
+                    backgroundColor: "#fff",
+                    borderRadius: "16px",
+                    display: "inline-block",
+                    boxShadow: "0 6px 16px rgba(0,0,0,0.15)",
+                  }}
+                >
+                  <QRCodeSVG value={joinUrl} size={160} level="H" includeMargin />
                 </div>
+                <p
+                  style={{
+                    margin: "1rem 0 0 0",
+                    fontSize: "0.95rem",
+                    opacity: 0.85,
+                    fontWeight: 500,
+                  }}
+                >
+                  Quét QR để tham gia
+                </p>
+              </div>
 
-                {/* Action Buttons */}
-                {isHost && (
-                  <div
-                    className="d-flex flex-column flex-sm-row justify-content-between gap-3 mt-5 p-4 rounded-3"
-                    style={{ background: "linear-gradient(135deg, #f8f9ff 0%, #e8f5e8 100%)" }}
-                  >
-                    <button
-                      className="btn btn-outline-danger rounded-pill px-4 py-2 fw-medium"
-                      onClick={handleCancelGame}
-                      style={{ minWidth: "140px" }}
-                    >
-                      <i className="bx bx-x me-2" />
-                      Cancel Game
-                    </button>
-
-                    <button
-                      className="btn btn-success rounded-pill px-4 py-2 fw-medium position-relative"
-                      onClick={handleStartGame}
-                      disabled={memoizedPlayers.length === 0}
-                      style={{ minWidth: "140px" }}
-                    >
-                      <i className="bx bx-play me-2" />
-                      Start Game
-                      {memoizedPlayers.length === 0 && (
-                        <span className="position-absolute top-0 start-100 translate-middle badge bg-warning text-dark rounded-pill">
-                          Players Needed
-                        </span>
-                      )}
-                    </button>
-                  </div>
-                )}
-
-                {!isHost && (
-                  <div className="text-center mt-4 p-4 rounded-3" style={{ background: "linear-gradient(135deg, #fff3e0 0%, #e8f5e8 100%)" }}>
-                    <div className="d-flex align-items-center justify-content-center gap-2 mb-2">
-                      <div className="spinner-grow spinner-grow-sm text-primary" />
-                      <h5 className="mb-0 text-primary fw-bold">Waiting for host to start the game...</h5>
-                    </div>
-                    <p className="text-muted mb-0">Please be patient, the game will start soon! 🎮</p>
-                  </div>
-                )}
+              {/* PIN Code */}
+              <div style={{ minWidth: "200px", textAlign: "center" }}>
+                <p style={{ margin: "0 0 0.5rem 0", fontSize: "0.95rem", opacity: 0.7 }}>
+                  Mã phòng
+                </p>
+                <p
+                  style={{
+                    margin: "0 0 1rem 0",
+                    fontSize: "2.5rem",
+                    fontWeight: 800,
+                    fontFamily: "monospace",
+                    letterSpacing: "0.2em",
+                    color: "#3b82f6",
+                  }}
+                >
+                  {pinCode}
+                </p>
+                <button
+                  onClick={copyToClipboard}
+                  style={{
+                    width: "100%",
+                    backgroundColor: "#3b82f6",
+                    color: "#fff",
+                    border: "none",
+                    padding: "0.9rem",
+                    borderRadius: "12px",
+                    cursor: "pointer",
+                    fontWeight: 600,
+                    fontSize: "1rem",
+                    transition: "all 0.2s",
+                  }}
+                  onMouseOver={(e) => (e.currentTarget.style.backgroundColor = "#2563eb")}
+                  onMouseOut={(e) => (e.currentTarget.style.backgroundColor = "#3b82f6")}
+                >
+                  {showCopyFeedback ? "✓ Đã copy!" : "📋 Copy mã"}
+                </button>
               </div>
             </div>
           </div>
         </div>
       </div>
+
+      {/* Main Content - Responsive */}
+      <div
+        style={{
+          maxWidth: "1200px",
+          margin: "0 auto",
+          padding: "2rem 1rem",
+          display: "grid",
+          gridTemplateColumns: "1fr minmax(320px, 400px)",
+          gap: "2rem",
+        }}
+        className="main-content-grid"
+      >
+        {/* Participants Section */}
+        <div
+          style={{
+            backgroundColor: isDark ? "#1e293b" : "#fff",
+            borderRadius: "20px",
+            padding: "2rem",
+            boxShadow: isDark
+              ? "0 10px 30px rgba(0,0,0,0.3)"
+              : "0 10px 30px rgba(0,0,0,0.08)",
+            border: isDark ? "1px solid #334155" : "1px solid #e2e8f0",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "1.5rem" }}>
+            <span style={{ fontSize: "1.8rem" }}>👥</span>
+            <h2 style={{ margin: 0, fontSize: "1.4rem", fontWeight: 700 }}>
+              Người chơi
+              <span
+                style={{
+                  marginLeft: "0.75rem",
+                  backgroundColor: "#3b82f6",
+                  color: "#fff",
+                  padding: "0.4rem 1rem",
+                  borderRadius: "16px",
+                  fontSize: "0.9rem",
+                  fontWeight: 600,
+                }}
+              >
+                {participants.length}/{gameInfo.maxPlayers}
+              </span>
+            </h2>
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+            {participants.length === 0 ? (
+              <div style={{ padding: "3rem", textAlign: "center", color: isDark ? "#94a3b8" : "#94a3b8" }}>
+                <p style={{ fontSize: "3.5rem", margin: "0 0 1rem 0" }}>⏳</p>
+                <p style={{ margin: 0, fontSize: "1.1rem" }}>Đang chờ người chơi tham gia...</p>
+              </div>
+            ) : (
+              participants.map((p, idx) => (
+                <div
+                  key={p.participantId}
+                  style={{
+                    padding: "1.2rem",
+                    backgroundColor: isDark ? "#0f172a" : "#f8fafc",
+                    borderRadius: "16px",
+                    border: isDark ? "1px solid #334155" : "1px solid #e2e8f0",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+                    <div
+                      style={{
+                        width: "48px",
+                        height: "48px",
+                        borderRadius: "50%",
+                        backgroundColor: "#3b82f6",
+                        color: "#fff",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontWeight: 700,
+                        fontSize: "1.1rem",
+                      }}
+                    >
+                      {idx + 1}
+                    </div>
+                    <div>
+                      <p style={{ margin: 0, fontWeight: 600, fontSize: "1.05rem" }}>
+                        {p.nickname}
+                      </p>
+                      {p.isAnonymous && (
+                        <p style={{ margin: "0.3rem 0 0 0", fontSize: "0.8rem", opacity: 0.6 }}>
+                          🔐 Anonymous
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {isHost && p.participantId !== participantId && (
+                    <button
+                      onClick={() => handleKickPlayer(p.participantId, p.nickname)}
+                      style={{
+                        padding: "0.6rem 1.2rem",
+                        backgroundColor: "#ef4444",
+                        color: "#fff",
+                        border: "none",
+                        borderRadius: "10px",
+                        cursor: "pointer",
+                        fontWeight: 600,
+                      }}
+                      onMouseOver={(e) => (e.currentTarget.style.backgroundColor = "#dc2626")}
+                      onMouseOut={(e) => (e.currentTarget.style.backgroundColor = "#ef4444")}
+                    >
+                      Kick
+                    </button>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* Controls Panel */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+          {/* Game Info Card */}
+          <div
+            style={{
+              backgroundColor: isDark ? "#1e293b" : "#fff",
+              borderRadius: "20px",
+              padding: "2rem",
+              boxShadow: isDark
+                ? "0 10px 30px rgba(0,0,0,0.3)"
+                : "0 10px 30px rgba(0,0,0,0.08)",
+              border: isDark ? "1px solid #334155" : "1px solid #e2e8f0",
+            }}
+          >
+            <p style={{ margin: "0 0 1rem 0", fontSize: "0.95rem", opacity: 0.7 }}>📊 Thông tin trò chơi</p>
+            <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+              <div>
+                <p style={{ margin: "0 0 0.4rem 0", fontSize: "0.9rem", opacity: 0.7 }}>Số câu hỏi</p>
+                <p style={{ margin: 0, fontWeight: 700, fontSize: "1.1rem" }}>
+                  {gameInfo.totalQuestions} câu
+                </p>
+              </div>
+              <div>
+                <p style={{ margin: "0 0 0.4rem 0", fontSize: "0.9rem", opacity: 0.7 }}>Trạng thái</p>
+                <p style={{ margin: 0, fontWeight: 700, fontSize: "1.1rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                  <span style={{ color: "#10b981" }}>●</span> Đang chờ bắt đầu
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          {isHost ? (
+            <>
+              <button
+                onClick={handleStartGame}
+                disabled={isStarting || participants.length === 0}
+                style={{
+                  width: "100%",
+                  padding: "1.4rem",
+                  backgroundColor: isStarting || participants.length === 0 ? "#94a3b8" : "#10b981",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: "16px",
+                  fontSize: "1.2rem",
+                  fontWeight: 700,
+                  cursor: isStarting || participants.length === 0 ? "not-allowed" : "pointer",
+                  transition: "all 0.3s",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "0.75rem",
+                }}
+                onMouseOver={(e) =>
+                  !isStarting && participants.length > 0 && (e.currentTarget.style.backgroundColor = "#059669")
+                }
+                onMouseOut={(e) =>
+                  !isStarting && participants.length > 0 && (e.currentTarget.style.backgroundColor = "#10b981")
+                }
+              >
+                {isStarting ? (
+                  <>
+                    <span style={{ animation: "spin 1s linear infinite" }}>⚙️</span>
+                    Đang bắt đầu...
+                  </>
+                ) : (
+                  <>🎮 Bắt đầu trò chơi</>
+                )}
+              </button>
+
+              <button
+                onClick={handleCancelGame}
+                disabled={isCancelling}
+                style={{
+                  width: "100%",
+                  padding: "1rem",
+                  backgroundColor: "#ef4444",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: "16px",
+                  fontSize: "1rem",
+                  fontWeight: 600,
+                  cursor: isCancelling ? "not-allowed" : "pointer",
+                  opacity: isCancelling ? 0.6 : 1,
+                }}
+                onMouseOver={(e) => !isCancelling && (e.currentTarget.style.backgroundColor = "#dc2626")}
+                onMouseOut={(e) => !isCancelling && (e.currentTarget.style.backgroundColor = "#ef4444")}
+              >
+                {isCancelling ? "Đang hủy..." : "🚫 Hủy trò chơi"}
+              </button>
+            </>
+          ) : (
+            <>
+              <div
+                style={{
+                  backgroundColor: "#dbeafe",
+                  color: "#1e40af",
+                  padding: "2rem",
+                  borderRadius: "16px",
+                  textAlign: "center",
+                  border: "1px solid #93c5fd",
+                }}
+              >
+                <p style={{ margin: "0 0 0.75rem 0", fontSize: "2rem" }}>⏳</p>
+                <p style={{ margin: 0, fontSize: "1.1rem", fontWeight: 600 }}>
+                  Đang chờ host bắt đầu trò chơi...
+                </p>
+              </div>
+
+              <button
+                onClick={handleLeaveGame}
+                disabled={isLeaving}
+                style={{
+                  width: "100%",
+                  padding: "1.2rem",
+                  backgroundColor: "#64748b",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: "16px",
+                  fontSize: "1rem",
+                  fontWeight: 600,
+                  cursor: isLeaving ? "not-allowed" : "pointer",
+                  opacity: isLeaving ? 0.6 : 1,
+                }}
+                onMouseOver={(e) => !isLeaving && (e.currentTarget.style.backgroundColor = "#475569")}
+                onMouseOut={(e) => !isLeaving && (e.currentTarget.style.backgroundColor = "#64748b")}
+              >
+                {isLeaving ? "Đang rời..." : "👋 Rời phòng chơi"}
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
+     
     </div>
   );
 };
