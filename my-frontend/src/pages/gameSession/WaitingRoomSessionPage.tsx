@@ -11,6 +11,7 @@ import {
   getParticipants,
   setupHostListeners,
   setupParticipantListeners,
+  clearParticipantSession,
 } from "@/services/gameService";
 import { webSocketService } from "@/services/webSocketService";
 import { useGameSessionValidator } from "@/hooks/useGameSessionValidator";
@@ -222,8 +223,7 @@ const WaitingRoomSessionPage = () => {
     setIsLeaving(true);
     try {
       await leaveGame(gameId, participantId);
-      localStorage.removeItem("participantId");
-      localStorage.removeItem("isAnonymous");
+      clearParticipantSession();
       navigate("/", { replace: true });
     } catch (err: any) {
       handleApiError(err);

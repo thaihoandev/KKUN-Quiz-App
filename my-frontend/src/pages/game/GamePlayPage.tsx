@@ -225,6 +225,16 @@ const GamePlayPage: React.FC = () => {
       gameId,
       participantId.current,
       {
+        onGameEvent: (event: GameEvent) => {
+          console.log("🎮 [HOST] Game event:", event.eventType);
+          if (event.eventType === "GAME_ENDED") {
+            setState((prev) => ({ ...prev, isGameEnded: true }));
+            clearParticipantSession();
+            setTimeout(() => {
+              navigate(`/game-results/${gameId}`);
+            }, 3000);
+          }
+        },
         onQuestion: (question: QuestionUpdateDTO) => {
           console.log("❓ [PARTICIPANT] Question received");
           setTimeRemaining(question.timeLimitSeconds || 0);
@@ -265,6 +275,7 @@ const GamePlayPage: React.FC = () => {
         onKicked: (notification) => {
           console.warn("🚫 [PARTICIPANT] Kicked");
           setState((prev) => ({ ...prev, isKicked: true }));
+          clearParticipantSession();
           setTimeout(() => {
             navigate("/", { replace: true });
           }, 3000);
